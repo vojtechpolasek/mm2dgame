@@ -7,6 +7,8 @@ const MapGenerator := preload("res://scripts/map_generator.gd")
 @onready var camera = $Camera
 @onready var status: Label = $Hint/Hud/Status
 
+var _map_ready := false
+
 
 func _ready() -> void:
 	await get_tree().process_frame
@@ -25,8 +27,9 @@ func _ready() -> void:
 	var pixels := float(size * TerrainCatalog.TILE_SIZE)
 	camera.setup(Vector2(pixels, pixels))
 	status.visible = false
+	_map_ready = true
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel"):
+	if _map_ready and event.is_action_pressed("ui_cancel"):
 		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")

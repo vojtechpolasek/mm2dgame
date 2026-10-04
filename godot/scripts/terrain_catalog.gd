@@ -56,7 +56,8 @@ func _load_folder(path: String, pure_name: String, is_pure: bool) -> void:
 		source.use_texture_padding = false
 		source.texture = texture
 		var source_id := tile_set.add_source(source)
-		source.create_tile(Vector2i.ZERO)
+		if not source.has_tile(Vector2i.ZERO):
+			source.create_tile(Vector2i.ZERO)
 		var key := pure_name
 		if not is_pure:
 			var stem := file_name.get_basename()

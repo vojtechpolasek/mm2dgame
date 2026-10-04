@@ -1,9 +1,5 @@
 extends RefCounted
 
-static var _neighbors: Array[Vector2i] = [
-	Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
-	Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1),
-]
 const STEP_STRAIGHT := 1000
 const STEP_DIAGONAL := 1414
 const UNCLAIMED := 2147483647
@@ -30,6 +26,10 @@ static func grow(size: int, terrain_names: PackedStringArray, rng: RandomNumberG
 		for x in size:
 			lobe[y * size + x] = noise.get_noise_2d(float(x), float(y))
 
+	var neighbors: Array[Vector2i] = [
+		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+		Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1),
+	]
 	var heap: Array[Vector2i] = []
 	for seed in _place_seeds(size, terrain_names, rng):
 		var index := seed.y * size + seed.x
@@ -45,7 +45,7 @@ static func grow(size: int, terrain_names: PackedStringArray, rng: RandomNumberG
 		var x := index % size
 		var y := index / size
 		var owner: String = terrain[index]
-		for neighbor in _neighbors:
+		for neighbor in neighbors:
 			var nx := x + neighbor.x
 			var ny := y + neighbor.y
 			if nx < 0 or ny < 0 or nx >= size or ny >= size:
