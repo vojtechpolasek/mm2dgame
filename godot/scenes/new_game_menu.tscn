@@ -1,0 +1,68 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/new_game_menu.gd" id="1_menu"]
+
+[node name="NewGameMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.09, 0.11, 0.08, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="VBoxContainer" parent="Center"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="Center/Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Velikost mapy"
+horizontal_alignment = 1
+
+[node name="Gap" type="Control" parent="Center/Panel"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+
+[node name="Small" type="Button" parent="Center/Panel"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+text = "Malá (32×32)"
+
+[node name="Medium" type="Button" parent="Center/Panel"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+text = "Střední (64×64)"
+
+[node name="Large" type="Button" parent="Center/Panel"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+text = "Velká (128×128)"
+
+[node name="Gap2" type="Control" parent="Center/Panel"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+
+[node name="Back" type="Button" parent="Center/Panel"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+text = "Zpět"

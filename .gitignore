@@ -1,0 +1,9 @@
+# Godot 4
+.godot/
+
+# Python nástroje
+__pycache__/
+*.pyc
+
+# export může obsahovat klíče
+export_presets.cfg
