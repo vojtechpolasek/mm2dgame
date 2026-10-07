@@ -1,0 +1,130 @@
+{
+  "height_unit": "m",
+  "spacing_unit": "m",
+  "width_unit": "px",
+  "atlas_columns": 3,
+  "rocks": {
+    "balvan1": {
+      "variants": 9,
+      "canvas": 242,
+      "center": 121,
+      "color": "8A8172",
+      "rough": 0.28,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 68.0
+        },
+        "2": {
+          "height": 1.1,
+          "width": 40.0
+        }
+      },
+      "spacing": 0.8
+    },
+    "skala1": {
+      "variants": 9,
+      "canvas": 884,
+      "center": 442,
+      "color": "6E675C",
+      "rough": 0.3,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 250.0
+        },
+        "2": {
+          "height": 2.4,
+          "width": 165.0
+        },
+        "3": {
+          "height": 4.4,
+          "width": 95.0
+        },
+        "4": {
+          "height": 6.0,
+          "width": 40.0
+        }
+      },
+      "spacing": 3.2
+    },
+    "skala2": {
+      "variants": 9,
+      "canvas": 984,
+      "center": 492,
+      "color": "5E6560",
+      "rough": 0.26,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 300.0
+        },
+        "2": {
+          "height": 2.8,
+          "width": 200.0
+        },
+        "3": {
+          "height": 5.2,
+          "width": 120.0
+        },
+        "4": {
+          "height": 7.2,
+          "width": 50.0
+        }
+      },
+      "spacing": 3.8
+    },
+    "skala10": {
+      "variants": 9,
+      "canvas": 1154,
+      "center": 577,
+      "color": "746C62",
+      "rough": 0.28,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 340.0
+        },
+        "2": {
+          "height": 3.0,
+          "width": 230.0
+        },
+        "3": {
+          "height": 5.6,
+          "width": 140.0
+        },
+        "4": {
+          "height": 8.0,
+          "width": 58.0
+        }
+      },
+      "spacing": 4.3
+    },
+    "skala15": {
+      "variants": 9,
+      "canvas": 1298,
+      "center": 649,
+      "color": "5C635E",
+      "rough": 0.26,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 400.0
+        },
+        "2": {
+          "height": 3.0,
+          "width": 270.0
+        },
+        "3": {
+          "height": 5.6,
+          "width": 165.0
+        },
+        "4": {
+          "height": 8.0,
+          "width": 70.0
+        }
+      },
+      "spacing": 5.0
+    }
+  }
+}

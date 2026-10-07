@@ -148,6 +148,7 @@ class Field:
         black = (0, 0, 0)
         self.size = size
         self.px = [[black for _ in range(size)] for _ in range(size)]
+        self.mask = [[0.0 for _ in range(size)] for _ in range(size)]
 
     def get(self, x: int, y: int) -> tuple[int, int, int]:
         return self.px[y % self.size][x % self.size]
@@ -174,9 +175,30 @@ class Field:
         if self.contains(x, y):
             self.blend(x, y, color, alpha)
 
+    def set_mask(self, x: int, y: int, value: float) -> None:
+        self.mask[y][x] = value
+
+    def fill_mask(self, value: float) -> None:
+        for y in range(self.size):
+            row = self.mask[y]
+            for x in range(self.size):
+                row[x] = value
+
     def image(self) -> Image.Image:
         img = Image.new("RGB", (self.size, self.size))
         img.putdata([self.px[y][x] for y in range(self.size) for x in range(self.size)])
+        return img
+
+    def rgba_image(self) -> Image.Image:
+        img = Image.new("RGBA", (self.size, self.size))
+        data = []
+        for y in range(self.size):
+            colors = self.px[y]
+            mask = self.mask[y]
+            for x in range(self.size):
+                color = colors[x]
+                data.append((color[0], color[1], color[2], int(round(min(1.0, max(0.0, mask[x])) * 255))))
+        img.putdata(data)
         return img
 
 
@@ -243,6 +265,15 @@ def paint_field(
 
     if kind == "dirt":
         paint_dirt(field, rng, base, hue_span, contrast, coarseness)
+        return field
+    if kind == "desert":
+        paint_desert(field, rng, base, hue_span, contrast, coarseness)
+        return field
+    if kind == "snow":
+        paint_snow(field, rng, base, hue_span, contrast, coarseness)
+        return field
+    if kind == "water":
+        paint_water(field, rng, base, hue_span, contrast, coarseness)
         return field
 
     clump_count = max(8, int(round(22 / coarseness)))
@@ -423,9 +454,343 @@ def paint_dirt_marks(field: Field, rng: random.Random, coarseness: float, allow=
         placed += 1
 
 
+def paint_desert(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    size = field.size
+    base_h, base_s, base_v = rgb_to_hsv(*base)
+    wind = rng.random() * math.tau
+    dune_count = max(3, int(round(5 / coarseness)))
+    for _ in range(dune_count):
+        cx = rng.randrange(size)
+        cy = rng.randrange(size)
+        along = rng.uniform(12.0, 22.0) * math.sqrt(coarseness)
+        across = along * rng.uniform(0.22, 0.42)
+        lighter = rng.random() < 0.62
+        if lighter:
+            value_mul = 1.0 + contrast * rng.uniform(0.2, 0.55)
+        else:
+            value_mul = 1.0 - contrast * rng.uniform(0.7, 1.35)
+        color = hsv_to_rgb(
+            base_h + rng.uniform(-hue_span, hue_span) * 0.2,
+            base_s * (rng.uniform(0.72, 0.92) if lighter else rng.uniform(1.05, 1.25)),
+            min(1.0, max(0.0, base_v * value_mul)),
+        )
+        _paint_dune(field, cx, cy, along, across, wind + rng.uniform(-0.35, 0.35), color, 0.5 if lighter else 0.38)
+
+
+def _paint_dune(
+    field: Field,
+    cx: int,
+    cy: int,
+    along: float,
+    across: float,
+    wind: float,
+    color: tuple[int, int, int],
+    strength: float,
+) -> None:
+    reach = int(math.ceil(max(along, across)))
+    cosine = math.cos(wind)
+    sine = math.sin(wind)
+    for oy in range(-reach, reach + 1):
+        for ox in range(-reach, reach + 1):
+            along_pos = ox * cosine + oy * sine
+            across_pos = -ox * sine + oy * cosine
+            dist = math.hypot(along_pos / along, across_pos / across)
+            if dist > 1:
+                continue
+            field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.8 * strength)
+
+
+def paint_desert_marks(field: Field, rng: random.Random, coarseness: float, allow=None, density: float = 1.0) -> None:
+    size = field.size
+    wind = rng.random() * math.pi
+    ripple_count = max(2, int(round(7 / math.sqrt(coarseness) * density)))
+    for _ in range(ripple_count):
+        length = rng.randint(6, max(7, int(round(9 + coarseness * 2))))
+        for _try in range(24):
+            origin = point_inside(rng, size, length)
+            if origin is None:
+                break
+            x, y = origin
+            angle = wind + rng.uniform(-0.2, 0.2)
+            points: list[tuple[int, int]] = []
+            for step in range(length):
+                if step:
+                    angle += rng.uniform(-0.08, 0.08)
+                px = int(round(x + math.cos(angle) * step))
+                py = int(round(y + math.sin(angle) * step))
+                if not field.contains(px, py):
+                    points = []
+                    break
+                points.append((px, py))
+            if not points or (allow is not None and any(not allow(px, py) for px, py in points)):
+                continue
+            factor = 1.14 if rng.random() < 0.55 else 0.84
+            for px, py in points:
+                field.set_inside(px, py, scale_rgb(field.get(px, py), factor))
+            break
+
+    pebble_count = max(1, int(round(3 / coarseness * density)))
+    made = 0
+    tries = 0
+    while made < pebble_count and tries < pebble_count * 16:
+        tries += 1
+        rx = rng.uniform(1.1, 1.8)
+        ry = rx * rng.uniform(0.7, 1.15)
+        reach = int(math.ceil(max(rx, ry)))
+        origin = point_inside(rng, size, reach)
+        if origin is None:
+            continue
+        cx, cy = origin
+        local_h, local_s, local_v = rgb_to_hsv(*field.get(cx, cy))
+        fill = hsv_to_rgb(local_h + rng.uniform(-4, 6), local_s * rng.uniform(0.25, 0.45), min(1.0, local_v * rng.uniform(0.72, 0.88)))
+        pixels: list[tuple[int, int]] = []
+        blocked = False
+        for oy in range(-reach, reach + 1):
+            for ox in range(-reach, reach + 1):
+                dist = math.hypot(ox / rx, oy / ry)
+                if dist > 1:
+                    continue
+                px, py = cx + ox, cy + oy
+                if allow is not None and not allow(px, py):
+                    blocked = True
+                    break
+                pixels.append((px, py))
+            if blocked:
+                break
+        if blocked or not pixels:
+            continue
+        for px, py in pixels:
+            field.blend_inside(px, py, fill, 0.9)
+        made += 1
+
+    speck_count = max(4, int(round(18 / coarseness * density)))
+    placed = 0
+    tries = 0
+    while placed < speck_count and tries < speck_count * 12:
+        tries += 1
+        x = rng.randrange(size)
+        y = rng.randrange(size)
+        if allow is not None and not allow(x, y):
+            continue
+        factor = 0.7 if rng.random() < 0.45 else 1.18
+        field.set_inside(x, y, scale_rgb(field.get(x, y), factor))
+        placed += 1
+
+
+def paint_snow(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    size = field.size
+    base_h, base_s, base_v = rgb_to_hsv(*base)
+    drift_count = max(4, int(round(7 / coarseness)))
+    for _ in range(drift_count):
+        cx = rng.randrange(size)
+        cy = rng.randrange(size)
+        radius = rng.uniform(7.0, 14.0) * math.sqrt(coarseness)
+        color = hsv_to_rgb(
+            base_h + rng.uniform(-hue_span, hue_span) * 0.35,
+            base_s * rng.uniform(0.35, 0.7),
+            min(1.0, base_v * rng.uniform(1.02, 1.07)),
+        )
+        reach = int(math.ceil(radius))
+        for oy in range(-reach, reach + 1):
+            for ox in range(-reach, reach + 1):
+                dist = math.hypot(ox, oy) / radius
+                if dist > 1:
+                    continue
+                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.8 * 0.45)
+
+    hollow_count = max(2, int(round(5 / coarseness)))
+    for _ in range(hollow_count):
+        cx = rng.randrange(size)
+        cy = rng.randrange(size)
+        radius = rng.uniform(3.5, 7.0) * math.sqrt(coarseness)
+        color = hsv_to_rgb(
+            base_h + rng.uniform(0, hue_span),
+            min(1.0, base_s * rng.uniform(1.3, 1.8) + 0.03),
+            max(0.0, base_v * rng.uniform(0.86, 0.94)),
+        )
+        reach = int(math.ceil(radius))
+        for oy in range(-reach, reach + 1):
+            for ox in range(-reach, reach + 1):
+                dist = math.hypot(ox, oy) / radius
+                if dist > 1:
+                    continue
+                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.6 * 0.38)
+
+
+def paint_snow_marks(field: Field, rng: random.Random, coarseness: float, allow=None, density: float = 1.0) -> None:
+    size = field.size
+    sparkle_count = max(4, int(round(18 / coarseness * density)))
+    placed = 0
+    tries = 0
+    while placed < sparkle_count and tries < sparkle_count * 12:
+        tries += 1
+        x = rng.randrange(size)
+        y = rng.randrange(size)
+        if allow is not None and not allow(x, y):
+            continue
+        strength = rng.uniform(0.55, 0.9)
+        field.blend_inside(x, y, (255, 255, 255), strength)
+        if rng.random() < 0.35:
+            ox = x + rng.choice((-1, 1))
+            oy = y + rng.choice((-1, 0, 1))
+            if field.contains(ox, oy) and (allow is None or allow(ox, oy)):
+                field.blend_inside(ox, oy, (255, 255, 255), strength * 0.55)
+        placed += 1
+
+    pit_count = max(1, int(round(5 / coarseness * density)))
+    made = 0
+    tries = 0
+    while made < pit_count and tries < pit_count * 16:
+        tries += 1
+        radius = rng.uniform(1.3, 2.3)
+        reach = int(math.ceil(radius))
+        origin = point_inside(rng, size, reach)
+        if origin is None:
+            continue
+        cx, cy = origin
+        local_h, local_s, local_v = rgb_to_hsv(*field.get(cx, cy))
+        fill = hsv_to_rgb(
+            local_h + rng.uniform(6, 16),
+            min(1.0, local_s * rng.uniform(1.4, 2.0) + 0.05),
+            local_v * rng.uniform(0.76, 0.88),
+        )
+        pixels: list[tuple[int, int, float]] = []
+        blocked = False
+        for oy in range(-reach, reach + 1):
+            for ox in range(-reach, reach + 1):
+                dist = math.hypot(ox, oy) / radius
+                if dist > 1:
+                    continue
+                px, py = cx + ox, cy + oy
+                if allow is not None and not allow(px, py):
+                    blocked = True
+                    break
+                pixels.append((px, py, (1 - dist) * 0.72))
+            if blocked:
+                break
+        if blocked or not pixels:
+            continue
+        for px, py, alpha in pixels:
+            field.blend_inside(px, py, fill, alpha)
+        made += 1
+
+    crust_count = max(1, int(round(3 / math.sqrt(coarseness) * density)))
+    for _ in range(crust_count):
+        length = rng.randint(3, max(4, int(round(4 + coarseness))))
+        for _try in range(24):
+            origin = point_inside(rng, size, length)
+            if origin is None:
+                break
+            x, y = origin
+            angle = rng.random() * math.tau
+            points: list[tuple[int, int]] = []
+            for step in range(length):
+                if step:
+                    angle += rng.uniform(-0.35, 0.35)
+                px = int(round(x + math.cos(angle) * step))
+                py = int(round(y + math.sin(angle) * step))
+                if not field.contains(px, py):
+                    points = []
+                    break
+                points.append((px, py))
+            if not points or (allow is not None and any(not allow(px, py) for px, py in points)):
+                continue
+            for px, py in points:
+                field.set_inside(px, py, scale_rgb(field.get(px, py), 0.82))
+            break
+
+
+def paint_water(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    size = field.size
+    base_h, base_s, base_v = rgb_to_hsv(*base)
+    pool_count = max(3, int(round(5 / coarseness)))
+    for _ in range(pool_count):
+        cx = rng.randrange(size)
+        cy = rng.randrange(size)
+        radius = rng.uniform(8.0, 16.0) * math.sqrt(coarseness)
+        color = hsv_to_rgb(
+            base_h + rng.uniform(-hue_span, hue_span) * 0.4,
+            min(1.0, base_s * rng.uniform(1.05, 1.25)),
+            max(0.0, base_v * rng.uniform(0.72, 0.88)),
+        )
+        reach = int(math.ceil(radius))
+        for oy in range(-reach, reach + 1):
+            for ox in range(-reach, reach + 1):
+                dist = math.hypot(ox, oy) / radius
+                if dist > 1:
+                    continue
+                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.7 * 0.5)
+
+    shoal_count = max(2, int(round(4 / coarseness)))
+    for _ in range(shoal_count):
+        cx = rng.randrange(size)
+        cy = rng.randrange(size)
+        radius = rng.uniform(5.0, 10.0) * math.sqrt(coarseness)
+        color = hsv_to_rgb(
+            base_h + rng.uniform(0, hue_span),
+            base_s * rng.uniform(0.55, 0.8),
+            min(1.0, base_v * rng.uniform(1.08, 1.22)),
+        )
+        reach = int(math.ceil(radius))
+        for oy in range(-reach, reach + 1):
+            for ox in range(-reach, reach + 1):
+                dist = math.hypot(ox, oy) / radius
+                if dist > 1:
+                    continue
+                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.6 * 0.42)
+
+
+def paint_water_marks(field: Field, rng: random.Random, coarseness: float, allow=None, density: float = 1.0) -> None:
+    size = field.size
+    glint_count = max(3, int(round(10 / coarseness * density)))
+    placed = 0
+    tries = 0
+    while placed < glint_count and tries < glint_count * 12:
+        tries += 1
+        length = rng.randint(2, 3)
+        angle = rng.random() * math.tau
+        origin = point_inside(rng, size, length)
+        if origin is None:
+            continue
+        x, y = origin
+        points: list[tuple[int, int]] = []
+        for step in range(length):
+            px = int(round(x + math.cos(angle) * step))
+            py = int(round(y + math.sin(angle) * step))
+            if not field.contains(px, py):
+                points = []
+                break
+            points.append((px, py))
+        if not points or (allow is not None and any(not allow(px, py) for px, py in points)):
+            continue
+        local_h, local_s, local_v = rgb_to_hsv(*field.get(x, y))
+        color = hsv_to_rgb(local_h, local_s * 0.35, min(1.0, local_v * 1.35))
+        for step, (px, py) in enumerate(points):
+            field.blend_inside(px, py, color, 0.7 - step * 0.15)
+        placed += 1
+
+    fleck_count = max(2, int(round(8 / coarseness * density)))
+    placed = 0
+    tries = 0
+    while placed < fleck_count and tries < fleck_count * 12:
+        tries += 1
+        x = rng.randrange(size)
+        y = rng.randrange(size)
+        if allow is not None and not allow(x, y):
+            continue
+        field.set_inside(x, y, scale_rgb(field.get(x, y), 0.72))
+        placed += 1
+
+
 def paint_marks(field: Field, rng: random.Random, kind: str, coarseness: float, allow=None, density: float = 1.0) -> None:
     if kind == "dirt":
         paint_dirt_marks(field, rng, coarseness, allow, density)
+    elif kind == "desert":
+        paint_desert_marks(field, rng, coarseness, allow, density)
+    elif kind == "snow":
+        paint_snow_marks(field, rng, coarseness, allow, density)
+    elif kind == "water":
+        paint_water_marks(field, rng, coarseness, allow, density)
     else:
         paint_grass_marks(field, rng, coarseness, allow, density)
 
@@ -561,7 +926,10 @@ def generate_surface(
         coarseness,
         kind=kind,
     )
+    from generate import BLEND_SHARP
+
     tiles: list[Field] = []
+    liquid = 1.0 if kind in BLEND_SHARP else 0.0
     for index in range(variants):
         variant_seed = seed + 1000 * (index + 1)
         variant = paint_field(
@@ -578,18 +946,22 @@ def generate_surface(
         if not borders_match(master, tile, border):
             raise SystemExit("okraje dlaždic nesedí")
         paint_marks(tile, random.Random(variant_seed + 50), kind, coarseness)
+        tile.fill_mask(liquid)
         tiles.append(tile)
 
     images = [tile.image() for tile in tiles]
-    for index, image in enumerate(images):
-        image.save(out_dir / f"{name}_{index:02d}.png")
+    columns = 4
+    sheet = Image.new("RGBA", (columns * tile_size, ((variants + columns - 1) // columns) * tile_size))
+    for index, tile in enumerate(tiles):
+        sheet.paste(tile.rgba_image(), ((index % columns) * tile_size, (index // columns) * tile_size))
+    sheet.convert("RGB").save(out_dir / "atlas.png")
 
     if preview:
         save_preview(images, preview, seed)
 
     interior = mean_interior_step(tiles[0])
     seam = mean_seam_step(tiles[0], tiles[min(1, len(tiles) - 1)])
-    print(f"{variants} dlaždic {tile_size}x{tile_size} -> {out_dir}")
+    print(f"{variants} dlaždic {tile_size}x{tile_size} -> {out_dir / 'atlas.png'}")
     print(f"skok sousedních pixelů uvnitř {interior:.1f}, na spoji {seam:.1f}")
     return out_dir
 

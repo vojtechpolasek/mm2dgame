@@ -1,0 +1,86 @@
+{
+  "tile_size": 64,
+  "atlas_columns": 4,
+  "variants": 16,
+  "shore": {
+    "sand": "C4A460",
+    "sand_wet": "A68448",
+    "shallow": "7EBFDA",
+    "ice": "E7F6FA",
+    "shallow_from": 0.5,
+    "shallow_to": 1.0,
+    "shallow_strength": 0.5,
+    "sand_solid": 0.34,
+    "sand_solid_wobble": 0.05,
+    "sand_land_fade": 0.4,
+    "sand_land_fray": 0.24,
+    "sand_water": 0.58,
+    "sand_water_shift": 0.36,
+    "sand_strength": 1.0,
+    "ice_from": 0.02,
+    "ice_to": 0.3,
+    "ice_strength": 0.48
+  },
+  "surfaces": {
+    "grass": {
+      "base": "4F9A3C",
+      "walkable": true,
+      "shore": "sand",
+      "forest": {
+        "strom1": 0.07,
+        "strom2": 0.04,
+        "ker1": 1.2,
+        "strom_suchy": 0.05
+      },
+      "rocks": {
+        "balvan1": 0.03
+      }
+    },
+    "dirt": {
+      "base": "7A5A3A",
+      "walkable": true,
+      "shore": "sand",
+      "forest": {
+        "strom1": 1.15,
+        "strom2": 1.0,
+        "ker1": 0.03,
+        "strom_suchy": 0.55
+      }
+    },
+    "desert": {
+      "base": "E2C48A",
+      "walkable": true,
+      "shore": "sand",
+      "forest": {
+        "strom_suchy": 0.02
+      },
+      "rocks": {
+        "skala1": 0.002,
+        "skala2": 0.0015,
+        "skala10": 0.001,
+        "skala15": 0.0008,
+        "balvan1": 0.0006
+      }
+    },
+    "snow": {
+      "base": "E8EEF2",
+      "walkable": true,
+      "shore": "ice"
+    },
+    "water": {
+      "base": "2C6E8A",
+      "walkable": false,
+      "max_distance": 10,
+      "wave": {
+        "speed": 0.5,
+        "scale": 14,
+        "swell": 0.03,
+        "tint": 0.18,
+        "angle": 30,
+        "highlight": "4A8EAA",
+        "deep": "245E78",
+        "mask_start": 0.7
+      }
+    }
+  }
+}

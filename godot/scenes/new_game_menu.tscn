@@ -58,6 +58,11 @@ custom_minimum_size = Vector2(320, 52)
 layout_mode = 2
 text = "Velká (128×128)"
 
+[node name="Stress" type="Button" parent="Center/Panel"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+text = "Test výkonu (1024×1024)"
+
 [node name="Gap2" type="Control" parent="Center/Panel"]
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2

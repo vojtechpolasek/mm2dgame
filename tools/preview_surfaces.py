@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Složí pro každý povrch vlastní náhled 3x3 z náhodných dlaždic.
+"""Složí pro každý povrch vlastní náhled 3x3 z náhodných dlaždic atlasu.
 
 Výstup jsou kontrolní obrázky mimo grafiku Godotu.
 """
@@ -15,31 +15,30 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 TERRAIN = ROOT / "godot" / "graphics" / "terrain"
 PREVIEW = ROOT / "tools" / "preview"
+TILE = 64
 
 
-def collect_surfaces() -> dict[str, list[Path]]:
-    surfaces: dict[str, list[Path]] = {}
-    for path in sorted(TERRAIN.glob("*/*.png")):
-        if path.is_file() and path.parent.name != "transitions":
-            surfaces.setdefault(path.parent.name, []).append(path)
+def collect_surfaces() -> dict[str, list[Image.Image]]:
+    surfaces: dict[str, list[Image.Image]] = {}
+    for atlas in sorted(TERRAIN.glob("*/atlas.png")):
+        image = Image.open(atlas).convert("RGB")
+        columns = image.width // TILE
+        rows = image.height // TILE
+        tiles = []
+        for index in range(columns * rows):
+            column = index % columns
+            row = index // columns
+            tiles.append(image.crop((column * TILE, row * TILE, (column + 1) * TILE, (row + 1) * TILE)))
+        image.close()
+        surfaces[atlas.parent.name] = tiles
     return surfaces
 
 
-def compose(tiles: list[Path], size: int, rng: random.Random) -> tuple[Image.Image, list[Path]]:
-    chosen = [rng.choice(tiles) for _ in range(size * size)]
-    first = Image.open(chosen[0]).convert("RGB")
-    tile_size = first.width
-    if first.height != tile_size:
-        raise SystemExit(f"{chosen[0]} není čtverec")
-    sheet = Image.new("RGB", (tile_size * size, tile_size * size))
-    sheet.paste(first, (0, 0))
-    first.close()
-    for index, path in enumerate(chosen[1:], start=1):
-        image = Image.open(path).convert("RGB")
-        if image.size != (tile_size, tile_size):
-            raise SystemExit(f"{path.name} má jiný rozměr než {tile_size}")
-        sheet.paste(image, ((index % size) * tile_size, (index // size) * tile_size))
-        image.close()
+def compose(tiles: list[Image.Image], size: int, rng: random.Random) -> tuple[Image.Image, list[int]]:
+    chosen = [rng.randrange(len(tiles)) for _ in range(size * size)]
+    sheet = Image.new("RGB", (TILE * size, TILE * size))
+    for index, tile_index in enumerate(chosen):
+        sheet.paste(tiles[tile_index], ((index % size) * TILE, (index // size) * TILE))
     return sheet, chosen
 
 
@@ -53,7 +52,7 @@ def main() -> None:
 
     surfaces = collect_surfaces()
     if not surfaces:
-        raise SystemExit(f"v {TERRAIN} nejsou žádné dlaždice")
+        raise SystemExit(f"v {TERRAIN} nejsou žádné atlasy")
 
     seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1_000_000)
     PREVIEW.mkdir(parents=True, exist_ok=True)
@@ -64,9 +63,9 @@ def main() -> None:
         out = PREVIEW / f"{name}_3x3.png"
         sheet.save(out)
         print(name)
-        for index, path in enumerate(chosen):
+        for index, tile_index in enumerate(chosen):
             row, col = divmod(index, args.size)
-            print(f"  {row},{col}  {path.name}")
+            print(f"  {row},{col}  {tile_index:02d}")
         print(f"  {out}")
 
 

@@ -8,6 +8,7 @@ func _ready() -> void:
 	$Center/Panel/Small.pressed.connect(_start.bind(32))
 	$Center/Panel/Medium.pressed.connect(_start.bind(64))
 	$Center/Panel/Large.pressed.connect(_start.bind(128))
+	$Center/Panel/Stress.pressed.connect(_start.bind(1024))
 	$Center/Panel/Back.pressed.connect(_back)
 	$Center/Panel/Small.grab_focus()
 

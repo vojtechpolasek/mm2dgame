@@ -2,6 +2,9 @@ extends Node2D
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapGenerator := preload("res://scripts/map_generator.gd")
+const Forest := preload("res://scripts/forest.gd")
+const Rocks := preload("res://scripts/rocks.gd")
+const PropChunks := preload("res://scripts/prop_chunks.gd")
 
 @onready var ground: TileMapLayer = $Ground
 @onready var camera = $Camera
@@ -21,11 +24,30 @@ func _ready() -> void:
 	var size := maxi(GameSession.map_size, 2)
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var grown: Dictionary = MapGenerator.grow(size, catalog.names, rng)
+	var grown: Dictionary = MapGenerator.grow(size, catalog.names, rng, catalog.max_distance)
 	ground.tile_set = catalog.tile_set
+	catalog.apply(ground)
 	MapGenerator.paint(ground, catalog, size, grown["terrain"], grown["cost"], rng)
+	var props := Node2D.new()
+	props.name = "Props"
+	props.y_sort_enabled = true
+	add_child(props)
+	move_child(props, ground.get_index() + 1)
+	var rocks := Rocks.new()
+	rocks.name = "Rocks"
+	add_child(rocks)
+	var forest := Forest.new()
+	forest.name = "Trees"
+	add_child(forest)
 	var pixels := float(size * TerrainCatalog.TILE_SIZE)
 	camera.setup(Vector2(pixels, pixels))
+	var chunks = PropChunks.new()
+	chunks.name = "PropChunks"
+	chunks.setup(camera)
+	add_child(chunks)
+	rocks.plant(grown["terrain"], size, catalog.surfaces, rng, camera, props, chunks)
+	forest.plant(grown["terrain"], size, catalog.surfaces, rng, camera, props, chunks, rocks.blockers())
+	chunks.refresh()
 	status.visible = false
 	_map_ready = true
 

@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
-"""Generuje přechodové dlaždice pro všechny kombinace rohů známých povrchů.
+"""Dřívější generátor přechodových dlaždic. Hra ho už nepoužívá, přechody míchá shader.
 
-Pořadí rohů v názvu souboru je levý horní, pravý horní, levý dolní, pravý dolní.
-Čisté dlaždice, kde jsou všechny rohy stejné, se negenerují.
-
-Nový povrch se přidá do TERRAINS v generate.py a spustí se py tools/generate.py.
-
-Příklad:
-  py tools/generate.py
+Pořadí rohů je levý horní, pravý horní, levý dolní, pravý dolní.
 """
 
 from __future__ import annotations
@@ -19,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from generate import TERRAINS
+from generate import BLEND_SHARP, SHORE, TERRAINS, blend_power
 from gen_terrain_tiles import (
     GRAPHICS,
     Field,
@@ -28,13 +22,17 @@ from gen_terrain_tiles import (
     paint_field,
     paint_marks,
     parse_hex,
+    value_noise,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = GRAPHICS / "terrain" / "transitions"
 PREVIEW = ROOT / "tools" / "preview" / "transitions.png"
 CORNER_ORDER = ("tl", "tr", "bl", "br")
-POWER = 4
+SAND = parse_hex(SHORE["sand"])
+SAND_WET = parse_hex(SHORE["sand_wet"])
+SHALLOW = parse_hex(SHORE["shallow"])
+ICE = parse_hex(SHORE["ice"])
 
 
 def preset_args(kind: str) -> tuple[tuple[int, int, int], float, float, float]:
@@ -66,10 +64,30 @@ def corner_weights(x: int, y: int, size: int, corners: tuple[str, str, str, str]
     return weights
 
 
-def powered(weights: dict[str, float]) -> dict[str, float]:
-    raised = {name: weight**POWER for name, weight in weights.items() if weight > 0}
+def powered(weights: dict[str, float], power: float) -> dict[str, float]:
+    raised = {name: weight**power for name, weight in weights.items() if weight > 0}
     total = sum(raised.values()) or 1.0
     return {name: weight / total for name, weight in raised.items()}
+
+
+def mix_weights(weights: dict[str, float]) -> dict[str, float]:
+    present = {name: weight for name, weight in weights.items() if weight > 0}
+    if len(present) <= 1:
+        return present
+    sharp = {name: weight for name, weight in present.items() if name in BLEND_SHARP}
+    land = {name: weight for name, weight in present.items() if name not in BLEND_SHARP}
+    if not sharp or not land:
+        return powered(present, blend_power(tuple(present)))
+    land_total = sum(land.values())
+    soft = {name: weight / land_total for name, weight in land.items()}
+    if len(soft) > 1:
+        soft = powered(soft, blend_power(tuple(land)))
+    split = powered({**sharp, "__land__": land_total}, max(BLEND_SHARP[name] for name in sharp))
+    land_share = split.pop("__land__")
+    out = dict(split)
+    for name, weight in soft.items():
+        out[name] = land_share * weight
+    return out
 
 
 def mix_pixel(fields: dict[str, Field], x: int, y: int, weights: dict[str, float]) -> tuple[int, int, int]:
@@ -97,6 +115,71 @@ def uniform_edge(x: int, y: int, size: int, reach: int, corners: tuple[str, str,
     return None
 
 
+def hump(share: float, start: float, end: float) -> float:
+    if share <= start or share >= end:
+        return 0.0
+    t = (share - start) / (end - start)
+    return 4 * t * (1 - t)
+
+
+def smoothstep(edge0: float, edge1: float, value: float) -> float:
+    if edge0 == edge1:
+        return 1.0 if value >= edge1 else 0.0
+    t = min(1.0, max(0.0, (value - edge0) / (edge1 - edge0)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def paint_shore(
+    color: tuple[int, int, int],
+    weights: dict[str, float],
+    share: float,
+    noise: float,
+    detail: float | None = None,
+) -> tuple[int, int, int]:
+    if share <= 0.0 or share >= 1.0:
+        return color
+    land_name = ""
+    land_weight = 0.0
+    for name, weight in weights.items():
+        if name in BLEND_SHARP or weight <= land_weight:
+            continue
+        land_name = name
+        land_weight = weight
+    if not land_name:
+        return color
+    style = TERRAINS[land_name].get("shore")
+    if style == "sand":
+        color = lerp_rgb(
+            color,
+            SHALLOW,
+            hump(share, SHORE["shallow_from"], SHORE["shallow_to"]) * SHORE["shallow_strength"],
+        )
+        if detail is None:
+            detail = noise
+        solid = SHORE["sand_solid"] + (detail - 0.5) * SHORE["sand_solid_wobble"]
+        fade = SHORE["sand_land_fade"] + (detail - 0.5) * SHORE["sand_land_fray"]
+        land_edge = solid - max(fade, 0.04)
+        fade_in = smoothstep(land_edge, solid, share)
+        span_in = max(solid - land_edge, 0.001)
+        linear = min(1.0, max(0.0, (share - land_edge) / span_in))
+        fade_in = fade_in * 0.35 + linear * 0.65
+        water_edge = SHORE["sand_water"] + (noise - 0.5) * SHORE["sand_water_shift"]
+        water_edge = max(water_edge, solid + 0.1)
+        fade_out = 1.0 - smoothstep(water_edge - 0.08, water_edge + 0.06, share)
+        span = max(water_edge - land_edge, 0.001)
+        wetness = min(1.0, max(0.0, (share - land_edge) / span))
+        wetness = wetness * wetness * 0.55
+        sand_color = lerp_rgb(SAND, SAND_WET, wetness)
+        color = lerp_rgb(color, sand_color, fade_in * fade_out * SHORE["sand_strength"])
+    elif style == "ice":
+        shift = (noise - 0.5) * 0.06
+        start = SHORE["ice_from"] + shift
+        end = SHORE["ice_to"] + shift * 1.4
+        gate = 0.3 + 0.7 * noise
+        color = lerp_rgb(color, ICE, hump(share, start, end) * SHORE["ice_strength"] * gate)
+    return color
+
+
 def compose(
     corners: tuple[str, str, str, str],
     masters: dict[str, Field],
@@ -106,10 +189,13 @@ def compose(
     size = next(iter(masters.values())).size
     blend = max(4, border)
     reach = border + blend
+    coarse = value_noise(size, 4, random.Random(11))
+    fine = value_noise(size, 9, random.Random(29))
+    land_noise = value_noise(size, 5, random.Random(47))
     out = Field(size)
     for y in range(size):
         for x in range(size):
-            weights = powered(corner_weights(x, y, size, corners))
+            weights = mix_weights(corner_weights(x, y, size, corners))
             inner = mix_pixel(variants, x, y, weights)
             owner = uniform_edge(x, y, size, reach, corners)
             edge = masters[owner].get(x, y) if owner is not None else mix_pixel(masters, x, y, weights)
@@ -120,12 +206,17 @@ def compose(
                 color = inner
             else:
                 color = lerp_rgb(inner, edge, weight)
-            out.set(x, y, color)
+            share = sum(value for name, value in weights.items() if name in BLEND_SHARP)
+            edge_share = (1.0 if owner in BLEND_SHARP else 0.0) if owner is not None else share
+            mask = share + (edge_share - share) * weight
+            noise = coarse[y][x] * 0.65 + fine[y][x] * 0.35
+            out.set(x, y, paint_shore(color, weights, mask, noise, land_noise[y][x]))
+            out.set_mask(x, y, mask)
     return out
 
 
 def allow_pixel(kind: str, x: int, y: int, size: int, border: int, corners: tuple[str, str, str, str]):
-    weights = powered(corner_weights(x, y, size, corners))
+    weights = mix_weights(corner_weights(x, y, size, corners))
     return weights.get(kind, 0.0) >= 0.62
 
 
@@ -159,6 +250,7 @@ def save_preview(tiles: dict[tuple[str, str, str, str], list[Image.Image]], path
     base = next(iter(TERRAINS))
     others = [name for name in TERRAINS if name != base]
     feature = others[0]
+    extra = others[1] if len(others) > 1 else None
     rows = [
         [base, base, base, base, base, base, base],
         [base, feature, feature, base, base, base, base],
@@ -166,6 +258,13 @@ def save_preview(tiles: dict[tuple[str, str, str, str], list[Image.Image]], path
         [base, base, feature, feature, base, base, base],
         [base, base, base, base, base, base, base],
     ]
+    if extra is not None:
+        rows[1][4] = rows[1][5] = extra
+        rows[2][5] = extra
+        rows[3][4] = rows[3][5] = extra
+    if len(others) > 2:
+        lake = others[2]
+        rows[4][1] = rows[4][2] = rows[4][3] = lake
     terrain = {
         (x, y): rows[y][x]
         for y in range(len(rows))
@@ -242,9 +341,8 @@ def generate_transitions(
                     allow,
                     density,
                 )
-            image = field.image()
-            image.save(OUT_DIR / f"{pattern_name(corners)}_{index:02d}.png")
-            images.append(image)
+            field.rgba_image().save(OUT_DIR / f"{pattern_name(corners)}_{index:02d}.png")
+            images.append(field.image())
         saved[corners] = images
 
     # Čistá hlína vpravo musí navazovat na přechod, který má vpravo hlínu.

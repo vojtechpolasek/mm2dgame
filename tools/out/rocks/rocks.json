@@ -1,0 +1,102 @@
+{
+  "height_unit": "m",
+  "spacing_unit": "m",
+  "width_unit": "px",
+  "atlas_columns": 3,
+  "rocks": {
+    "balvan1": {
+      "variants": 9,
+      "canvas": 242,
+      "center": 121,
+      "color": "8A8172",
+      "rough": 0.28,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 68.0
+        },
+        "2": {
+          "height": 1.1,
+          "width": 40.0
+        }
+      },
+      "spacing": 1.4
+    },
+    "skala1": {
+      "variants": 9,
+      "canvas": 798,
+      "center": 399,
+      "color": "6E675C",
+      "rough": 0.3,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 220.0
+        },
+        "2": {
+          "height": 4.5,
+          "width": 148.0
+        },
+        "3": {
+          "height": 9.0,
+          "width": 84.0
+        }
+      },
+      "spacing": 4.5
+    },
+    "skala2": {
+      "variants": 9,
+      "canvas": 894,
+      "center": 447,
+      "color": "5E6560",
+      "rough": 0.26,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 260.0
+        },
+        "2": {
+          "height": 14.0,
+          "width": 108.0
+        }
+      },
+      "spacing": 5.0
+    },
+    "skala10": {
+      "variants": 9,
+      "canvas": 686,
+      "center": 343,
+      "color": "746C62",
+      "rough": 0.28,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 192.0
+        },
+        "2": {
+          "height": 10.0,
+          "width": 96.0
+        }
+      },
+      "spacing": 4.0
+    },
+    "skala15": {
+      "variants": 9,
+      "canvas": 1086,
+      "center": 543,
+      "color": "5C635E",
+      "rough": 0.26,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "width": 320.0
+        },
+        "2": {
+          "height": 15.0,
+          "width": 128.0
+        }
+      },
+      "spacing": 6.0
+    }
+  }
+}
