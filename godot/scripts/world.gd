@@ -14,6 +14,7 @@ const Monsters := preload("res://scripts/monsters.gd")
 const Crowd := preload("res://scripts/crowd.gd")
 const Party := preload("res://scripts/party.gd")
 const Walker := preload("res://scripts/walker.gd")
+const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
 const PondLabels := preload("res://scripts/pond_labels.gd")
 
 ## Další hráči se objeví v kruhu kolem prvního, tak daleko v metrech.
@@ -36,8 +37,8 @@ const TICK_FROM := 10
 const CHASE_MARGIN := 3.0
 const CHASE_HOLD := 6.0
 
-## Jeden obdélník přes celou mapu. Povrch dlaždic kreslí shader z corner_map katalogu.
-@onready var ground: Polygon2D = $Ground
+## Terén po chuncích předpečených z corner_map katalogu, voda se vlní nad nimi.
+@onready var ground: TerrainChunks = $Ground
 @onready var camera: MapCamera = $Camera
 @onready var status: Label = $Hint/Hud/Status
 ## Snímky za sekundu vpravo dole. Engine je přepočítává jednou za sekundu.
@@ -114,18 +115,15 @@ func _ready() -> void:
 	_task = -1
 
 	var pixels := float(size * TerrainCatalog.TILE_SIZE)
-	ground.polygon = PackedVector2Array([
-		Vector2.ZERO, Vector2(pixels, 0.0), Vector2(pixels, pixels), Vector2(0.0, pixels),
-	])
 	catalog.set_map(size, _painted["corners"], _painted["variants"])
-	catalog.apply(ground)
-	_painted.clear()
 	var props := Node2D.new()
 	props.name = "Props"
 	props.y_sort_enabled = true
 	add_child(props)
 	move_child(props, ground.get_index() + 1)
 	camera.setup(Vector2(pixels, pixels))
+	ground.setup(catalog, size, _painted["corners"], camera)
+	_painted.clear()
 	var chunks := PropChunks.new()
 	chunks.name = "PropChunks"
 	chunks.setup(camera)

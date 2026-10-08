@@ -1,6 +1,5 @@
-shader_type canvas_item;
-render_mode unshaded;
-
+// Společné uniformy a funkce terénu. Předpéká je terrain_bake (souš a břehy do textur chunků)
+// a terrain_water (animovaná voda nad předpečenou texturou).
 uniform sampler2DArray terrains : source_color, filter_linear_mipmap, repeat_disable;
 uniform sampler2D corner_map : filter_nearest, repeat_disable;
 uniform sampler2D variant_map : filter_nearest, repeat_disable;
@@ -40,7 +39,6 @@ uniform vec2 wave_dir_b = vec2(-0.995, -0.103);
 uniform vec2 wave_dir_c = vec2(-0.218, -0.976);
 uniform float mask_start = 0.7;
 
-varying vec2 world_pos;
 
 // Hash bez sinu (Dave Hoskins). sin velkého čísla ztrácí přesnost na velkých mapách.
 float hash(vec2 p) {
@@ -72,8 +70,8 @@ float style_of(float id) {
 	return shore_style[clamp(int(id), 0, 15)];
 }
 
-// lod počítá fragment() jednou z world_pos. Derivace tady uvnitř větví by na hraně dlaždice
-// skočily (UV tam přeskakuje z 1 na 0) a rozmazaly by proužek podél hrany.
+// lod dostává zvenku. Předpečení kreslí 1:1, takže je 0; zmenšení při oddálení obstarají mipmapy
+// textury chunku.
 vec3 sample_layer(float layer, float variant, vec2 uv, float lod) {
 	float column = mod(variant, atlas_columns);
 	float row = floor(variant / atlas_columns);
@@ -228,7 +226,7 @@ void evaluate(vec2 uv, float variant, float lod, vec4 packed_ids, out vec3 color
 	}
 }
 
-vec3 apply_shore(vec3 color, float share, float shore_kind) {
+vec3 apply_shore(vec3 color, float share, float shore_kind, vec2 world_pos) {
 	if (share <= 0.0 || share >= 1.0 || shore_kind <= 0.0) {
 		return color;
 	}
@@ -258,64 +256,4 @@ vec3 apply_shore(vec3 color, float share, float shore_kind) {
 	float end_share = ice_to + shift * 1.4;
 	float gate = 0.3 + 0.7 * noise;
 	return mix(color, ice_color, hump(share, start, end_share) * ice_strength * gate);
-}
-
-void vertex() {
-	world_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
-}
-
-vec3 water(vec3 surface, float share, vec2 local_uv, float variant, float lod, vec4 packed_ids) {
-	float amount = smoothstep(mask_start, 1.0, share);
-	float wavelength = max(wave_scale, 1.0);
-	float phase = dot(world_pos, wave_dir_a) * 6.2831853 / wavelength - TIME * wave_speed;
-	float phase_b = dot(world_pos, wave_dir_b) * 6.2831853 / (wavelength * 0.72) - TIME * wave_speed * 1.17;
-	float phase_c = dot(world_pos, wave_dir_c) * 6.2831853 / (wavelength * 1.35) - TIME * wave_speed * 0.83;
-	float height = (sin(phase) + sin(phase_b) * 0.65 + sin(phase_c) * 0.4) / 2.05;
-	float shift = cos(phase) * wave_swell * amount;
-	if (amount > 0.001) {
-		vec3 shifted;
-		float shifted_share;
-		float shifted_kind;
-		evaluate(clamp(local_uv + wave_dir_a * shift, vec2(0.001), vec2(0.999)), variant, lod, packed_ids, shifted, shifted_share, shifted_kind);
-		shifted = apply_shore(shifted, shifted_share, shifted_kind);
-		surface = mix(surface, shifted, smoothstep(mask_start, 1.0, shifted_share));
-	}
-	vec3 band = mix(deep_color, highlight_color, height * 0.5 + 0.5);
-	vec3 color = mix(surface, band, wave_tint * amount);
-	float crest = smoothstep(0.35, 0.9, 1.0 - (height * 0.5 + 0.5));
-	float center = mix(0.74, 0.66, crest);
-	float half_width = mix(0.035, 0.09, crest);
-	float shore = smoothstep(center - half_width, center - half_width * 0.25, share);
-	shore *= 1.0 - smoothstep(center + half_width * 0.15, center + half_width, share);
-	vec2 foam_pos = floor(world_pos);
-	float patches = value_noise(foam_pos * 0.11);
-	float grains = value_noise(foam_pos * 0.35);
-	float lace = smoothstep(0.22, 0.78, patches * 0.6 + grains * 0.4);
-	float foam = shore * mix(0.35, 1.0, lace) * mix(0.12, 0.85, crest);
-	vec3 foam_color = mix(highlight_color, vec3(0.92, 0.97, 0.98), 0.62);
-	return mix(color, foam_color, clamp(foam, 0.0, 0.28));
-}
-
-void fragment() {
-	// Jeden texel atlasu je jeden pixel světa, takže stopa texelu na obrazovce je derivace world_pos.
-	vec2 step_x = dFdx(world_pos);
-	vec2 step_y = dFdy(world_pos);
-	float lod = clamp(0.5 * log2(max(max(dot(step_x, step_x), dot(step_y, step_y)), 1e-8)), 0.0, log2(tile_size));
-	vec2 tile = floor(world_pos / tile_size);
-	vec2 local_uv = (world_pos - tile * tile_size) / tile_size;
-	vec2 data_uv = (tile + 0.5) / map_size;
-	vec4 packed_ids = texture(corner_map, data_uv);
-	float variant = round(texture(variant_map, data_uv).r * 255.0);
-
-	vec3 surface;
-	float share;
-	float shore_kind;
-	evaluate(local_uv, variant, lod, packed_ids, surface, share, shore_kind);
-	surface = apply_shore(surface, share, shore_kind);
-	// Vlny začínají od mask_start, pěna nejníž od 0.57. Souš a pás písku je nepotřebují.
-	if (share < min(mask_start, 0.57)) {
-		COLOR = vec4(surface, 1.0);
-	} else {
-		COLOR = vec4(water(surface, share, local_uv, variant, lod, packed_ids), 1.0);
-	}
 }

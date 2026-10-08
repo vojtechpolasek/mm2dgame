@@ -3,7 +3,10 @@ extends RefCounted
 const ROOT := "res://graphics/terrain"
 const TILE_SIZE := 64
 const ATLAS_COLUMNS := 4
-const _GROUND_SHADER := "res://shaders/terrain_ground.gdshader"
+## Souš a břehy se jednou předpečou do textur chunků, voda se vlní nad nimi. Oba shadery
+## sdílejí uniformy z terrain_common.gdshaderinc, katalog je nastavuje do obou materiálů.
+const _BAKE_SHADER := "res://shaders/terrain_bake.gdshader"
+const _WATER_SHADER := "res://shaders/terrain_water.gdshader"
 const _SHORE_COLORS := {
 	"sand": "sand_color",
 	"sand_wet": "sand_wet_color",
@@ -22,7 +25,10 @@ var surfaces := {}
 var shore := {}
 var max_distance := {}
 var max_share := {}
-var material: ShaderMaterial
+var bake_material: ShaderMaterial
+var water_material: ShaderMaterial
+## Vrstva vody v atlasu terénů, -1 bez vody.
+var water_index := -1
 var variant_count := 16
 
 var _index := {}
@@ -74,13 +80,14 @@ func index_of(terrain_name: String) -> int:
 func set_map(size: int, corners: PackedByteArray, variants: PackedByteArray) -> void:
 	var corner_image := Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, corners)
 	var variant_image := Image.create_from_data(size, size, false, Image.FORMAT_R8, variants)
-	material.set_shader_parameter("map_size", float(size))
-	material.set_shader_parameter("corner_map", ImageTexture.create_from_image(corner_image))
-	material.set_shader_parameter("variant_map", ImageTexture.create_from_image(variant_image))
+	_set_param("map_size", float(size))
+	_set_param("corner_map", ImageTexture.create_from_image(corner_image))
+	_set_param("variant_map", ImageTexture.create_from_image(variant_image))
 
 
-func apply(layer: CanvasItem) -> void:
-	layer.material = material
+func _set_param(param: StringName, value: Variant) -> void:
+	bake_material.set_shader_parameter(param, value)
+	water_material.set_shader_parameter(param, value)
 
 
 func _load_surface_info() -> void:
@@ -111,11 +118,13 @@ func _load_surface_info() -> void:
 
 
 func _build_material(terrains: Texture2DArray) -> void:
-	material = ShaderMaterial.new()
-	material.shader = load(_GROUND_SHADER)
-	material.set_shader_parameter("terrains", terrains)
-	material.set_shader_parameter("tile_size", float(TILE_SIZE))
-	material.set_shader_parameter("atlas_columns", float(ATLAS_COLUMNS))
+	bake_material = ShaderMaterial.new()
+	bake_material.shader = load(_BAKE_SHADER)
+	water_material = ShaderMaterial.new()
+	water_material.shader = load(_WATER_SHADER)
+	_set_param("terrains", terrains)
+	_set_param("tile_size", float(TILE_SIZE))
+	_set_param("atlas_columns", float(ATLAS_COLUMNS))
 	var styles := PackedFloat32Array()
 	styles.resize(16)
 	styles.fill(0.0)
@@ -130,8 +139,9 @@ func _build_material(terrains: Texture2DArray) -> void:
 			styles[index] = 2.0
 		if info.has("wave"):
 			liquid = index
-	material.set_shader_parameter("shore_style", styles)
-	material.set_shader_parameter("water_index", liquid)
+	_set_param("shore_style", styles)
+	_set_param("water_index", liquid)
+	water_index = liquid
 	_apply_shore(shore)
 	if liquid >= 0:
 		_apply_wave(surfaces[names[liquid]].get("wave", {}))
@@ -140,22 +150,22 @@ func _build_material(terrains: Texture2DArray) -> void:
 func _apply_shore(shore: Dictionary) -> void:
 	for key: String in _SHORE_COLORS:
 		if shore.has(key):
-			material.set_shader_parameter(_SHORE_COLORS[key], Color.html(str(shore[key])))
+			_set_param(_SHORE_COLORS[key], Color.html(str(shore[key])))
 	for key: String in _SHORE_FLOATS:
 		if shore.has(key):
-			material.set_shader_parameter(key, float(shore[key]))
+			_set_param(key, float(shore[key]))
 
 
 func _apply_wave(wave: Dictionary) -> void:
-	material.set_shader_parameter("deep_color", Color.html(str(wave.get("deep", "245E78"))))
-	material.set_shader_parameter("highlight_color", Color.html(str(wave.get("highlight", "4A8EAA"))))
-	material.set_shader_parameter("wave_speed", float(wave.get("speed", 0.5)))
-	material.set_shader_parameter("wave_scale", float(wave.get("scale", 14.0)))
-	material.set_shader_parameter("wave_swell", float(wave.get("swell", 0.03)))
-	material.set_shader_parameter("wave_tint", float(wave.get("tint", 0.18)))
+	_set_param("deep_color", Color.html(str(wave.get("deep", "245E78"))))
+	_set_param("highlight_color", Color.html(str(wave.get("highlight", "4A8EAA"))))
+	_set_param("wave_speed", float(wave.get("speed", 0.5)))
+	_set_param("wave_scale", float(wave.get("scale", 14.0)))
+	_set_param("wave_swell", float(wave.get("swell", 0.03)))
+	_set_param("wave_tint", float(wave.get("tint", 0.18)))
 	# Tři vlny jdou pod různými úhly. Směr je kolmice k hřebeni.
 	var angle := deg_to_rad(float(wave.get("angle", 30.0)))
-	material.set_shader_parameter("wave_dir_a", Vector2(-sin(angle), cos(angle)))
-	material.set_shader_parameter("wave_dir_b", Vector2(-sin(angle + 1.15), cos(angle + 1.15)))
-	material.set_shader_parameter("wave_dir_c", Vector2(-sin(angle + 2.4), cos(angle + 2.4)))
-	material.set_shader_parameter("mask_start", float(wave.get("mask_start", 0.7)))
+	_set_param("wave_dir_a", Vector2(-sin(angle), cos(angle)))
+	_set_param("wave_dir_b", Vector2(-sin(angle + 1.15), cos(angle + 1.15)))
+	_set_param("wave_dir_c", Vector2(-sin(angle + 2.4), cos(angle + 2.4)))
+	_set_param("mask_start", float(wave.get("mask_start", 0.7)))
