@@ -2,9 +2,9 @@ shader_type canvas_item;
 render_mode unshaded;
 
 uniform float height_m = 0.0;
-uniform vec2 camera_position = vec2(0.0);
+global uniform vec2 camera_position;
 uniform float parallax = 0.016;
-uniform float camera_zoom = 1.0;
+global uniform float camera_zoom;
 
 void vertex() {
 	if (height_m > 0.0) {

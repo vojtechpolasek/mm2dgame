@@ -1,0 +1,132 @@
+{
+  "px_per_meter": 64,
+  "facing": "N",
+  "filter": "linear",
+  "channels": [
+    "shade",
+    "accent",
+    "eye"
+  ],
+  "shade": [
+    0.35,
+    1.15
+  ],
+  "accent_shade": [
+    0.6,
+    1.1
+  ],
+  "shadow_alpha": 0.35,
+  "species": {
+    "pavouk": {
+      "cycle_meters": 0.5,
+      "frames": 8,
+      "atlas_columns": 8,
+      "wander_meters": 0.8,
+      "chase_meters": 4.0,
+      "body_meters": 0.45,
+      "small": true,
+      "jump_meters": 0.0,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "pavouk/layer_1.png",
+          "cell": 104,
+          "center": 52
+        },
+        "2": {
+          "height": 0.5,
+          "file": "pavouk/layer_2.png",
+          "cell": 86,
+          "center": 43
+        }
+      },
+      "colors": {
+        "eye": "F04A2C"
+      }
+    },
+    "vlk": {
+      "cycle_meters": 1.25,
+      "frames": 8,
+      "atlas_columns": 8,
+      "wander_meters": 1.0,
+      "chase_meters": 4.5,
+      "body_meters": 0.45,
+      "small": true,
+      "jump_meters": 0.0,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "vlk/layer_1.png",
+          "cell": 92,
+          "center": 46
+        },
+        "2": {
+          "height": 0.75,
+          "file": "vlk/layer_2.png",
+          "cell": 148,
+          "center": 74
+        }
+      },
+      "colors": {
+        "eye": "FFD23A"
+      }
+    },
+    "ptakojester": {
+      "cycle_meters": 2.5,
+      "frames": 24,
+      "atlas_columns": 8,
+      "wander_meters": 1.5,
+      "chase_meters": 5.0,
+      "body_meters": 0.8,
+      "small": false,
+      "jump_meters": 0.0,
+      "flying": true,
+      "glide_frame": 6,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "ptakojester/layer_1.png",
+          "cell": 208,
+          "center": 104,
+          "shadow": true
+        },
+        "2": {
+          "height": 4.0,
+          "file": "ptakojester/layer_2.png",
+          "cell": 204,
+          "center": 102
+        }
+      },
+      "colors": {
+        "eye": "7DF2FF"
+      }
+    },
+    "tyranosaurus": {
+      "cycle_meters": 2.1875,
+      "frames": 16,
+      "atlas_columns": 8,
+      "wander_meters": 0.8,
+      "chase_meters": 5.5,
+      "body_meters": 0.55,
+      "small": false,
+      "jump_meters": 2.5,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "tyranosaurus/layer_1.png",
+          "cell": 124,
+          "center": 62
+        },
+        "2": {
+          "height": 1.2,
+          "file": "tyranosaurus/layer_2.png",
+          "cell": 222,
+          "center": 111
+        }
+      },
+      "colors": {
+        "eye": "FFC21A"
+      }
+    }
+  }
+}

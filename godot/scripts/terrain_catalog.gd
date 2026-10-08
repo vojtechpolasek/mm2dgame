@@ -17,24 +17,18 @@ const _SHORE_FLOATS := [
 	"ice_from", "ice_to", "ice_strength",
 ]
 
-var tile_set := TileSet.new()
 var names := PackedStringArray()
 var surfaces := {}
 var shore := {}
 var max_distance := {}
+var max_share := {}
 var material: ShaderMaterial
-var source_id := -1
 var variant_count := 16
 
 var _index := {}
-var _corners: Image
-var _variants: Image
-var _corner_tex: ImageTexture
-var _variant_tex: ImageTexture
 
 
 func load_assets() -> void:
-	tile_set.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
 	_load_surface_info()
 	var root := DirAccess.open(ROOT)
 	if root == null:
@@ -69,42 +63,20 @@ func load_assets() -> void:
 		push_error("Nelze složit atlas terénů.")
 		names = PackedStringArray()
 		return
-	_add_placeholder()
 	_build_material(terrains)
-
-
-func is_walkable(terrain_name: String) -> bool:
-	var info: Dictionary = surfaces.get(terrain_name, {})
-	return bool(info.get("walkable", true))
 
 
 func index_of(terrain_name: String) -> int:
 	return int(_index.get(terrain_name, -1))
 
 
-func begin_map(size: int) -> void:
-	_corners = Image.create(size, size, false, Image.FORMAT_RGBA8)
-	_variants = Image.create(size, size, false, Image.FORMAT_R8)
-	_corners.fill(Color(0, 0, 0, 1))
-	_variants.fill(Color(0, 0, 0, 1))
-	if material != null:
-		material.set_shader_parameter("map_size", float(size))
-
-
-func write_cell(x: int, y: int, top_left: int, top_right: int, bottom_left: int, bottom_right: int, variant: int) -> void:
-	_corners.set_pixel(x, y, Color(top_left / 255.0, top_right / 255.0, bottom_left / 255.0, bottom_right / 255.0))
-	_variants.set_pixel(x, y, Color(variant / 255.0, 0, 0, 1))
-
-
-func finish_map() -> void:
-	if _corner_tex == null or _corner_tex.get_width() != _corners.get_width():
-		_corner_tex = ImageTexture.create_from_image(_corners)
-		_variant_tex = ImageTexture.create_from_image(_variants)
-	else:
-		_corner_tex.update(_corners)
-		_variant_tex.update(_variants)
-	material.set_shader_parameter("corner_map", _corner_tex)
-	material.set_shader_parameter("variant_map", _variant_tex)
+## Data z MapGenerator.corner_data: čtyři bajty rohů a jeden bajt varianty na dlaždici.
+func set_map(size: int, corners: PackedByteArray, variants: PackedByteArray) -> void:
+	var corner_image := Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, corners)
+	var variant_image := Image.create_from_data(size, size, false, Image.FORMAT_R8, variants)
+	material.set_shader_parameter("map_size", float(size))
+	material.set_shader_parameter("corner_map", ImageTexture.create_from_image(corner_image))
+	material.set_shader_parameter("variant_map", ImageTexture.create_from_image(variant_image))
 
 
 func apply(layer: CanvasItem) -> void:
@@ -115,36 +87,27 @@ func _load_surface_info() -> void:
 	surfaces.clear()
 	shore.clear()
 	max_distance.clear()
+	max_share.clear()
 	var path := "%s/surfaces.json" % ROOT
 	if not FileAccess.file_exists(path):
 		push_warning("Chybí %s." % path)
 		return
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("Nelze přečíst %s." % path)
 		return
 	variant_count = int(parsed.get("variants", 16))
-	var listed_shore = parsed.get("shore", {})
+	var listed_shore: Variant = parsed.get("shore", {})
 	if typeof(listed_shore) == TYPE_DICTIONARY:
 		shore = listed_shore
 	var listed: Dictionary = parsed.get("surfaces", {})
-	for terrain_name in listed:
+	for terrain_name: String in listed:
 		var info: Dictionary = listed[terrain_name]
 		surfaces[terrain_name] = info
 		if info.has("max_distance"):
 			max_distance[terrain_name] = float(info["max_distance"])
-
-
-func _add_placeholder() -> void:
-	var image := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGB8)
-	image.fill(Color(0.2, 0.45, 0.55))
-	var source := TileSetAtlasSource.new()
-	source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
-	source.use_texture_padding = false
-	source.texture = ImageTexture.create_from_image(image)
-	source_id = tile_set.add_source(source)
-	if not source.has_tile(Vector2i.ZERO):
-		source.create_tile(Vector2i.ZERO)
+		if info.has("max_share"):
+			max_share[terrain_name] = float(info["max_share"])
 
 
 func _build_material(terrains: Texture2DArray) -> void:
@@ -175,10 +138,10 @@ func _build_material(terrains: Texture2DArray) -> void:
 
 
 func _apply_shore(shore: Dictionary) -> void:
-	for key in _SHORE_COLORS:
+	for key: String in _SHORE_COLORS:
 		if shore.has(key):
 			material.set_shader_parameter(_SHORE_COLORS[key], Color.html(str(shore[key])))
-	for key in _SHORE_FLOATS:
+	for key: String in _SHORE_FLOATS:
 		if shore.has(key):
 			material.set_shader_parameter(key, float(shore[key]))
 
@@ -190,5 +153,9 @@ func _apply_wave(wave: Dictionary) -> void:
 	material.set_shader_parameter("wave_scale", float(wave.get("scale", 14.0)))
 	material.set_shader_parameter("wave_swell", float(wave.get("swell", 0.03)))
 	material.set_shader_parameter("wave_tint", float(wave.get("tint", 0.18)))
-	material.set_shader_parameter("wave_angle", float(wave.get("angle", 30.0)))
+	# Tři vlny jdou pod různými úhly. Směr je kolmice k hřebeni.
+	var angle := deg_to_rad(float(wave.get("angle", 30.0)))
+	material.set_shader_parameter("wave_dir_a", Vector2(-sin(angle), cos(angle)))
+	material.set_shader_parameter("wave_dir_b", Vector2(-sin(angle + 1.15), cos(angle + 1.15)))
+	material.set_shader_parameter("wave_dir_c", Vector2(-sin(angle + 2.4), cos(angle + 2.4)))
 	material.set_shader_parameter("mask_start", float(wave.get("mask_start", 0.7)))

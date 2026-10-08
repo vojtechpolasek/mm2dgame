@@ -27,13 +27,14 @@
       "walkable": true,
       "shore": "sand",
       "forest": {
-        "strom1": 0.07,
-        "strom2": 0.04,
-        "ker1": 1.2,
-        "strom_suchy": 0.05
+        "strom1": 0.091,
+        "strom2": 0.052,
+        "strom3": 0.04,
+        "ker1": 0.11,
+        "strom_suchy": 0.065
       },
       "rocks": {
-        "balvan1": 0.03
+        "balvan1": 0.01
       }
     },
     "dirt": {
@@ -43,7 +44,8 @@
       "forest": {
         "strom1": 1.15,
         "strom2": 1.0,
-        "ker1": 0.03,
+        "strom3": 0.02,
+        "ker1": 0.015,
         "strom_suchy": 0.55
       }
     },
@@ -59,18 +61,29 @@
         "skala2": 0.0015,
         "skala10": 0.001,
         "skala15": 0.0008,
-        "balvan1": 0.0006
+        "balvan1": 0.0003
       }
     },
     "snow": {
       "base": "E8EEF2",
       "walkable": true,
-      "shore": "ice"
+      "shore": "ice",
+      "forest": {
+        "strom_snih": 0.546,
+        "strom2_snih": 0.39,
+        "ker_snih": 0.1
+      },
+      "rocks": {
+        "balvan_snih": 0.017,
+        "skala_snih": 0.0017,
+        "skala2_snih": 0.00083
+      }
     },
     "water": {
       "base": "2C6E8A",
       "walkable": false,
-      "max_distance": 10,
+      "max_distance": 30,
+      "max_share": 0.15,
       "wave": {
         "speed": 0.5,
         "scale": 14,

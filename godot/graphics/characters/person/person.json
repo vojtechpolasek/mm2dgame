@@ -1,12 +1,23 @@
 {
   "px_per_meter": 64,
-  "cell": 96,
-  "frames": 8,
-  "facing": "S",
+  "cell": 74,
+  "frames": 16,
+  "atlas_frames": 17,
+  "idle_frame": 16,
+  "facing": "N",
   "atlas_columns": 8,
-  "center": 48,
+  "center": 37,
   "filter": "linear",
   "shader": "res://shaders/person_layer.gdshader",
+  "shade": [
+    0.42,
+    1.1
+  ],
+  "shade_floor": 0.2,
+  "sheen": [
+    0.16,
+    0.7
+  ],
   "layers": {
     "1": {
       "height": 0.0,
@@ -16,7 +27,9 @@
         "pants",
         "shoe",
         "lace"
-      ]
+      ],
+      "cell": 74,
+      "center": 37
     },
     "2": {
       "height": 1.2,
@@ -25,7 +38,9 @@
       "channels": [
         "shirt",
         "skin"
-      ]
+      ],
+      "cell": 46,
+      "center": 23
     },
     "3": {
       "height": 1.65,
@@ -35,8 +50,17 @@
         "skin",
         "hair",
         "eye"
-      ]
+      ],
+      "cell": 34,
+      "center": 17
     }
+  },
+  "hold": {
+    "hand": "right",
+    "layer": 2,
+    "file": "layer_2_hold.png",
+    "cell": 46,
+    "center": 23
   },
   "colors": {
     "skin": "F6CDB0",

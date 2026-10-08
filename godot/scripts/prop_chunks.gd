@@ -1,26 +1,29 @@
 extends Node
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
+const MapCamera := preload("res://scripts/map_camera.gd")
 
-## Neviditelné přihrádky pro stromy a skály. Rozložení se nelosuje znovu:
-## objekt zůstane, kde vyrostl, a přihrádka ho jen schová, když není v záběru.
+## Přihrádky pro stromy a skály. Rozložení se nelosuje znovu: objekt zůstane, kde vyrostl.
+## Přihrádka si pamatuje jen čísla objektů. Uzly si od majitele (acquire) bere, až je v záběru,
+## a po skrytí mu je vrací (release) do zásobníku.
 const TILES := 32
 
-var _camera: Camera2D
+var _camera: MapCamera
 var _chunk_px := 2048.0
 var _margin := 0.0
+## Klíč přihrádky -> {majitel: Array čísel objektů}
 var _cells := {}
-var _shown := {}
+## Klíč zobrazené přihrádky -> {majitel: [Array čísel, Array uzlů]}
+var _live := {}
 var _min_cell := Vector2i.ZERO
 var _max_cell := Vector2i.ZERO
 var _has_range := false
 
 
-func setup(camera: Camera2D) -> void:
+func setup(camera: MapCamera) -> void:
 	_camera = camera
 	_chunk_px = float(TILES * TerrainCatalog.TILE_SIZE)
-	# Až po kameře, ať přihrádky vidí nový střed.
-	process_priority = 10
+	camera.view_changed.connect(refresh)
 
 
 ## Koruna přesahuje střed. Větší přesah ze stromů a skal se pamatuje.
@@ -30,14 +33,21 @@ func grow_margin(extra: float) -> void:
 		return
 	_margin = next
 	_has_range = false
+	refresh()
 
 
-func adopt(node: Node2D) -> void:
-	var key := _cell(node.position)
+func register(holder: Object, index: int, pos: Vector2) -> void:
+	var key := _cell(pos)
 	if not _cells.has(key):
-		_cells[key] = []
-	(_cells[key] as Array).append(node)
-	node.visible = _shown.has(key)
+		_cells[key] = {}
+	var holders: Dictionary = _cells[key]
+	if not holders.has(holder):
+		holders[holder] = []
+	(holders[holder] as Array).append(index)
+	if _live.has(key):
+		var live := _live_of(key, holder)
+		(live[0] as Array).append(index)
+		(live[1] as Array).append(holder.acquire(index))
 
 
 func refresh() -> void:
@@ -47,36 +57,51 @@ func refresh() -> void:
 	var center := _camera.get_screen_center_position()
 	var rect := Rect2(center - view * 0.5, view).grow(_margin)
 	var min_cell := _cell(rect.position)
-	var end := rect.end - Vector2(0.001, 0.001)
-	var max_cell := _cell(end)
+	var max_cell := _cell(rect.end - Vector2(0.001, 0.001))
 	if _has_range and min_cell == _min_cell and max_cell == _max_cell:
 		return
-	var previous: Dictionary = _shown
-	var next := {}
+	var wanted := {}
 	for y in range(min_cell.y, max_cell.y + 1):
 		for x in range(min_cell.x, max_cell.x + 1):
-			var key := Vector2i(x, y)
-			next[key] = true
-			if not previous.has(key):
-				_set_visible(key, true)
-	for key in previous:
-		if not next.has(key):
-			_set_visible(key, false)
-	_shown = next
+			wanted[Vector2i(x, y)] = true
+	# Nejdřív vrátit uzly skrytých přihrádek, ať je nové vezmou ze zásobníku.
+	for key: Vector2i in _live.keys():
+		if not wanted.has(key):
+			_hide(key)
+	for key: Vector2i in wanted:
+		if not _live.has(key):
+			_show(key)
 	_min_cell = min_cell
 	_max_cell = max_cell
 	_has_range = true
 
 
-func _set_visible(key: Vector2i, on: bool) -> void:
-	var listed: Array = _cells.get(key, [])
-	for node in listed:
-		(node as CanvasItem).visible = on
+func _show(key: Vector2i) -> void:
+	_live[key] = {}
+	var holders: Dictionary = _cells.get(key, {})
+	for holder: Object in holders:
+		var live := _live_of(key, holder)
+		for index: int in holders[holder]:
+			(live[0] as Array).append(index)
+			(live[1] as Array).append(holder.acquire(index))
+
+
+func _hide(key: Vector2i) -> void:
+	var holders: Dictionary = _live[key]
+	for holder: Object in holders:
+		var indices: Array = holders[holder][0]
+		var nodes: Array = holders[holder][1]
+		for i in indices.size():
+			holder.release(indices[i], nodes[i])
+	_live.erase(key)
+
+
+func _live_of(key: Vector2i, holder: Object) -> Array:
+	var holders: Dictionary = _live[key]
+	if not holders.has(holder):
+		holders[holder] = [[], []]
+	return holders[holder]
 
 
 func _cell(pos: Vector2) -> Vector2i:
 	return Vector2i(floori(pos.x / _chunk_px), floori(pos.y / _chunk_px))
-
-
-func _process(_delta: float) -> void:
-	refresh()

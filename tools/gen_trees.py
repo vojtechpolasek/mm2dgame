@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Složí stromy pro pohled kolmo shora.
 
-Každá vrstva je průhledný atlas 3×3. Jedno políčko je jedna varianta,
-všechny mají stejný střed. Nejvyšší vrstva je hromada listů, hustší
-uprostřed. Každá nižší je vějíř větví: silnější konec míří ke středu
-a na větvích sedí díly z vrstev nad ní. Pařez je vlastní atlas a při
-skládání zůstává uprostřed.
+Každá vrstva je průhledný atlas 3×3. Jedno políčko je jedna varianta.
+Kreslí se na společné plátno, uložená buňka je ořezaná na obsah vrstvy
+a střed zůstává, ať se patra při vystředění v Godotu nerozjedou.
+Nejvyšší vrstva je hromada listů, hustší uprostřed. Každá nižší je vějíř
+větví: silnější konec míří ke středu a na větvích sedí díly z vrstev nad ní.
+Pařez je vlastní atlas a při skládání zůstává uprostřed.
 
 Příklad:
   py tools/gen_trees.py
@@ -42,6 +43,11 @@ LEAF_BEND = 3.5
 
 def shade(rgb: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
     return tuple(max(0, min(255, int(round(channel * factor)))) for channel in rgb)
+
+
+def mix_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    t = max(0.0, min(1.0, t))
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
 
 
 def vary_color(
@@ -310,6 +316,7 @@ class Branch:
     color: tuple[int, int, int]
     salt: int
     sort_y: float
+    snow: tuple[int, int, int] | None = None
     leaves: list[LeafStamp] = field(default_factory=list)
     children: list[Branch] = field(default_factory=list)
 
@@ -327,6 +334,7 @@ class Grow:
     hue_bias: float
     value_bias: float
     leaves_on_branch: int | None = None
+    snow: tuple[int, int, int] | None = None
     salt: int = 1
 
 
@@ -441,6 +449,7 @@ def make_branch(
         color=color,
         salt=ctx.salt,
         sort_y=max(p0[1], p2[1], mid[1]),
+        snow=ctx.snow,
     )
     if depth <= 1:
         branch.leaves = twig_leaves(ctx, branch)
@@ -488,6 +497,8 @@ def add_clump(ctx: Grow, branch: Branch, origin: tuple[float, float], parent_w: 
 
 
 def branch_leaf_count(ctx: Grow) -> int:
+    if ctx.snow is not None:
+        return 0
     if ctx.leaves_on_branch is None:
         return ctx.rng.randint(5, 8)
     if ctx.leaves_on_branch <= 0:
@@ -548,9 +559,12 @@ def attach_children(ctx: Grow, branch: Branch, depth: int, max_radius: float | N
         natural, _, _ = branch_metrics(ctx.radii[skip], skip, ctx.branch_levels)
         length = max(7.0, min(natural * 0.85, parent_len * ctx.rng.uniform(0.22, 0.42)))
         attach_child(ctx, branch, skip, origin, radial_heading(ctx, origin, side_heading), length, max_radius)
-    extras = 0 if ctx.leaves_on_branch == 0 else (1 if ctx.rng.random() < 0.45 else 2)
-    if ctx.leaves_on_branch == 0 and ctx.rng.random() < 0.12:
-        extras = 1
+    if ctx.snow is not None or ctx.leaves_on_branch == 0:
+        extras = 0
+        if ctx.snow is None and ctx.rng.random() < 0.12:
+            extras = 1
+    else:
+        extras = 1 if ctx.rng.random() < 0.45 else 2
     for _ in range(extras):
         t = ctx.rng.uniform(0.25, 0.96)
         side = ctx.rng.choice((-1, 1))
@@ -590,7 +604,19 @@ def stroke(canvas: Image.Image, branch: Branch) -> None:
                 value = 1.0 + 0.16 * light - 0.24 * rim
                 if grain > 0.94:
                     value *= 0.7
-                pixels[x, y] = (*shade(branch.color, value), 255)
+                wood = shade(branch.color, value)
+                if branch.snow is not None:
+                    up = -dy / max(radius, 0.8)
+                    cap = max(0.0, min(1.0, (up + 0.2) / 0.65))
+                    cap = cap ** 0.55
+                    cap *= 0.88 + 0.12 * hash01(x, y, branch.salt + 41)
+                    cap *= 0.9 + 0.15 * t
+                    if hash01(x, y, branch.salt + 43) > 0.92:
+                        cap = max(cap, 0.55)
+                    if cap > 0.04:
+                        snow = shade(branch.snow, 0.92 + 0.12 * max(0.0, min(1.0, up)))
+                        wood = mix_rgb(wood, snow, min(1.0, cap))
+                pixels[x, y] = (*wood, 255)
 
 
 def paint_branch(canvas: Image.Image, branch: Branch) -> None:
@@ -691,6 +717,7 @@ def draw_stump(
     color: tuple[int, int, int],
     radius: float,
     root_length: float,
+    snow: tuple[int, int, int] | None = None,
 ) -> None:
     color = vary_color(color, rng, hue=4, value=0.04)
     radius *= rng.uniform(0.92, 1.1)
@@ -740,7 +767,15 @@ def draw_stump(
             value = 0.5 + 0.16 * grain - 0.05 * dx - 0.04 * dy
             if grain > 0.93:
                 value *= 0.78
-            pixels[x, y] = (*shade(color, value), 255)
+            wood = shade(color, value)
+            if snow is not None:
+                up = max(0.0, -dy)
+                cap = 0.7 + 0.3 * up
+                cap *= 0.92 + 0.08 * grain
+                if dist > edge * 0.72:
+                    cap *= 0.35
+                wood = mix_rgb(wood, shade(snow, 0.94 + 0.1 * up), min(1.0, cap))
+            pixels[x, y] = (*wood, 255)
 
 
 def blank(size: int) -> Image.Image:
@@ -781,6 +816,7 @@ def build_grow(preset: dict, rng: random.Random, size: int, leaf: Image.Image, w
         hue_bias=rng.uniform(-8, 8),
         value_bias=rng.uniform(0.94, 1.06),
         leaves_on_branch=None if preset.get("leaves") is None else int(preset["leaves"]),
+        snow=parse_hex(preset["snow"]) if preset.get("snow") else None,
     )
 
 
@@ -845,6 +881,41 @@ def contact_sheet(images: list[Image.Image], labels: list[str], path: Path, scal
     sheet.save(path)
 
 
+def crop_square(images: list[Image.Image], pad: int = 2) -> list[Image.Image]:
+    """Čtverec kolem středu, který pojme obsah všech snímků a nechá okraj pro filtr."""
+    if not images:
+        return images
+    width, height = images[0].size
+    half = 0.0
+    for image in images:
+        if image.size != (width, height):
+            raise ValueError("snímky v atlasu nemají stejnou velikost")
+        bbox = image.getchannel("A").getbbox()
+        if bbox is None:
+            continue
+        left, top, right, bottom = bbox
+        cx = width / 2
+        cy = height / 2
+        half = max(half, cx - left, right - cx, cy - top, bottom - cy)
+    new_half = int(math.ceil(half - 1e-6)) + pad
+    new_size = max(2, new_half * 2)
+    if new_size >= width or new_size >= height:
+        return images
+    left = (width - new_size) // 2
+    top = (height - new_size) // 2
+    box = (left, top, left + new_size, top + new_size)
+    return [image.crop(box) for image in images]
+
+
+def atlas_cell(path: Path, columns: int) -> int | None:
+    if not path.is_file() or columns <= 0:
+        return None
+    with Image.open(path) as image:
+        if image.width % columns:
+            return None
+        return image.width // columns
+
+
 def pack_atlas(images: list[Image.Image], columns: int = ATLAS_COLUMNS) -> Image.Image:
     cell = images[0].width
     rows = math.ceil(len(images) / columns)
@@ -884,6 +955,8 @@ def check_preset(name: str, preset: dict) -> int:
         raise SystemExit(f"{name}: spacing musí být větší než 0")
     if preset.get("leaves") is not None and int(preset["leaves"]) < 0:
         raise SystemExit(f"{name}: leaves musí být aspoň 0")
+    if preset.get("snow"):
+        parse_hex(preset["snow"])
     for other, gap in preset.get("spacing_from", {}).items():
         if float(gap) <= 0:
             raise SystemExit(f"{name}: spacing vůči {other} musí být větší než 0")
@@ -905,8 +978,14 @@ def tree_info(trees: dict) -> dict:
         for other in preset.get("spacing_from", {}):
             if other not in trees:
                 raise SystemExit(f"{name}: spacing_from obsahuje neznámý strom {other}")
-        size = canvas_size(preset)
+        drawn = canvas_size(preset)
         layers = int(preset["layers"])
+        stump_cell = atlas_cell(OUT_DIR / name / "stump.png", ATLAS_COLUMNS) or drawn
+        layer_cells = {
+            layer: atlas_cell(OUT_DIR / name / f"layer_{layer}.png", ATLAS_COLUMNS) or drawn
+            for layer in range(1, layers + 1)
+        }
+        size = max([stump_cell, *layer_cells.values()])
         catalog[name] = {
             "leaf": preset["leaf"],
             "variants": int(preset.get("variants", 9)),
@@ -917,12 +996,14 @@ def tree_info(trees: dict) -> dict:
                 "color": preset["stump"]["color"],
                 "radius": preset["stump"]["radius"],
                 "root_length": preset["stump"]["root_length"],
+                "canvas": stump_cell,
             },
             "layers": {
                 str(layer): {
                     "height": float(preset["height"][layer]),
                     "width": float(preset["widths"][layer]),
                     "density": float(preset["density"][layer]),
+                    "canvas": layer_cells[layer],
                 }
                 for layer in range(1, layers + 1)
             },
@@ -981,6 +1062,7 @@ def generate_trees(name: str, preset: dict, seed: int = 1, variants: int | None 
             stump_color,
             float(preset["stump"]["radius"]),
             float(preset["stump"]["root_length"]),
+            ctx.snow,
         )
         for layer, image in layers.items():
             layer_frames[layer].append(image)
@@ -990,8 +1072,13 @@ def generate_trees(name: str, preset: dict, seed: int = 1, variants: int | None 
             first_layers = layers
             first_stump = stump
 
+    saved: list[int] = []
     for layer, frames in layer_frames.items():
-        pack_atlas(frames).save(out / f"layer_{layer}.png")
+        fitted = crop_square(frames)
+        saved.append(fitted[0].width)
+        pack_atlas(fitted).save(out / f"layer_{layer}.png")
+    stumps = crop_square(stumps)
+    saved.append(stumps[0].width)
     pack_atlas(stumps).save(out / "stump.png")
 
     labels = [f"{index:02d}" for index in range(count)]
@@ -1005,7 +1092,7 @@ def generate_trees(name: str, preset: dict, seed: int = 1, variants: int | None 
         panels.append(composites[0])
         panel_labels.append("strom")
         contact_sheet(panels, panel_labels, PREVIEW / f"{name}_layers.png", 2)
-    print(f"{count} variant {size}x{size} -> {out}")
+    print(f"{count} variant, plátno {size}, buňky {min(saved)}–{max(saved)} -> {out}")
     print(PREVIEW / f"{name}.png")
     return out
 

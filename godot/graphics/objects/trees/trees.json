@@ -6,34 +6,39 @@
     "strom1": {
       "leaf": "leaf1.png",
       "variants": 9,
-      "canvas": 316,
-      "center": 158,
+      "canvas": 240,
+      "center": 120,
       "stump": {
         "height": 0,
         "color": "6B4A2A",
         "radius": 14,
-        "root_length": 48
+        "root_length": 48,
+        "canvas": 114
       },
       "layers": {
         "1": {
           "height": 2.2,
           "width": 200.0,
-          "density": 0.4
+          "density": 0.4,
+          "canvas": 240
         },
         "2": {
           "height": 4.0,
           "width": 120.0,
-          "density": 0.55
+          "density": 0.55,
+          "canvas": 154
         },
         "3": {
           "height": 6.0,
           "width": 90.0,
-          "density": 0.7
+          "density": 0.7,
+          "canvas": 116
         },
         "4": {
           "height": 8.0,
           "width": 50.0,
-          "density": 0.85
+          "density": 0.85,
+          "canvas": 70
         }
       },
       "spacing": 4.5,
@@ -44,34 +49,39 @@
     "strom2": {
       "leaf": "leaf2.png",
       "variants": 9,
-      "canvas": 372,
-      "center": 186,
+      "canvas": 298,
+      "center": 149,
       "stump": {
         "height": 0,
         "color": "6B4A2A",
         "radius": 14,
-        "root_length": 48
+        "root_length": 48,
+        "canvas": 116
       },
       "layers": {
         "1": {
           "height": 3.4,
           "width": 250.0,
-          "density": 0.9
+          "density": 0.9,
+          "canvas": 298
         },
         "2": {
           "height": 6.0,
           "width": 150.0,
-          "density": 1.05
+          "density": 1.05,
+          "canvas": 186
         },
         "3": {
           "height": 9.0,
           "width": 115.0,
-          "density": 1.2
+          "density": 1.2,
+          "canvas": 148
         },
         "4": {
           "height": 12.0,
           "width": 64.0,
-          "density": 1.35
+          "density": 1.35,
+          "canvas": 86
         }
       },
       "spacing": 6.0,
@@ -79,27 +89,73 @@
         "ker1": 3.0
       }
     },
+    "strom3": {
+      "leaf": "leaf2.png",
+      "variants": 9,
+      "canvas": 556,
+      "center": 278,
+      "stump": {
+        "height": 0,
+        "color": "6B4A2A",
+        "radius": 28,
+        "root_length": 96,
+        "canvas": 234
+      },
+      "layers": {
+        "1": {
+          "height": 3.4,
+          "width": 500.0,
+          "density": 0.9,
+          "canvas": 556
+        },
+        "2": {
+          "height": 6.0,
+          "width": 300.0,
+          "density": 1.05,
+          "canvas": 342
+        },
+        "3": {
+          "height": 9.0,
+          "width": 230.0,
+          "density": 1.2,
+          "canvas": 266
+        },
+        "4": {
+          "height": 12.0,
+          "width": 128.0,
+          "density": 1.35,
+          "canvas": 156
+        }
+      },
+      "spacing": 6.5,
+      "spacing_from": {
+        "ker1": 4.5
+      }
+    },
     "ker1": {
       "leaf": "leaf1.png",
       "variants": 9,
-      "canvas": 172,
-      "center": 86,
+      "canvas": 92,
+      "center": 46,
       "stump": {
         "height": 0,
         "color": "6B4A2A",
         "radius": 7,
-        "root_length": 16
+        "root_length": 16,
+        "canvas": 46
       },
       "layers": {
         "1": {
           "height": 0.55,
           "width": 68.0,
-          "density": 1.2
+          "density": 1.2,
+          "canvas": 92
         },
         "2": {
           "height": 1.2,
           "width": 40.0,
-          "density": 1.3
+          "density": 1.3,
+          "canvas": 58
         }
       },
       "spacing": 2.0,
@@ -107,40 +163,46 @@
       "spacing_from": {
         "strom1": 2.5,
         "strom2": 3.0,
+        "strom3": 4.5,
         "strom_suchy": 2.5
       }
     },
     "strom_suchy": {
       "leaf": "leaf1.png",
       "variants": 9,
-      "canvas": 306,
-      "center": 153,
+      "canvas": 214,
+      "center": 107,
       "stump": {
         "height": 0,
         "color": "7A6E5E",
         "radius": 13,
-        "root_length": 40
+        "root_length": 40,
+        "canvas": 94
       },
       "layers": {
         "1": {
           "height": 2.0,
           "width": 190.0,
-          "density": 0.36
+          "density": 0.36,
+          "canvas": 214
         },
         "2": {
           "height": 3.6,
           "width": 120.0,
-          "density": 0.48
+          "density": 0.48,
+          "canvas": 146
         },
         "3": {
           "height": 5.5,
           "width": 80.0,
-          "density": 0.6
+          "density": 0.6,
+          "canvas": 94
         },
         "4": {
           "height": 7.5,
           "width": 42.0,
-          "density": 0.7
+          "density": 0.7,
+          "canvas": 58
         }
       },
       "spacing": 4.5,
@@ -148,32 +210,209 @@
       "spacing_from": {
         "ker1": 2.5
       }
+    },
+    "strom_snih": {
+      "leaf": "leaf1.png",
+      "variants": 9,
+      "canvas": 218,
+      "center": 109,
+      "stump": {
+        "height": 0,
+        "color": "6B4A2A",
+        "radius": 14,
+        "root_length": 48,
+        "canvas": 114
+      },
+      "layers": {
+        "1": {
+          "height": 2.2,
+          "width": 200.0,
+          "density": 0.4,
+          "canvas": 218
+        },
+        "2": {
+          "height": 4.0,
+          "width": 120.0,
+          "density": 0.55,
+          "canvas": 136
+        },
+        "3": {
+          "height": 6.0,
+          "width": 90.0,
+          "density": 0.7,
+          "canvas": 102
+        },
+        "4": {
+          "height": 8.0,
+          "width": 50.0,
+          "density": 0.85,
+          "canvas": 60
+        }
+      },
+      "spacing": 3.2,
+      "leaves": 0,
+      "spacing_from": {
+        "ker_snih": 2.5
+      }
+    },
+    "strom2_snih": {
+      "leaf": "leaf2.png",
+      "variants": 9,
+      "canvas": 282,
+      "center": 141,
+      "stump": {
+        "height": 0,
+        "color": "6B4A2A",
+        "radius": 14,
+        "root_length": 48,
+        "canvas": 114
+      },
+      "layers": {
+        "1": {
+          "height": 3.4,
+          "width": 250.0,
+          "density": 0.9,
+          "canvas": 282
+        },
+        "2": {
+          "height": 6.0,
+          "width": 150.0,
+          "density": 1.05,
+          "canvas": 170
+        },
+        "3": {
+          "height": 9.0,
+          "width": 115.0,
+          "density": 1.2,
+          "canvas": 132
+        },
+        "4": {
+          "height": 12.0,
+          "width": 64.0,
+          "density": 1.35,
+          "canvas": 76
+        }
+      },
+      "spacing": 4.2,
+      "leaves": 0,
+      "spacing_from": {
+        "ker_snih": 3.0
+      }
+    },
+    "ker_snih": {
+      "leaf": "leaf1.png",
+      "variants": 9,
+      "canvas": 82,
+      "center": 41,
+      "stump": {
+        "height": 0,
+        "color": "6B4A2A",
+        "radius": 7,
+        "root_length": 16,
+        "canvas": 44
+      },
+      "layers": {
+        "1": {
+          "height": 0.55,
+          "width": 68.0,
+          "density": 1.2,
+          "canvas": 82
+        },
+        "2": {
+          "height": 1.2,
+          "width": 40.0,
+          "density": 1.3,
+          "canvas": 48
+        }
+      },
+      "spacing": 2.0,
+      "leaves": 0,
+      "spacing_from": {
+        "strom_snih": 2.5,
+        "strom2_snih": 3.0
+      }
     }
   },
   "spacing": {
     "strom1": {
       "strom1": 4.5,
       "strom2": 6.0,
+      "strom3": 6.5,
       "ker1": 2.5,
-      "strom_suchy": 4.5
+      "strom_suchy": 4.5,
+      "strom_snih": 4.5,
+      "strom2_snih": 4.5,
+      "ker_snih": 4.5
     },
     "strom2": {
       "strom1": 6.0,
       "strom2": 6.0,
+      "strom3": 6.5,
       "ker1": 3.0,
-      "strom_suchy": 6.0
+      "strom_suchy": 6.0,
+      "strom_snih": 6.0,
+      "strom2_snih": 6.0,
+      "ker_snih": 6.0
+    },
+    "strom3": {
+      "strom1": 6.5,
+      "strom2": 6.5,
+      "strom3": 6.5,
+      "ker1": 4.5,
+      "strom_suchy": 6.5,
+      "strom_snih": 6.5,
+      "strom2_snih": 6.5,
+      "ker_snih": 6.5
     },
     "ker1": {
       "strom1": 2.5,
       "strom2": 3.0,
+      "strom3": 4.5,
       "ker1": 2.0,
-      "strom_suchy": 2.5
+      "strom_suchy": 2.5,
+      "strom_snih": 3.2,
+      "strom2_snih": 4.2,
+      "ker_snih": 2.0
     },
     "strom_suchy": {
       "strom1": 4.5,
       "strom2": 6.0,
+      "strom3": 6.5,
       "ker1": 2.5,
-      "strom_suchy": 4.5
+      "strom_suchy": 4.5,
+      "strom_snih": 4.5,
+      "strom2_snih": 4.5,
+      "ker_snih": 4.5
+    },
+    "strom_snih": {
+      "strom1": 4.5,
+      "strom2": 6.0,
+      "strom3": 6.5,
+      "ker1": 3.2,
+      "strom_suchy": 4.5,
+      "strom_snih": 3.2,
+      "strom2_snih": 4.2,
+      "ker_snih": 2.5
+    },
+    "strom2_snih": {
+      "strom1": 4.5,
+      "strom2": 6.0,
+      "strom3": 6.5,
+      "ker1": 4.2,
+      "strom_suchy": 4.5,
+      "strom_snih": 4.2,
+      "strom2_snih": 4.2,
+      "ker_snih": 3.0
+    },
+    "ker_snih": {
+      "strom1": 4.5,
+      "strom2": 6.0,
+      "strom3": 6.5,
+      "ker1": 2.0,
+      "strom_suchy": 4.5,
+      "strom_snih": 2.5,
+      "strom2_snih": 3.0,
+      "ker_snih": 2.0
     }
   }
 }

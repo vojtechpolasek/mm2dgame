@@ -1,6 +1,9 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/new_game_menu.gd" id="1_menu"]
+[ext_resource type="Theme" path="res://themes/menu.tres" id="2_theme"]
+[ext_resource type="Texture2D" path="res://graphics/menu/background.png" id="3_bg"]
+[ext_resource type="Script" path="res://scripts/menu_background.gd" id="4_bg"]
 
 [node name="NewGameMenu" type="Control"]
 layout_mode = 3
@@ -9,9 +12,10 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_theme")
 script = ExtResource("1_menu")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="TextureRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -19,7 +23,10 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.09, 0.11, 0.08, 1)
+texture = ExtResource("3_bg")
+expand_mode = 1
+stretch_mode = 6
+script = ExtResource("4_bg")
 
 [node name="Center" type="CenterContainer" parent="."]
 layout_mode = 1
@@ -29,45 +36,42 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Panel" type="VBoxContainer" parent="Center"]
+[node name="Panel" type="PanelContainer" parent="Center"]
 layout_mode = 2
-theme_override_constants/separation = 14
 
-[node name="Title" type="Label" parent="Center/Panel"]
+[node name="Column" type="VBoxContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/Panel/Column"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 36
-text = "Velikost mapy"
+text = "Vyber level"
 horizontal_alignment = 1
 
-[node name="Gap" type="Control" parent="Center/Panel"]
-custom_minimum_size = Vector2(0, 8)
+[node name="List" type="VBoxContainer" parent="Center/Panel/Column"]
 layout_mode = 2
+theme_override_constants/separation = 6
 
-[node name="Small" type="Button" parent="Center/Panel"]
-custom_minimum_size = Vector2(320, 52)
+[node name="Info" type="Label" parent="Center/Panel/Column"]
 layout_mode = 2
-text = "Malá (32×32)"
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
 
-[node name="Medium" type="Button" parent="Center/Panel"]
-custom_minimum_size = Vector2(320, 52)
+[node name="Buttons" type="HBoxContainer" parent="Center/Panel/Column"]
 layout_mode = 2
-text = "Střední (64×64)"
+theme_override_constants/separation = 12
 
-[node name="Large" type="Button" parent="Center/Panel"]
-custom_minimum_size = Vector2(320, 52)
+[node name="Back" type="Button" parent="Center/Panel/Column/Buttons"]
+custom_minimum_size = Vector2(174, 52)
 layout_mode = 2
-text = "Velká (128×128)"
-
-[node name="Stress" type="Button" parent="Center/Panel"]
-custom_minimum_size = Vector2(320, 52)
-layout_mode = 2
-text = "Test výkonu (1024×1024)"
-
-[node name="Gap2" type="Control" parent="Center/Panel"]
-custom_minimum_size = Vector2(0, 8)
-layout_mode = 2
-
-[node name="Back" type="Button" parent="Center/Panel"]
-custom_minimum_size = Vector2(320, 52)
-layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
 text = "Zpět"
+
+[node name="Start" type="Button" parent="Center/Panel/Column/Buttons"]
+custom_minimum_size = Vector2(174, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "Hrát"

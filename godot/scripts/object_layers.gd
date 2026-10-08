@@ -23,23 +23,23 @@ static func vertex_pad(viewport: Vector2, height: float) -> float:
 	return viewport.length() * 0.5 * height * PARALLAX + 8.0
 
 
+## Jak daleko od kotvy sahá nakreslený pixel. Buňka je čtverec a uzel se otáčí,
+## roh je proto dál než polovina strany. K tomu posun výšky na kraji okna.
+static func sprite_reach(frame: float, viewport: Vector2, height: float) -> float:
+	return frame * 0.5 * sqrt(2.0) + vertex_pad(viewport, height)
+
+
 ## Lineární filtr potřebuje mipmapy. Průhledné okraje jinak zčernají.
-static func with_mipmaps(texture: Texture2D) -> Texture2D:
-	if texture == null:
-		return null
-	var image := texture.get_image()
-	if image == null or image.is_empty() or image.has_mipmaps():
-		return texture
-	image = image.duplicate()
+## Importované textury to mají z importu, tohle je jen pro surový soubor.
+static func texture_with_mipmaps(image: Image) -> Texture2D:
 	if image.detect_alpha() != Image.ALPHA_NONE:
 		image.fix_alpha_edges()
-	if image.generate_mipmaps() != OK:
-		return texture
+	if not image.has_mipmaps():
+		image.generate_mipmaps()
 	return ImageTexture.create_from_image(image)
 
 
-static func fit_sprite(sprite: Sprite2D, material: ShaderMaterial, viewport: Vector2, enabled: bool) -> void:
-	var height := float(sprite.get_meta("layer_height", 0.0))
+static func fit_sprite(sprite: Sprite2D, material: ShaderMaterial, height: float, viewport: Vector2, enabled: bool) -> void:
 	if not enabled or height <= 0.0:
 		sprite.material = null
 		RenderingServer.canvas_item_set_custom_rect(sprite.get_canvas_item(), false, Rect2())

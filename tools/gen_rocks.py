@@ -3,6 +3,7 @@
 
 Každá vrstva je průhledný atlas 3×3. Vrstva 1 je pata na zemi a je nejširší.
 Vyšší vrstva má vlastní obrys a nesedí uprostřed, ale vždycky zůstane uvnitř té pod ní.
+Uložená buňka je ořezaná na obsah té vrstvy, střed plátna zůstává.
 Náhled vrstvy srovná na střed. „U kraje“ je tentýž posun, jaký ve hře dělá
 shader stromu: vyšší vrstva ujede od středu obrazovky.
 
@@ -19,11 +20,14 @@ import argparse
 import json
 import math
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from PIL import Image
+
 from gen_terrain_tiles import hsv_to_rgb, parse_hex, rgb_to_hsv
-from gen_trees import blank, blit_at, contact_sheet, hash01, pack_atlas, shade, vary_color
+from gen_trees import atlas_cell, blank, blit_at, contact_sheet, crop_square, hash01, mix_rgb, pack_atlas, shade, vary_color
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "godot" / "graphics" / "objects" / "rocks"
@@ -33,6 +37,12 @@ ATLAS_COLUMNS = 3
 
 WIDTH_JITTER = 0.08
 ROUGH = 0.2
+## Nejdelší výčnělek obrysu paty vůči průměru, před přepočtem na průměr 1.
+SPIKE_MAX = 1.8
+# Obrys paty pro chůzi: počet směrů kolem středu a od jaké průhlednosti je pixel skála.
+# Úhel 0 míří doprava a roste po směru hodin, jako Vector2.angle() v Godotu.
+OUTLINE_STEPS = 64
+OUTLINE_ALPHA = 128
 # Stejné číslo jako PARALLAX ve forest.gd. Náhled „u kraje“ počítá s kamenem
 # 480 px vpravo a 260 px pod středem obrazovky.
 PARALLAX = 0.0052
@@ -43,12 +53,31 @@ EDGE_SHIFT = (480.0 * PARALLAX, 260.0 * PARALLAX)
 # jeden vršek. Vysoká má čtyři vrstvy, ať vršek při posunu kamery neodletí.
 # Vrchol je nejvýš 8 m. spacing je v metrech a je menší než pata, ať se skály
 # mohou dotýkat. rough je členitost obrysu.
+# round je kruh: obě vrstvy jsou soustředné, bez zploštění. pond je barva vody
+# uprostřed paty, pond_ratio je její poloměr vůči poloměru vrchní vrstvy.
+# Vršek má uprostřed díru, voda sedí na patě a při posunu kamery zůstane.
+# dry je kotlina bez vody. Obrys je lehce hrbolatý. Dno je plný kámen,
+# díra je jen v horní vrstvě, ať je vidět vyplněné dno.
+# mouth v katalogu je poloměr té díry v px. U kotliny je ještě o desetinu
+# menší, protože hrboly díru stáhnou dovnitř skály.
+# snow je barva čepice. Leží na vrchní ploše a na římse, spodní obruba zůstane kámen.
+# Vyšší vrstva má sněhu víc.
 ROCKS = {
     "balvan1": {
         "layers": 2,
         "widths": {1: 68, 2: 40},
         "height": {1: 0.0, 2: 1.1},
         "color": "8A8172",
+        "rough": 0.28,
+        "variants": 9,
+        "spacing": 0.8,
+    },
+    "balvan_snih": {
+        "layers": 2,
+        "widths": {1: 68, 2: 40},
+        "height": {1: 0.0, 2: 1.1},
+        "color": "8A8172",
+        "snow": "F4F7FA",
         "rough": 0.28,
         "variants": 9,
         "spacing": 0.8,
@@ -62,11 +91,31 @@ ROCKS = {
         "variants": 9,
         "spacing": 3.2,
     },
+    "skala_snih": {
+        "layers": 4,
+        "widths": {1: 250, 2: 165, 3: 95, 4: 40},
+        "height": {1: 0.0, 2: 2.4, 3: 4.4, 4: 6.0},
+        "color": "6E675C",
+        "snow": "F4F7FA",
+        "rough": 0.3,
+        "variants": 9,
+        "spacing": 3.2,
+    },
     "skala2": {
         "layers": 4,
         "widths": {1: 300, 2: 200, 3: 120, 4: 50},
         "height": {1: 0.0, 2: 2.8, 3: 5.2, 4: 7.2},
         "color": "5E6560",
+        "rough": 0.26,
+        "variants": 9,
+        "spacing": 3.8,
+    },
+    "skala2_snih": {
+        "layers": 4,
+        "widths": {1: 300, 2: 200, 3: 120, 4: 50},
+        "height": {1: 0.0, 2: 2.8, 3: 5.2, 4: 7.2},
+        "color": "5E6560",
+        "snow": "F4F7FA",
         "rough": 0.26,
         "variants": 9,
         "spacing": 3.8,
@@ -88,6 +137,30 @@ ROCKS = {
         "rough": 0.26,
         "variants": 9,
         "spacing": 5.0,
+    },
+    "jezirko": {
+        "layers": 2,
+        "widths": {1: 128, 2: 112},
+        "height": {1: 0.0, 2: 0.7},
+        "color": "A8A092",
+        "rough": 0.08,
+        "round": True,
+        "pond": "3DCFC6",
+        "pond_ratio": 0.5,
+        "variants": 9,
+        "spacing": 1.7,
+    },
+    "kotlina": {
+        "layers": 2,
+        "widths": {1: 384, 2: 348},
+        "height": {1: 0.0, 2: 1.6},
+        "color": "3E3B36",
+        "rough": 0.08,
+        "round": True,
+        "dry": True,
+        "pond_ratio": 0.72,
+        "variants": 1,
+        "spacing": 4.6,
     },
 }
 
@@ -161,7 +234,9 @@ def make_verts(rng: random.Random, rough: float) -> list[tuple[float, float]]:
         verts[(index + 1) % count][1] *= rng.uniform(1.05, 1.14)
     for _ in range(rng.randint(2, 4)):
         verts[rng.randrange(count)][1] *= rng.uniform(0.76, 0.9)
-    return _normalize_verts([(angle, max(0.62, mul)) for angle, mul in verts])
+    # Výčnělky se násobí, když náhoda vybere tentýž vrchol víckrát. Strop drží obrys v rozumné
+    # velikosti, jinak jedna varianta vystrčí ocas daleko za ostatní a zvětší kolize všech skal.
+    return _normalize_verts([(angle, min(SPIKE_MAX, max(0.62, mul))) for angle, mul in verts])
 
 
 def _normalize_verts(verts: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -276,6 +351,13 @@ def canvas_size(preset: dict) -> int:
     rough = float(preset.get("rough", ROUGH))
     biggest = max(float(preset["widths"][layer]) for layer in range(1, layers + 1))
     tallest = max(float(preset["height"][layer]) for layer in range(1, layers + 1))
+    if preset.get("round"):
+        lump = 1.14 if preset.get("dry") else 1.0
+        half = biggest * 0.5 * lump + tallest * max(EDGE_SHIFT) + 8
+        size = int(math.ceil(half * 2))
+        if size % 2:
+            size += 1
+        return size
     reach = (1 + rough * 1.35) / max(0.35, 1 - rough)
     half = biggest * 0.5 * (1 + WIDTH_JITTER) * reach * 1.25
     half += biggest * 0.32
@@ -284,6 +366,18 @@ def canvas_size(preset: dict) -> int:
     if size % 2:
         size += 1
     return size
+
+
+CIRCLE_VERTS = [(-math.pi, 1.0), (0.0, 1.0)]
+
+
+@dataclass
+class Pond:
+    radius: float
+    color: tuple[int, int, int]
+    hole: bool
+    dry: bool = False
+    mouth: Shape | None = None
 
 
 @dataclass
@@ -402,7 +496,41 @@ def contained_shape(parent: Shape, rng: random.Random, target_diameter: float) -
     return clamp_inside(parent, child)
 
 
+def gentle_verts(rng: random.Random, rough: float) -> list[tuple[float, float]]:
+    """Kruh s malými hrboly. Bez dlouhých výběžků, jaké mají obyčejné skály."""
+    count = rng.randint(12, 16)
+    amp = 0.045 + rough * 0.2
+    verts: list[tuple[float, float]] = []
+    for index in range(count):
+        angle = _wrap_angle(-math.pi + (index + rng.uniform(0.25, 0.75)) / count * math.tau)
+        verts.append((angle, 1.0 + rng.uniform(-amp, amp)))
+    return _normalize_verts(verts)
+
+
+def circle_shapes(preset: dict, size: int, rng: random.Random) -> dict[int, Shape]:
+    """Soustředné kružnice. Vršek sedí uprostřed paty, ne vedle něj.
+    Kotlina má na všech vrstvách stejné lehké hrboly, ať vršek nevyjede z paty.
+    """
+    center = size / 2
+    rough = float(preset.get("rough", ROUGH))
+    verts = gentle_verts(rng, rough) if preset.get("dry") else CIRCLE_VERTS
+    shapes = {}
+    for layer in range(1, int(preset["layers"]) + 1):
+        radius = float(preset["widths"][layer]) * 0.5
+        shapes[layer] = Shape(
+            cx=center,
+            cy=center,
+            rx=radius,
+            ry=radius,
+            axis=0.0,
+            verts=verts,
+        )
+    return shapes
+
+
 def build_shapes(preset: dict, rng: random.Random, size: int) -> dict[int, Shape]:
+    if preset.get("round"):
+        return circle_shapes(preset, size, rng)
     plan = plan_rock(preset, rng)
     shapes = {1: shape_for(plan, size, 1)}
     base = plan.layers[1].diameter
@@ -441,6 +569,47 @@ def crack_count(rng: random.Random, width: float) -> int:
     return rng.randint(max(7, int(width / 32)), max(10, int(width / 16)))
 
 
+def pond_pixel(
+    x: int,
+    y: int,
+    shape: Shape,
+    radius: float,
+    color: tuple[int, int, int],
+    salt: int,
+) -> tuple[int, int, int, int]:
+    """Plocha vody. Ke středu tmavší, u kraje světlejší pruh, ať drží i bez shaderu."""
+    dx = x + 0.5 - shape.cx
+    dy = y + 0.5 - shape.cy
+    dist = math.hypot(dx, dy) / max(radius, 1.0)
+    light = max(-1.0, min(1.0, (-0.45 * dx - 0.35 * dy) / max(radius, 1.0)))
+    value = 0.78 + 0.2 * dist * dist
+    value *= 0.9 + 0.18 * (light * 0.5 + 0.5)
+    value *= 0.97 + 0.06 * hash01(x, y, salt + 5)
+    if dist > 0.78:
+        value *= 1 + 0.16 * (dist - 0.78) / 0.22
+    value = min(1.12, max(0.62, value))
+    return (*shade(color, value), 255)
+
+
+def snow_amount(wy: float, covered: float, above_t: float | None, strength: float) -> float:
+    """Podíl sněhu na pixelu. covered 0 je střed vrstvy, wy > 0 míří dolů po obrazovce.
+
+    Čepice kryje horní plochu a odhalenou římsu. Spodní obruba a tenký kraj obrysu
+    zůstanou kámen, ať skála nesplyne se sněhem.
+    """
+    skirt = max(0.0, min(1.0, (wy - 0.02) / 0.85))
+    rim = max(0.0, min(1.0, (covered - 0.82) / 0.18))
+    if above_t is not None and above_t < 1.08:
+        return 0.0
+    if above_t is None:
+        cap = 1.0
+    else:
+        cap = max(0.0, min(1.0, (above_t - 1.08) / 0.22))
+    cap *= 1.0 - 0.88 * skirt
+    cap *= 1.0 - 0.6 * rim
+    return cap * strength
+
+
 def draw_layer(
     size: int,
     shape: Shape,
@@ -453,6 +622,9 @@ def draw_layer(
     salt: int,
     parent: Shape | None = None,
     above: Shape | None = None,
+    pond: Pond | None = None,
+    snow: tuple[int, int, int] | None = None,
+    snow_strength: float = 1.0,
 ) -> Image.Image:
     image = blank(size)
     pixels = image.load()
@@ -477,6 +649,23 @@ def draw_layer(
                 continue
             if parent is not None and parent.norm(x + 0.5, y + 0.5)[0] > 1:
                 continue
+
+            inside_mouth = False
+            mouth_out = 0.0
+            if pond is not None:
+                if pond.mouth is not None:
+                    mouth_t = pond.mouth.norm(x + 0.5, y + 0.5)[0]
+                    inside_mouth = mouth_t <= 1.0
+                    mouth_out = mouth_t - 1.0
+                else:
+                    pond_dist = math.hypot(x + 0.5 - shape.cx, y + 0.5 - shape.cy)
+                    inside_mouth = pond_dist <= pond.radius
+                    mouth_out = (pond_dist - pond.radius) / max(pond.radius, 1.0)
+                if inside_mouth and pond.hole:
+                    continue
+                if inside_mouth and not pond.dry:
+                    pixels[x, y] = pond_pixel(x, y, shape, pond.radius, pond.color, salt)
+                    continue
 
             wx = (x + 0.5 - shape.cx) / max(shape.rx, 1.0)
             wy = (y + 0.5 - shape.cy) / max(shape.ry, 1.0)
@@ -507,6 +696,8 @@ def draw_layer(
                 side = max(-1.0, min(1.0, -(dx + dy) / br))
                 relief += dome * (0.28 + 0.8 * side)
             if relief:
+                if pond is not None and pond.dry and not pond.hole and inside_mouth:
+                    relief *= 0.35
                 value *= 1 + max(-0.55, min(0.62, relief))
             if above is None:
                 value *= 1.02 + 0.08 * lit
@@ -526,9 +717,33 @@ def draw_layer(
                 continue
             if (x, y) in cracks:
                 value *= 0.62
+            if pond is not None and pond.dry and not pond.hole and inside_mouth:
+                value *= 0.9
+            if pond is not None and mouth_out > 0.0 and not (pond.dry and not pond.hole):
+                if pond.dry:
+                    span = 0.16
+                    floor = 0.48
+                elif pond.hole:
+                    span = 5.0 / max(pond.radius, 1.0)
+                    floor = 0.72
+                else:
+                    span = 8.0 / max(pond.radius, 1.0)
+                    floor = 0.8
+                if mouth_out < span:
+                    value *= floor + (1.0 - floor) * (mouth_out / span)
 
             value = min(1.15, max(0.4, value))
-            pixels[x, y] = (*shade(color, value), 255)
+            rgb = shade(color, value)
+            if snow is not None:
+                cap = snow_amount(wy, covered, None if above is None else above_t, snow_strength)
+                cap *= 0.78 + 0.22 * hash01(x, y, salt + 29)
+                if hash01(x, y, salt + 31) > 0.93:
+                    cap *= 0.4
+                if (x, y) in cracks:
+                    cap *= 0.22
+                if cap > 0.03:
+                    rgb = mix_rgb(rgb, shade(snow, min(1.12, 0.9 + 0.16 * value)), cap)
+            pixels[x, y] = (*rgb, 255)
     return image
 
 
@@ -576,6 +791,18 @@ def check_preset(name: str, preset: dict) -> int:
     if int(preset.get("variants", 9)) < 1:
         raise SystemExit(f"{name}: variants musí být aspoň 1")
     parse_hex(preset["color"])
+    if preset.get("snow"):
+        parse_hex(preset["snow"])
+    if preset.get("round"):
+        if "pond_ratio" not in preset:
+            raise SystemExit(f"{name}: kruhová skála potřebuje pond_ratio")
+        ratio = float(preset["pond_ratio"])
+        if not 0.2 <= ratio <= 0.8:
+            raise SystemExit(f"{name}: pond_ratio má být mezi 0.2 a 0.8")
+        if not preset.get("dry"):
+            if "pond" not in preset:
+                raise SystemExit(f"{name}: kruhová skála s vodou potřebuje pond")
+            parse_hex(preset["pond"])
     return layers
 
 
@@ -584,7 +811,14 @@ def rock_info(rocks: dict) -> dict:
     for name, preset in rocks.items():
         check_preset(name, preset)
         layers = int(preset["layers"])
-        size = canvas_size(preset)
+        drawn = canvas_size(preset)
+        layer_cells = {
+            layer: atlas_cell(OUT_DIR / name / f"layer_{layer}.png", ATLAS_COLUMNS) or drawn
+            for layer in range(1, layers + 1)
+        }
+        size = max(layer_cells.values())
+        variants = int(preset.get("variants", 9))
+        outline = foot_outline(OUT_DIR / name / "layer_1.png", variants, ATLAS_COLUMNS)
         catalog[name] = {
             "variants": int(preset.get("variants", 9)),
             "canvas": size,
@@ -595,11 +829,19 @@ def rock_info(rocks: dict) -> dict:
                 str(layer): {
                     "height": float(preset["height"][layer]),
                     "width": float(preset["widths"][layer]),
+                    "canvas": layer_cells[layer],
                 }
                 for layer in range(1, layers + 1)
             },
             "spacing": float(preset["spacing"]),
         }
+        if preset.get("round"):
+            mouth = float(preset["widths"][layers]) * 0.5 * float(preset["pond_ratio"])
+            if preset.get("dry"):
+                mouth *= 0.9
+            catalog[name]["mouth"] = round(mouth, 1)
+        if outline:
+            catalog[name]["outline"] = outline
     return {
         "height_unit": "m",
         "spacing_unit": "m",
@@ -609,9 +851,46 @@ def rock_info(rocks: dict) -> dict:
     }
 
 
+def foot_outline(path: Path, variants: int, columns: int) -> list[list[float]]:
+    """Pro každou variantu nejdelší dosah paty v OUTLINE_STEPS výsečích kolem středu buňky, v px.
+
+    Bere celou výseč, ne jeden paprsek, ať se nevynechá úzký výčnělek mezi směry.
+    Střed buňky je střed skály ve hře, sprite je centrovaný.
+    """
+    cell = atlas_cell(path, columns)
+    if cell is None:
+        return []
+    with Image.open(path) as image:
+        alpha = image.getchannel("A")
+    pixels = alpha.load()
+    half = cell / 2
+    outlines: list[list[float]] = []
+    for variant in range(variants):
+        left = (variant % columns) * cell
+        top = (variant // columns) * cell
+        reach = [0.0] * OUTLINE_STEPS
+        box = alpha.crop((left, top, left + cell, top + cell)).getbbox()
+        if box is not None:
+            for y in range(box[1], box[3]):
+                dy = y + 0.5 - half
+                for x in range(box[0], box[2]):
+                    if pixels[left + x, top + y] < OUTLINE_ALPHA:
+                        continue
+                    dx = x + 0.5 - half
+                    dist = math.hypot(dx, dy) + 0.5
+                    step = int(math.atan2(dy, dx) % math.tau / math.tau * OUTLINE_STEPS + 0.5) % OUTLINE_STEPS
+                    if dist > reach[step]:
+                        reach[step] = dist
+        outlines.append([round(value, 1) for value in reach])
+    return outlines
+
+
 def write_rock_info(rocks: dict, path: Path = INFO_PATH) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(rock_info(rocks), indent=2) + "\n", encoding="utf-8")
+    text = json.dumps(rock_info(rocks), indent=2)
+    # Obrys je dlouhá řada čísel. Jedna varianta na řádek, ne číslo na řádek.
+    text = re.sub(r"\[\s+(-?[\d.]+(?:,\s+-?[\d.]+)*)\s+\]", lambda found: "[" + ", ".join(found.group(1).split()).replace(",,", ",") + "]", text)
+    path.write_text(text + "\n", encoding="utf-8")
     return path
 
 
@@ -643,15 +922,42 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
     for index in range(count):
         rng = random.Random(seed + name_salt + index * 7919)
         stone = vary_color(color, rng, hue=7, value=0.05)
+        snow_rgb = vary_color(parse_hex(preset["snow"]), rng, hue=2, value=0.02) if preset.get("snow") else None
         shapes = build_shapes(preset, rng, size)
         base = shapes[1]
+        dry = bool(preset.get("dry"))
+        pond = None
+        pond_radius = 0.0
+        water = (0, 0, 0)
+        mouth = None
+        if preset.get("round"):
+            if not dry:
+                water = vary_color(parse_hex(preset["pond"]), rng, hue=6, value=0.04)
+            top = shapes[layers]
+            pond_radius = top.rx * float(preset["pond_ratio"])
+            if dry:
+                mouth = Shape(
+                    top.cx,
+                    top.cy,
+                    pond_radius,
+                    pond_radius,
+                    0.0,
+                    gentle_verts(rng, float(preset.get("rough", ROUGH)) * 0.65),
+                )
+                mouth = clamp_inside(top, mouth, 0.9)
+                pond_radius = mouth.rx
         facets = make_facets(rng, base, facet_count(rng, base.rx * 2))
         frames: dict[int, Image.Image] = {}
         for layer in range(1, layers + 1):
             shape = shapes[layer]
-            cracks = raster_cracks(rng, shape, crack_count(rng, shape.rx * 2))
+            cracks_n = crack_count(rng, shape.rx * 2)
+            if dry:
+                cracks_n = int(cracks_n * 1.5)
+            cracks = raster_cracks(rng, shape, cracks_n)
             bumps = make_bumps(rng, shape, bump_count(rng, shape.rx * 2))
-            lichen = 0.012 if layer == layers and base.rx >= 50 else 0.0
+            lichen = 0.0 if preset.get("round") or snow_rgb is not None else (0.012 if layer == layers and base.rx >= 50 else 0.0)
+            if preset.get("round"):
+                pond = Pond(pond_radius, water, layer == layers, dry, mouth)
             frames[layer] = draw_layer(
                 size,
                 shape,
@@ -664,6 +970,9 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
                 salt=name_salt + layer * 17,
                 parent=None if layer == 1 else shapes[layer - 1],
                 above=None if layer == layers else shapes[layer + 1],
+                pond=pond,
+                snow=snow_rgb,
+                snow_strength=0.78 + 0.22 * ((layer - 1) / max(layers - 1, 1)),
             )
             layer_frames[layer].append(frames[layer])
         composites.append(stack_layers(frames, heights, (0.0, 0.0)))
@@ -671,8 +980,11 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
         if index == 0:
             first = frames
 
+    saved: list[int] = []
     for layer, frames in layer_frames.items():
-        pack_atlas(frames).save(out / f"layer_{layer}.png")
+        fitted = crop_square(frames)
+        saved.append(fitted[0].width)
+        pack_atlas(fitted).save(out / f"layer_{layer}.png")
 
     labels = [f"{index:02d}" for index in range(count)]
     contact_sheet(composites, labels, PREVIEW / f"{name}.png", 2)
@@ -688,7 +1000,7 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
         panels.append(shifted[0])
         panel_labels.append("u kraje")
         contact_sheet(panels, panel_labels, PREVIEW / f"{name}_layers.png", 2)
-    print(f"{count} variant {size}x{size} -> {out}")
+    print(f"{count} variant, plátno {size}, buňky {min(saved)}–{max(saved)} -> {out}")
     print(PREVIEW / f"{name}.png")
     return out
 
@@ -698,8 +1010,9 @@ def main() -> None:
     parser.add_argument("--name", choices=tuple(ROCKS), help="jen jedna skála, jinak všechny")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--variants", type=int, help="přepíše počet variant z definice")
+    parser.add_argument("--info", action="store_true", help="jen přepíše rocks.json z uložených atlasů")
     args = parser.parse_args()
-    names = [args.name] if args.name else list(ROCKS)
+    names = [] if args.info else [args.name] if args.name else list(ROCKS)
     for name in names:
         generate_rocks(name, ROCKS[name], seed=args.seed, variants=args.variants)
     print(write_rock_info(ROCKS))

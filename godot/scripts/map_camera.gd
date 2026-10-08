@@ -1,18 +1,23 @@
 extends Camera2D
 
-const ACCELERATION := 2800.0
-const MAX_SPEED := 1100.0
-const STOP_SPEED := 7500.0
-
 ## Ladící zoom na numerickém + a −. Rychlost je v ln(zoom) za sekundu,
 ## takže přiblížení má stejný rozjezd a dobrzdění jako posun.
 const ZOOM_ACCELERATION := 3.2
 const ZOOM_MAX_SPEED := 1.25
 const ZOOM_STOP_SPEED := 8.5
+## Nejdál se oddálí na polovinu, tedy dvakrát víc mapy na šířku i výšku. Celou mapu neukáže.
+const ZOOM_MIN := 0.5
 
-var _velocity := Vector2.ZERO
+## Střed, zoom nebo velikost okna se změnily. Globální uniformy shaderů už mají nové hodnoty.
+signal view_changed
+
 var _zoom_velocity := 0.0
+## Zoom určuje skupina hráčů (frame). Ladicí zoom na klávesnici se pak nepoužije.
+var _framed := false
 var _map_size := Vector2.ZERO
+var _published_center := Vector2.INF
+var _published_zoom := 0.0
+var _published_view := Vector2.ZERO
 
 
 func setup(map_size: Vector2) -> void:
@@ -21,22 +26,47 @@ func setup(map_size: Vector2) -> void:
 	zoom = Vector2.ONE
 	make_current()
 	_clamp_position()
+	_publish_view()
 
 
 func _process(delta: float) -> void:
 	if _map_size == Vector2.ZERO:
 		return
-	var direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	if direction != Vector2.ZERO:
-		_velocity += direction * ACCELERATION * delta
-		if _velocity.length() > MAX_SPEED:
-			_velocity = _velocity.limit_length(MAX_SPEED)
-	else:
-		_velocity = _velocity.move_toward(Vector2.ZERO, STOP_SPEED * delta)
-	position += _velocity * delta
-	if OS.is_debug_build():
+	if OS.is_debug_build() and not _framed:
 		_apply_zoom(delta)
 	_clamp_position()
+	_publish_view()
+
+
+## Pohled na skupinu hráčů: střed a zoom. Zoom se drží v mezích mapy a ZOOM_MIN.
+func frame(center: Vector2, target_zoom: float) -> void:
+	_framed = true
+	if _map_size != Vector2.ZERO:
+		zoom = Vector2.ONE * clampf(target_zoom, _min_zoom(), 1.0)
+	position = center
+	_clamp_position()
+	_publish_view()
+
+
+## Postava je střed pohledu. U kraje mapy kamera zůstane v mapě, postava pak ze středu obrazovky odejde.
+func follow(target: Vector2) -> void:
+	position = target
+	_clamp_position()
+	_publish_view()
+
+
+## Vrstvy objektů čtou střed a zoom z globálních uniforem, jedno nastavení platí pro všechny materiály.
+func _publish_view() -> void:
+	var center := get_screen_center_position()
+	var view := get_viewport_rect().size
+	if center == _published_center and zoom.x == _published_zoom and view == _published_view:
+		return
+	_published_center = center
+	_published_zoom = zoom.x
+	_published_view = view
+	RenderingServer.global_shader_parameter_set(&"camera_position", center)
+	RenderingServer.global_shader_parameter_set(&"camera_zoom", zoom.x)
+	view_changed.emit()
 
 
 func _apply_zoom(delta: float) -> void:
@@ -62,7 +92,7 @@ func _min_zoom() -> float:
 		return 1.0
 	# První strana, která by při dalším oddálení byla menší než obrazovka, zoom zastaví.
 	var cover := maxf(view.x / _map_size.x, view.y / _map_size.y)
-	return minf(cover, 1.0)
+	return clampf(cover, ZOOM_MIN, 1.0)
 
 
 func _clamp_position() -> void:

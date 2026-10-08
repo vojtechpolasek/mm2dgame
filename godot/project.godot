@@ -10,21 +10,36 @@ config_version=5
 
 [application]
 
-config/name="mm2dgame"
+config/name="Material Monsters"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [autoload]
 
+Controls="*res://scripts/controls.gd"
 GameSession="*res://scripts/game_session.gd"
+Sound="*res://scripts/sound.gd"
+
+[debug]
+
+gdscript/warnings/untyped_declaration=1
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
+window/size/mode=3
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+display_server/driver.linuxbsd="x11"
+
+[importer_defaults]
+
+texture={
+"mipmaps/generate": true,
+"process/fix_alpha_border": true
+}
 
 [physics]
 
@@ -34,14 +49,20 @@ window/stretch/aspect="expand"
 
 textures/canvas_textures/default_texture_filter=0
 rendering_device/driver.windows="d3d12"
+gl_compatibility/driver.linuxbsd="opengl3_es"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.07, 0.08, 0.07, 1)
 2d/snap/snap_2d_transforms_to_pixel=true
-2d/snap/snap_2d_vertices_to_pixel=false
 
-[importer_defaults]
+[shader_globals]
 
-texture={
-"process/fix_alpha_border": false
+camera_position={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+camera_zoom={
+"type": "float",
+"value": 1.0
 }

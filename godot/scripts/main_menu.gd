@@ -1,15 +1,23 @@
 extends Control
 
-const MenuStyle := preload("res://scripts/menu_style.gd")
-
-@onready var new_game: Button = $Center/Panel/NewGame
+@onready var play: Button = $Center/Panel/Column/Play
 
 
 func _ready() -> void:
-	MenuStyle.apply(self)
-	new_game.pressed.connect(_on_new_game)
-	new_game.grab_focus()
+	Sound.play_menu_music()
+	play.pressed.connect(_on_play)
+	$Center/Panel/Column/About.pressed.connect(_on_about)
+	$Center/Panel/Column/Quit.pressed.connect(_on_quit)
+	play.grab_focus()
 
 
-func _on_new_game() -> void:
+func _on_play() -> void:
 	get_tree().change_scene_to_file("res://scenes/new_game_menu.tscn")
+
+
+func _on_about() -> void:
+	get_tree().change_scene_to_file("res://scenes/about_menu.tscn")
+
+
+func _on_quit() -> void:
+	get_tree().quit()

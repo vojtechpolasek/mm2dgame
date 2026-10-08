@@ -34,13 +34,19 @@ uniform float wave_speed = 0.5;
 uniform float wave_scale = 14.0;
 uniform float wave_swell = 0.03;
 uniform float wave_tint = 0.18;
-uniform float wave_angle = 30.0;
+// Směry tří vln. Počítá je katalog z úhlu ve surfaces.json, ať se nepočítají v každém pixelu.
+uniform vec2 wave_dir_a = vec2(-0.5, 0.866);
+uniform vec2 wave_dir_b = vec2(-0.995, -0.103);
+uniform vec2 wave_dir_c = vec2(-0.218, -0.976);
 uniform float mask_start = 0.7;
 
 varying vec2 world_pos;
 
+// Hash bez sinu (Dave Hoskins). sin velkého čísla ztrácí přesnost na velkých mapách.
 float hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
 }
 
 float value_noise(vec2 p) {
@@ -66,17 +72,13 @@ float style_of(float id) {
 	return shore_style[clamp(int(id), 0, 15)];
 }
 
-vec3 sample_layer(float layer, float variant, vec2 uv) {
+// lod počítá fragment() jednou z world_pos. Derivace tady uvnitř větví by na hraně dlaždice
+// skočily (UV tam přeskakuje z 1 na 0) a rozmazaly by proužek podél hrany.
+vec3 sample_layer(float layer, float variant, vec2 uv, float lod) {
 	float column = mod(variant, atlas_columns);
 	float row = floor(variant / atlas_columns);
 	vec2 atlas_texels = vec2(atlas_columns * tile_size);
 	vec2 raw = uv * tile_size;
-	vec2 raw_uv = (vec2(column, row) * tile_size + raw) / atlas_texels;
-	vec2 dx = dFdx(raw_uv) * atlas_texels;
-	vec2 dy = dFdy(raw_uv) * atlas_texels;
-	float rho = max(dot(dx, dx), dot(dy, dy));
-	float lod = rho > 0.0001 ? 0.5 * log2(rho) : 0.0;
-	lod = clamp(lod, 0.0, log2(tile_size));
 	// Otisk filtru nesmí přetéct do sousední varianty atlasu.
 	float inset = min(0.5 * exp2(lod), tile_size * 0.5 - 0.5);
 	vec2 local = clamp(raw, vec2(inset), vec2(tile_size - inset));
@@ -104,7 +106,7 @@ float land_pair_power(float id_a, float id_b, float id_c, float id_d, int count)
 	return saw ? best : 1.0;
 }
 
-void evaluate(vec2 uv, float variant, vec4 packed_ids, out vec3 color, out float water_share, out float shore_kind) {
+void evaluate(vec2 uv, float variant, float lod, vec4 packed_ids, out vec3 color, out float water_share, out float shore_kind) {
 	float cid[4] = float[4](
 		round(packed_ids.r * 255.0),
 		round(packed_ids.g * 255.0),
@@ -119,7 +121,7 @@ void evaluate(vec2 uv, float variant, vec4 packed_ids, out vec3 color, out float
 	);
 	shore_kind = 0.0;
 	if (cid[0] == cid[1] && cid[1] == cid[2] && cid[2] == cid[3]) {
-		color = sample_layer(cid[0], variant, uv);
+		color = sample_layer(cid[0], variant, uv, lod);
 		water_share = cid[0] == float(water_index) ? 1.0 : 0.0;
 		if (water_share < 1.0) {
 			shore_kind = style_of(cid[0]);
@@ -215,7 +217,7 @@ void evaluate(vec2 uv, float variant, vec4 packed_ids, out vec3 color, out float
 		if (slot >= count || final_w[slot] <= 0.0) {
 			continue;
 		}
-		color += sample_layer(uid[slot], variant, uv) * final_w[slot];
+		color += sample_layer(uid[slot], variant, uv, lod) * final_w[slot];
 		if (uid[slot] != float(water_index) && final_w[slot] > best_weight) {
 			best_weight = final_w[slot];
 			best_land = uid[slot];
@@ -262,35 +264,19 @@ void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
 
-void fragment() {
-	vec2 tile = floor(world_pos / tile_size);
-	vec2 local_uv = (world_pos - tile * tile_size) / tile_size;
-	vec2 data_uv = (tile + 0.5) / map_size;
-	vec4 packed_ids = texture(corner_map, data_uv);
-	float variant = round(texture(variant_map, data_uv).r * 255.0);
-
-	vec3 surface;
-	float share;
-	float shore_kind;
-	evaluate(local_uv, variant, packed_ids, surface, share, shore_kind);
-	surface = apply_shore(surface, share, shore_kind);
-
+vec3 water(vec3 surface, float share, vec2 local_uv, float variant, float lod, vec4 packed_ids) {
 	float amount = smoothstep(mask_start, 1.0, share);
 	float wavelength = max(wave_scale, 1.0);
-	float radians = wave_angle * 0.01745329251;
-	vec2 across = vec2(-sin(radians), cos(radians));
-	vec2 across_b = vec2(-sin(radians + 1.15), cos(radians + 1.15));
-	vec2 across_c = vec2(-sin(radians + 2.4), cos(radians + 2.4));
-	float phase = dot(world_pos, across) * 6.2831853 / wavelength - TIME * wave_speed;
-	float phase_b = dot(world_pos, across_b) * 6.2831853 / (wavelength * 0.72) - TIME * wave_speed * 1.17;
-	float phase_c = dot(world_pos, across_c) * 6.2831853 / (wavelength * 1.35) - TIME * wave_speed * 0.83;
+	float phase = dot(world_pos, wave_dir_a) * 6.2831853 / wavelength - TIME * wave_speed;
+	float phase_b = dot(world_pos, wave_dir_b) * 6.2831853 / (wavelength * 0.72) - TIME * wave_speed * 1.17;
+	float phase_c = dot(world_pos, wave_dir_c) * 6.2831853 / (wavelength * 1.35) - TIME * wave_speed * 0.83;
 	float height = (sin(phase) + sin(phase_b) * 0.65 + sin(phase_c) * 0.4) / 2.05;
 	float shift = cos(phase) * wave_swell * amount;
 	if (amount > 0.001) {
 		vec3 shifted;
 		float shifted_share;
 		float shifted_kind;
-		evaluate(clamp(local_uv + across * shift, vec2(0.001), vec2(0.999)), variant, packed_ids, shifted, shifted_share, shifted_kind);
+		evaluate(clamp(local_uv + wave_dir_a * shift, vec2(0.001), vec2(0.999)), variant, lod, packed_ids, shifted, shifted_share, shifted_kind);
 		shifted = apply_shore(shifted, shifted_share, shifted_kind);
 		surface = mix(surface, shifted, smoothstep(mask_start, 1.0, shifted_share));
 	}
@@ -307,6 +293,29 @@ void fragment() {
 	float lace = smoothstep(0.22, 0.78, patches * 0.6 + grains * 0.4);
 	float foam = shore * mix(0.35, 1.0, lace) * mix(0.12, 0.85, crest);
 	vec3 foam_color = mix(highlight_color, vec3(0.92, 0.97, 0.98), 0.62);
-	color = mix(color, foam_color, clamp(foam, 0.0, 0.28));
-	COLOR = vec4(color, 1.0);
+	return mix(color, foam_color, clamp(foam, 0.0, 0.28));
+}
+
+void fragment() {
+	// Jeden texel atlasu je jeden pixel světa, takže stopa texelu na obrazovce je derivace world_pos.
+	vec2 step_x = dFdx(world_pos);
+	vec2 step_y = dFdy(world_pos);
+	float lod = clamp(0.5 * log2(max(max(dot(step_x, step_x), dot(step_y, step_y)), 1e-8)), 0.0, log2(tile_size));
+	vec2 tile = floor(world_pos / tile_size);
+	vec2 local_uv = (world_pos - tile * tile_size) / tile_size;
+	vec2 data_uv = (tile + 0.5) / map_size;
+	vec4 packed_ids = texture(corner_map, data_uv);
+	float variant = round(texture(variant_map, data_uv).r * 255.0);
+
+	vec3 surface;
+	float share;
+	float shore_kind;
+	evaluate(local_uv, variant, lod, packed_ids, surface, share, shore_kind);
+	surface = apply_shore(surface, share, shore_kind);
+	// Vlny začínají od mask_start, pěna nejníž od 0.57. Souš a pás písku je nepotřebují.
+	if (share < min(mask_start, 0.57)) {
+		COLOR = vec4(surface, 1.0);
+	} else {
+		COLOR = vec4(water(surface, share, local_uv, variant, lod, packed_ids), 1.0);
+	}
 }

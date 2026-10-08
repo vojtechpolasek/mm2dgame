@@ -7,3 +7,6 @@ __pycache__/
 
 # export může obsahovat klíče
 export_presets.cfg
+
+# výsledky exportu
+build/

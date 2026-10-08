@@ -18,9 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 SURFACES_PATH = ROOT / "godot" / "graphics" / "terrain" / "surfaces.json"
 
 # forest a rocks jsou počet pokusů na dlaždici. Vyšší číslo = víc jedinců.
-# Druh, který v mapě chybí, v terénu neroste. Sníh a voda jsou bez lesa i skal.
+# Druh, který v mapě chybí, v terénu neroste. Voda je bez lesa i skal.
 # Poušť má jen suché stromy a těch je málo. Velké skály tu jsou, ale řídce.
 # Na trávě je jen pár malých balvanů.
+# Sníh má víc stromů než tráva a míň než hlína. Skal je málo, malých kamenů víc.
 TERRAINS = {
     "grass": {
         "name": "grass",
@@ -29,8 +30,8 @@ TERRAINS = {
         "contrast": 28.0,
         "coarseness": 1.0,
         "shore": "sand",
-        "forest": {"strom1": 0.07, "strom2": 0.04, "ker1": 1.2, "strom_suchy": 0.05},
-        "rocks": {"balvan1": 0.03},
+        "forest": {"strom1": 0.091, "strom2": 0.052, "strom3": 0.04, "ker1": 0.11, "strom_suchy": 0.065},
+        "rocks": {"balvan1": 0.01},
     },
     "dirt": {
         "name": "dirt",
@@ -39,7 +40,7 @@ TERRAINS = {
         "contrast": 22.0,
         "coarseness": 1.4,
         "shore": "sand",
-        "forest": {"strom1": 1.15, "strom2": 1.0, "ker1": 0.03, "strom_suchy": 0.55},
+        "forest": {"strom1": 1.15, "strom2": 1.0, "strom3": 0.02, "ker1": 0.015, "strom_suchy": 0.55},
     },
     "desert": {
         "name": "desert",
@@ -49,9 +50,18 @@ TERRAINS = {
         "coarseness": 2.0,
         "shore": "sand",
         "forest": {"strom_suchy": 0.02},
-        "rocks": {"skala1": 0.002, "skala2": 0.0015, "skala10": 0.001, "skala15": 0.0008, "balvan1": 0.0006},
+        "rocks": {"skala1": 0.002, "skala2": 0.0015, "skala10": 0.001, "skala15": 0.0008, "balvan1": 0.0003},
     },
-    "snow": {"name": "snow", "base": "E8EEF2", "hue": 2.0, "contrast": 12.0, "coarseness": 1.8, "shore": "ice"},
+    "snow": {
+        "name": "snow",
+        "base": "E8EEF2",
+        "hue": 2.0,
+        "contrast": 12.0,
+        "coarseness": 1.8,
+        "shore": "ice",
+        "forest": {"strom_snih": 0.546, "strom2_snih": 0.39, "ker_snih": 0.1},
+        "rocks": {"balvan_snih": 0.017, "skala_snih": 0.0017, "skala2_snih": 0.00083},
+    },
     "water": {
         "name": "water",
         "base": "2C6E8A",
@@ -59,7 +69,9 @@ TERRAINS = {
         "contrast": 16.0,
         "coarseness": 1.7,
         "walkable": False,
-        "max_distance": 10,
+        "max_distance": 30,
+        # Nejvýš 15 % plochy mapy. Generátor přebytek sloupne od břehu.
+        "max_share": 0.15,
         "wave": {
             "speed": 0.5,
             "scale": 14,
@@ -108,6 +120,7 @@ SHORE = {
 # Vrstva 1 je nejširší spodek koruny, nejvyšší číslo je špička z listů.
 # widths je průměr vrstvy v pixelech, density její zarostlost.
 # leaves je počet listů na jedné větvičce. Když chybí, je jich 5 až 8. Nula znamená skoro holé větve.
+# snow je barva čepice na hřbetu větví a na pařezu. Takový strom je bez listí.
 # height je výška vrstvy v metrech. Pařez je na zemi (0) a při posunu obrazovky stojí.
 # Vyšší vrstva se posouvá víc a víc se zvětší. spacing je v metrech: blíž už jiný strom nesmí stát.
 # spacing_from přepíše spacing vůči jednomu druhu. Mezi dvojicí platí větší z obou stran.
@@ -136,6 +149,18 @@ TREES = {
         "spacing_from": {"ker1": 3},
         "stump": {"color": "6B4A2A", "radius": 14, "root_length": 48},
     },
+    "strom3": {
+        "leaf": "leaf2.png",
+        "layers": 4,
+        "density": {4: 1.35, 3: 1.2, 2: 1.05, 1: 0.9},
+        "widths": {4: 128, 3: 230, 2: 300, 1: 500},
+        "height": {4: 12.0, 3: 9.0, 2: 6.0, 1: 3.4},
+        "variants": 9,
+        "branch": "6A4328",
+        "spacing": 6.5,
+        "spacing_from": {"ker1": 4.5},
+        "stump": {"color": "6B4A2A", "radius": 28, "root_length": 96},
+    },
     "ker1": {
         "leaf": "leaf1.png",
         "layers": 2,
@@ -146,7 +171,7 @@ TREES = {
         "variants": 9,
         "branch": "6A4328",
         "spacing": 2,
-        "spacing_from": {"strom1": 2.5, "strom2": 3, "strom_suchy": 2.5},
+        "spacing_from": {"strom1": 2.5, "strom2": 3, "strom3": 4.5, "strom_suchy": 2.5},
         "stump": {"color": "6B4A2A", "radius": 7, "root_length": 16},
     },
     "strom_suchy": {
@@ -161,6 +186,48 @@ TREES = {
         "spacing": 4.5,
         "spacing_from": {"ker1": 2.5},
         "stump": {"color": "7A6E5E", "radius": 13, "root_length": 40},
+    },
+    "strom_snih": {
+        "leaf": "leaf1.png",
+        "layers": 4,
+        "density": {4: 0.85, 3: 0.7, 2: 0.55, 1: 0.4},
+        "widths": {4: 50, 3: 90, 2: 120, 1: 200},
+        "height": {4: 8.0, 3: 6.0, 2: 4.0, 1: 2.2},
+        "leaves": 0,
+        "snow": "F4F7FA",
+        "variants": 9,
+        "branch": "6A4328",
+        "spacing": 3.2,
+        "spacing_from": {"ker_snih": 2.5},
+        "stump": {"color": "6B4A2A", "radius": 14, "root_length": 48},
+    },
+    "strom2_snih": {
+        "leaf": "leaf2.png",
+        "layers": 4,
+        "density": {4: 1.35, 3: 1.2, 2: 1.05, 1: 0.9},
+        "widths": {4: 64, 3: 115, 2: 150, 1: 250},
+        "height": {4: 12.0, 3: 9.0, 2: 6.0, 1: 3.4},
+        "leaves": 0,
+        "snow": "F4F7FA",
+        "variants": 9,
+        "branch": "6A4328",
+        "spacing": 4.2,
+        "spacing_from": {"ker_snih": 3},
+        "stump": {"color": "6B4A2A", "radius": 14, "root_length": 48},
+    },
+    "ker_snih": {
+        "leaf": "leaf1.png",
+        "layers": 2,
+        "density": {2: 1.3, 1: 1.2},
+        "widths": {2: 40, 1: 68},
+        "height": {2: 1.2, 1: 0.55},
+        "leaves": 0,
+        "snow": "F4F7FA",
+        "variants": 9,
+        "branch": "6A4328",
+        "spacing": 2,
+        "spacing_from": {"strom_snih": 2.5, "strom2_snih": 3},
+        "stump": {"color": "6B4A2A", "radius": 7, "root_length": 16},
     },
 }
 
@@ -187,6 +254,8 @@ def surface_info() -> dict:
         entry = {"base": preset["base"], "walkable": preset.get("walkable", True)}
         if "max_distance" in preset:
             entry["max_distance"] = preset["max_distance"]
+        if "max_share" in preset:
+            entry["max_share"] = preset["max_share"]
         if "wave" in preset:
             entry["wave"] = preset["wave"]
         if preset.get("shore"):
