@@ -40,6 +40,8 @@ const CHASE_HOLD := 6.0
 @onready var ground: Polygon2D = $Ground
 @onready var camera: MapCamera = $Camera
 @onready var status: Label = $Hint/Hud/Status
+## Snímky za sekundu vpravo dole. Engine je přepočítává jednou za sekundu.
+@onready var fps: Label = $Hint/Hud/Fps
 
 ## Vygenerovaná mapa. Zůstává i po vygenerování, hra z ní čte povrch dlaždic.
 var map: MapData
@@ -188,6 +190,7 @@ func _start_level(rocks: Rocks) -> void:
 
 
 func _process(delta: float) -> void:
+	fps.text = "%d FPS" % Engine.get_frames_per_second()
 	_leave_left = maxf(_leave_left - delta, 0.0)
 	if _party != null:
 		_party.frame()

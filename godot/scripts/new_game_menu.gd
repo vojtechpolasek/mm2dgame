@@ -4,7 +4,7 @@ extends Control
 ## Seznam ukazuje vybraný level uprostřed a kolem něj dva nižší a dva vyšší, čím dál od
 ## vybraného, tím tmavší. Nahoru a dolů vybírá kterýkoli ovladač z Controls (šipky, WASD,
 ## páčka i křížový ovladač gamepadu), podržení opakuje. Potvrzení hraje, Esc nebo B vrací
-## zpět. Myší jde kliknout na sousední level (vybere ho) nebo na vybraný (hraje).
+## zpět.
 
 ## Kolik levelů je vidět nad a pod vybraným.
 const AROUND := 2
@@ -29,11 +29,10 @@ var _next_repeat := 0.0
 func _ready() -> void:
 	Sound.play_menu_music()
 	_selected = GameSession.unlocked
-	for offset in range(-AROUND, AROUND + 1):
+	for i in AROUND * 2 + 1:
 		var row := Button.new()
 		row.custom_minimum_size = ROW_SIZE
 		row.focus_mode = Control.FOCUS_NONE
-		row.pressed.connect(_on_row.bind(offset))
 		_list.add_child(row)
 		_rows.append(row)
 	$Center/Panel/Column/Buttons/Back.pressed.connect(_back)
@@ -67,7 +66,7 @@ func _process(delta: float) -> void:
 		_move(step)
 
 
-## Potvrzení, zpět a kolečko myši. Vstup se označí za zpracovaný dřív, než se změní scéna,
+## Potvrzení a zpět. Vstup se označí za zpracovaný dřív, než se změní scéna,
 ## potom už menu ve stromu není.
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_accept"):
@@ -77,17 +76,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		_back()
-	else:
-		var wheel := event as InputEventMouseButton
-		if wheel == null or not wheel.pressed:
-			return
-		if wheel.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_move(-1)
-		elif wheel.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_move(1)
-		else:
-			return
-		get_viewport().set_input_as_handled()
 
 
 func _move(step: int) -> void:
@@ -97,13 +85,6 @@ func _move(step: int) -> void:
 	_selected = next
 	Sound.ui("move")
 	_show()
-
-
-func _on_row(offset: int) -> void:
-	if offset == 0:
-		_choose()
-	else:
-		_move(offset)
 
 
 ## Řádky kolem vybraného levelu. Levely mimo odemčené jsou prázdné, místo zůstává.

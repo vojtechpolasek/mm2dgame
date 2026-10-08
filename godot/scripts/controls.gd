@@ -5,7 +5,8 @@ extends Node
 ## jdou později přemapovat. Šipky skáčou pravým Shiftem, WASD levým, gamepady tlačítkem A
 ## a chodí levou páčkou i křížovým ovladačem.
 ## Menu se ovládá stejně: k ui_* přibude WASD a oba Shifty potvrzují. game_menu (Esc, Start)
-## opustí hru.
+## opustí hru. Myš se nepoužívá: kurzor je skrytý a její události se zahodí dřív, než
+## dojdou ke GUI.
 
 const ARROWS := 0
 const WASD := 1
@@ -22,6 +23,12 @@ func _ready() -> void:
 	for device in COUNT:
 		_bind_device(device)
 	_bind_menu()
+	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouse:
+		get_viewport().set_input_as_handled()
 
 
 func action(device: int, what: String) -> StringName:
