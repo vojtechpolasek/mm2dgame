@@ -1,6 +1,7 @@
 extends Control
 
-## Výběr levelu. Hrát jde jen odemčené levely (GameSession.unlocked), předvybraný je nejvyšší.
+## Výběr levelu vybraného typu hry. Hrát jde jen odemčené levely (GameSession.unlocked_level),
+## předvybraný je nejvyšší. Pod nadpisem je název typu hry.
 ## Seznam ukazuje vybraný level uprostřed a kolem něj dva nižší a dva vyšší, čím dál od
 ## vybraného, tím tmavší. Nahoru a dolů vybírá kterýkoli ovladač z Controls (šipky, WASD,
 ## páčka i křížový ovladač gamepadu), podržení opakuje. Potvrzení hraje, Esc nebo B vrací
@@ -17,6 +18,8 @@ const REPEAT_EVERY := 0.11
 
 @onready var _list: VBoxContainer = $Center/Panel/Column/List
 @onready var _info: Label = $Center/Panel/Column/Info
+@onready var _mode: Label = $Center/Panel/Column/Mode
+@onready var _records: Label = $Center/Panel/Column/Records
 
 var _selected := 1
 var _rows: Array[Button] = []
@@ -28,7 +31,8 @@ var _next_repeat := 0.0
 
 func _ready() -> void:
 	Sound.play_menu_music()
-	_selected = GameSession.unlocked
+	_selected = GameSession.unlocked_level()
+	_mode.text = str(GameSession.rules()["title"])
 	for i in AROUND * 2 + 1:
 		var row := Button.new()
 		row.custom_minimum_size = ROW_SIZE
@@ -79,7 +83,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _move(step: int) -> void:
-	var next := clampi(_selected + step, 1, GameSession.unlocked)
+	var next := clampi(_selected + step, 1, GameSession.unlocked_level())
 	if next == _selected:
 		return
 	_selected = next
@@ -93,17 +97,33 @@ func _show() -> void:
 		var offset := i - AROUND
 		var level := _selected + offset
 		var row := _rows[i]
-		var shown := level >= 1 and level <= GameSession.unlocked
+		var shown := level >= 1 and level <= GameSession.unlocked_level()
 		row.text = "Level %d" % level if shown else ""
 		row.disabled = not shown
 		row.modulate.a = FADE[absi(offset)] if shown else 0.0
 		row.flat = offset != 0
 		row.add_theme_font_size_override("font_size", 28 if offset == 0 else 22)
 	var size := GameSession.level_size(_selected)
-	var time := GameSession.level_time(_selected)
-	_info.text = "Mapa %d × %d m · čas %d:%02d · materiálů %d" % [
-		size, size, time / 60, time % 60, mini(GameSession.level_materials(_selected), GameSession.material_points().size()),
-	]
+	var materials := mini(GameSession.level_materials(_selected), GameSession.material_points().size())
+	if bool(GameSession.rules()["timed"]):
+		var time := GameSession.mode_time(_selected)
+		_info.text = "Mapa %d × %d m · čas %d:%02d · materiálů %d" % [size, size, time / 60, time % 60, materials]
+	else:
+		_info.text = "Mapa %d × %d m · bez limitu · materiálů %d" % [size, size, materials]
+	_show_records()
+
+
+## Rekordy vybraného levelu pro každý počet hráčů, který ho dohrál. Jen u typů bez limitu.
+func _show_records() -> void:
+	_records.visible = not bool(GameSession.rules()["timed"])
+	if not _records.visible:
+		return
+	var parts := PackedStringArray()
+	for count in range(1, GameSession.MAX_PLAYERS + 1):
+		var best := GameSession.record(_selected, count)
+		if best >= 0.0:
+			parts.append("%s %s" % [GameSession.players_text(count), GameSession.clock(best)])
+	_records.text = "Rekordy: " + " · ".join(parts) if not parts.is_empty() else "Rekord zatím není"
 
 
 func _choose() -> void:
@@ -113,4 +133,4 @@ func _choose() -> void:
 
 func _back() -> void:
 	Sound.ui("back")
-	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/game_mode_menu.tscn")

@@ -52,11 +52,16 @@ var _task := -1
 var _painted := {}
 var _crystal: Crystal
 var _hud: Hud
-## Level a jeho cíl. Čas běží, až je mapa hotová. Body jsou součet kamenů v kotlině.
+## Level, pravidla typu hry (GameSession.MODES) a cíl. Čas běží, až je mapa hotová.
+## S limitem odpočítává _time_left, bez limitu přibývá _elapsed.
+## _progress je postup k cíli: body, nebo donesené kameny, podle typu hry.
 var _level := 1
+var _rules := {}
 var _target := 0
 var _time_left := 0.0
+var _elapsed := 0.0
 var _score := 0
+var _progress := 0
 var _playing := false
 var _rocks: Rocks
 var _persons: Array[Person] = []
@@ -95,8 +100,9 @@ func _ready() -> void:
 		push_error("Chybí materiály krystalu.")
 	rocks.bind_crystal(crystal)
 	_level = maxi(GameSession.level, 1)
-	_target = GameSession.level_target(_level, GameSession.players.size())
-	_time_left = float(GameSession.level_time(_level))
+	_rules = GameSession.rules()
+	_time_left = float(GameSession.mode_time(_level))
+	rocks.bottomless = bool(_rules["bottomless"])
 	_crystal = crystal
 	rocks.set_available(GameSession.level_materials(_level))
 	var size := maxi(GameSession.level_size(_level), 2)
@@ -138,7 +144,7 @@ func _ready() -> void:
 	var labels := PondLabels.new()
 	labels.name = "PondLabels"
 	add_child(labels)
-	labels.setup(rocks.pond_spots(), crystal, _persons, camera)
+	labels.setup(rocks.pond_spots(), crystal, _persons, camera, rocks)
 	status.visible = false
 	var music_rng := RandomNumberGenerator.new()
 	music_rng.randomize()
@@ -172,11 +178,18 @@ func _spawn_players(rocks: Rocks, forest: Forest, crystal: Crystal, props: Node2
 
 func _start_level(rocks: Rocks) -> void:
 	_rocks = rocks
+	if _rules["goal"] == "ponds":
+		_target = rocks.gem_total()
+	else:
+		_target = GameSession.level_target(_level, GameSession.players.size())
+	_target = maxi(_target, 1)
 	_hud = Hud.new()
 	_hud.name = "Game"
 	$Hint.add_child(_hud)
-	_hud.setup(_crystal, _level, _target, GameSession.players)
-	_hud.set_time(_time_left)
+	_hud.setup(_crystal, _level, str(_rules["goal"]), _target, _timed(), GameSession.players)
+	_hud.set_time(_time_left if _timed() else 0.0)
+	if not _timed():
+		_hud.show_record(GameSession.record(_level, GameSession.players.size()))
 	_hud.retry_pressed.connect(_restart)
 	_hud.menu_pressed.connect(_to_menu)
 	_hud.next_pressed.connect(_next_level)
@@ -184,7 +197,13 @@ func _start_level(rocks: Rocks) -> void:
 		person.held_changed.connect(_hud.set_held.bind(person.player_index))
 	rocks.settled.connect(_on_settled)
 	_score = 0
+	_progress = 0
+	_elapsed = 0.0
 	_playing = true
+
+
+func _timed() -> bool:
+	return bool(_rules.get("timed", true))
 
 
 func _process(delta: float) -> void:
@@ -196,6 +215,10 @@ func _process(delta: float) -> void:
 		return
 	_point_basin()
 	_update_sound(delta)
+	if not _timed():
+		_elapsed += delta
+		_hud.set_time(_elapsed)
+		return
 	_time_left -= delta
 	_hud.set_time(_time_left)
 	var whole := ceili(_time_left)
@@ -272,19 +295,25 @@ func _point_basin() -> void:
 	_hud.point_basin(to_screen * camera.get_screen_center_position(), to_screen * basin)
 
 
+## Kámen dopadl do kotliny. Podle cíle přidá body, nebo jeden kámen.
 func _on_settled(mat: int, pos: Vector2) -> void:
 	if not _playing or _crystal == null:
 		return
-	_float_points(_crystal.points_of(mat), pos)
 	_score += _crystal.points_of(mat)
-	_hud.set_score(_score)
-	if _score >= _target:
+	if _rules["goal"] == "ponds":
+		_progress += 1
+		_float_text("+1", pos)
+	else:
+		_progress = _score
+		_float_text("+%d" % _crystal.points_of(mat), pos)
+	_hud.set_progress(_progress)
+	if _progress >= _target:
 		_finish(true)
 
 
-## „+N“ u místa dopadu: vystoupá a zmizí. Velikost drží stejnou na obrazovce i při oddálení
-## a dohraje i pod oknem výsledku, když tímhle kamenem level skončil.
-func _float_points(points: int, pos: Vector2) -> void:
+## Nápis „+N“ u místa dopadu: vystoupá a zmizí. Velikost drží stejnou na
+## obrazovce i při oddálení a dohraje i pod oknem výsledku, když tímhle kamenem level skončil.
+func _float_text(text: String, pos: Vector2) -> void:
 	var holder := Node2D.new()
 	holder.position = pos
 	holder.z_index = 20
@@ -292,7 +321,7 @@ func _float_points(points: int, pos: Vector2) -> void:
 	var zoom := camera.zoom.x
 	holder.scale = Vector2.ONE / zoom
 	var label := Label.new()
-	label.text = "+%d" % points
+	label.text = text
 	label.add_theme_font_size_override("font_size", 30)
 	label.add_theme_color_override("font_color", Color(0.98, 0.82, 0.4))
 	label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.04))
@@ -319,7 +348,29 @@ func _finish(won: bool) -> void:
 	Sound.ui("win" if won else "lose")
 	if won:
 		GameSession.unlock(_level + 1)
-	_hud.show_result(won, _level, _score, _level >= GameSession.last_level())
+	var last := _level >= GameSession.last_level()
+	_hud.show_result(won, _result_note(won, last), last, not _timed())
+
+
+## Řádek pod nadpisem okna výsledku. Bez limitu je v něm čas a rekord, který se tady uloží.
+func _result_note(won: bool, last: bool) -> String:
+	var goal := str(_rules["goal"])
+	if not won:
+		return "Level %d · %d / %d %s" % [_level, _progress, _target, Hud.UNITS.get(goal, "")]
+	var done := "Dohrál jsi všechny levely" if last else "Level %d splněn" % _level
+	if goal == "points":
+		return "%s · %d bodů" % [done, _score]
+	if _timed():
+		return done
+	# První dohrání je rovnou rekord, nový rekord se hlásí až při překonání starého.
+	var players := GameSession.players.size()
+	var before := GameSession.record(_level, players)
+	var time := GameSession.clock(_elapsed)
+	if not GameSession.offer_record(_level, players, _elapsed):
+		return "%s · čas %s · rekord %s" % [done, time, GameSession.clock(before)]
+	if before >= 0.0:
+		return "%s · čas %s · nový rekord" % [done, time]
+	return "%s · čas %s" % [done, time]
 
 
 func _restart() -> void:

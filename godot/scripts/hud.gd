@@ -1,8 +1,9 @@
 extends Control
 
 ## Údaje hry v horních rozích a okno s výsledkem levelu. Sám nic nepočítá, svět mu říká, co ukázat.
-## Vlevo co nese každý hráč (ruka v barvě jeho trika), uprostřed zbývající čas, vpravo level a body. Okno výsledku běží
-## i v pauze, zbytek stojí se hrou.
+## Vlevo co nese každý hráč (ruka v barvě jeho trika), uprostřed zbývající čas (bez limitu
+## uběhlý), vpravo level a postup k cíli: body nebo donesené kameny. Okno výsledku
+## běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
 const THEME := preload("res://themes/menu.tres")
@@ -18,6 +19,8 @@ const TEXT := Color(0.95, 0.93, 0.88)
 const DIM := Color(0.95, 0.93, 0.88, 0.55)
 const ACCENT := Color(0.86, 0.66, 0.3)
 const HURRY_COLOR := Color(0.94, 0.4, 0.32)
+## Jednotka postupu vpravo nahoře podle cíle typu hry.
+const UNITS := {"points": "bodů", "ponds": "kamenů"}
 
 signal retry_pressed
 signal menu_pressed
@@ -34,8 +37,12 @@ var _held_names: Array[Label] = []
 const SHORT_NAMES_FROM := 4
 var _level: Label
 var _score: Label
+var _unit: Label
 var _bar: ProgressBar
 var _time: Label
+## Rekord levelu pod stopkami, jen bez limitu a když rekord je.
+var _record: Label
+var _timed := true
 var _target := 1
 var _shown_seconds := -1
 var _arrow: BasinArrow
@@ -64,16 +71,20 @@ func _ready() -> void:
 
 
 ## players jsou záznamy z GameSession.players. Každý dostane řádek s rukou v barvě trika.
-func setup(crystal: Crystal, level: int, target: int, players: Array[Dictionary]) -> void:
+## goal je cíl typu hry (points, ponds), target kolik ho je potřeba. timed říká, jestli čas
+## odpočítává limit.
+func setup(crystal: Crystal, level: int, goal: String, target: int, timed: bool, players: Array[Dictionary]) -> void:
 	_crystal = crystal
+	_timed = timed
 	# Po třech vedle sebe, ať panel zůstane nízký a postavy pod ním jsou vidět.
 	_held_rows.columns = clampi(players.size(), 1, 3)
 	for player: Dictionary in players:
 		_add_held_row(Color.html(str(player.get("shirt", "E8E2D2"))))
 	_target = maxi(target, 1)
 	_level.text = "Level %d" % level
+	_unit.text = str(UNITS.get(goal, ""))
 	_bar.max_value = _target
-	set_score(0)
+	set_progress(0)
 	for i in _gems.size():
 		set_held(-1, i)
 
@@ -95,20 +106,22 @@ func set_held(mat: int, player: int = 0) -> void:
 	_pop(_held_points[player])
 
 
-func set_score(score: int) -> void:
-	_score.text = "%d / %d" % [score, _target]
-	_bar.value = mini(score, _target)
-	if score > 0:
+## Postup k cíli: body, nebo počet donesených kamenů.
+func set_progress(done: int) -> void:
+	_score.text = "%d / %d" % [done, _target]
+	_bar.value = mini(done, _target)
+	if done > 0:
 		_pop(_score)
 
 
+## S limitem zbývající čas, bez limitu uběhlý.
 func set_time(seconds: float) -> void:
-	var whole := maxi(ceili(seconds), 0)
+	var whole := maxi(ceili(seconds) if _timed else floori(seconds), 0)
 	if whole == _shown_seconds:
 		return
 	_shown_seconds = whole
 	_time.text = "%d:%02d" % [whole / 60, whole % 60]
-	var hurry := seconds <= HURRY
+	var hurry := _timed and seconds <= HURRY
 	_time.add_theme_color_override("font_color", HURRY_COLOR if hurry else TEXT)
 	if hurry and whole > 0:
 		_pop(_time)
@@ -141,21 +154,23 @@ func point_basin(from: Vector2, to: Vector2) -> void:
 	_arrow.visible = true
 
 
-## last je poslední level hry. Po jeho splnění už další level není.
-func show_result(won: bool, level: int, score: int, last: bool) -> void:
+## note je řádek pod nadpisem, skládá ho svět podle typu hry. last je poslední level hry,
+## po jeho splnění už další level není. replay nabídne i po výhře hrát level znovu (o rekord).
+func show_result(won: bool, note: String, last: bool, replay: bool) -> void:
 	for child in _result_buttons.get_children():
 		child.queue_free()
+	_result_title.text = "Výborně" if won else "Nesplnil jsi cíl"
+	_result_note.text = note
 	if won and last:
-		_result_title.text = "Výborně"
-		_result_note.text = "Dohrál jsi všechny levely · %d bodů" % score
 		_result_button("Návrat do menu", menu_pressed).grab_focus()
+		if replay:
+			_result_button("Hrát znovu", retry_pressed)
 	elif won:
-		_result_title.text = "Výborně"
-		_result_note.text = "Level %d splněn · %d bodů" % [level, score]
 		_result_button("Další level", next_pressed).grab_focus()
+		if replay:
+			_result_button("Hrát znovu", retry_pressed)
+		_result_button("Návrat do menu", menu_pressed)
 	else:
-		_result_title.text = "Nesplnil jsi cíl"
-		_result_note.text = "Level %d · %d / %d bodů" % [level, score, _target]
 		_result_button("Hrát znovu", retry_pressed).grab_focus()
 		_result_button("Návrat do menu", menu_pressed)
 	_arrow.visible = false
@@ -233,6 +248,17 @@ func _build_time() -> void:
 	_time.custom_minimum_size = Vector2(110, 0)
 	_time.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_time)
+	_record = _label(14, DIM)
+	_record.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_record.visible = false
+	column.add_child(_record)
+
+
+## Rekord levelu pro tolik hráčů, kolik jich hraje. Záporný (rekord není) řádek skryje.
+func show_record(seconds: float) -> void:
+	_record.visible = seconds >= 0.0
+	if _record.visible:
+		_record.text = "rekord %s" % GameSession.clock(seconds)
 
 
 func _build_score() -> void:
@@ -249,10 +275,9 @@ func _build_score() -> void:
 	column.add_child(row)
 	_score = _label(28, TEXT)
 	row.add_child(_score)
-	var unit := _label(16, DIM)
-	unit.text = "bodů"
-	unit.size_flags_vertical = Control.SIZE_SHRINK_END
-	row.add_child(unit)
+	_unit = _label(16, DIM)
+	_unit.size_flags_vertical = Control.SIZE_SHRINK_END
+	row.add_child(_unit)
 	_bar = ProgressBar.new()
 	_bar.show_percentage = false
 	_bar.custom_minimum_size = Vector2(190, 6)

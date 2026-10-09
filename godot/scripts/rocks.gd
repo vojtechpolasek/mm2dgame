@@ -1,6 +1,7 @@
 extends "res://scripts/layered_props.gd"
 
 const Crystal := preload("res://scripts/crystal.gd")
+const BasinCompass := preload("res://scripts/basin_compass.gd")
 
 ## Kámen dopadl do kotliny. mat je číslo materiálu, pos místo dopadu ve světě.
 signal settled(mat: int, pos: Vector2)
@@ -38,8 +39,6 @@ const FOOT_MARGIN := 1.4
 const LOW := 1.5
 ## Jedna prázdná kotlina na mapu. Do pásu ani do šancí povrchu nepatří.
 const BASIN := "kotlina"
-## Jak daleko od středu mapy se její střed smí posunout, v metrech.
-const BASIN_WANDER := 6.0
 ## Jezírko má počet podle vzácnosti materiálu, ne šanci v povrchu.
 const POND := "jezirko"
 ## Na mapě 64 má nejběžnější materiál POND_COMMON jezírek a nejvzácnější POND_RARE.
@@ -52,15 +51,27 @@ const POND_GROWTH := 1.0
 const POND_CLEAR := 10.0
 ## Nejmenší vzdálenost středů dvou jezírek v metrech. Jezírko má průměr asi 2 m.
 const POND_GAP := 7.0
-## Materiál má jezírka v mezikruží kolem kotliny širokém tolik z velikosti mapy. Běžný začíná
-## hned za volným kruhem, nejvzácnější končí u pásu skal.
-const POND_SPREAD := 0.25
 ## Metry od okraje za stěnou skal, ať velká skála jezírko nepřikryje. Řada a rozházené skály
 ## se sázejí po jezírkách a vyhnou se jim samy.
 const POND_INSET := 6.0
 ## O kolik pixelů dřív než o obrys se bere dotek postavy.
 const TOUCH_PX := 2.0
+## Kamenů v jezírku. U bezedného jezírka jsou vidět pořád, jinak ubývají.
 const GEMS_IN_POND := 3
+## Míst pro kameny v jezírku. Výměnami a vracením ukradených jich v jezírku může být víc než
+## na začátku. Kameny nad GEM_SPOTS se kladou na stejná místa znovu, kousek posunuté.
+const GEM_SPOTS := 7
+const GEM_STACK := Vector2(2.0, -3.0)
+## Víc kamenů než GEMS_IN_POND se do jezírka vejde menších, nejvýš na GEM_SHRINK původní velikosti.
+const GEM_SHRINK := 0.6
+## Jezírka, která nejsou bezedná, se vybírají celá, proto jich je méně: CAPPED_FIRST při
+## FIRST_MATERIALS materiálech, CAPPED_LAST při všech, mezi tím rovnoměrně.
+const CAPPED_FIRST := 6
+const CAPPED_LAST := 15
+const CAPPED_FROM := 2
+## Kamenů v jezírku, které není bezedné, podle pořadí materiálu od nejběžnějšího: od
+## FEWER_GEMS[0]. materiálu o jeden méně, od FEWER_GEMS[1]. ještě o jeden.
+const FEWER_GEMS: Array[int] = [6, 10]
 const RIM_WEIGHTS := {
 	"skala15": 0.2,
 	"skala2": 0.22,
@@ -108,6 +119,19 @@ var _pond_rock := PackedInt32Array()
 var _pond_mat := PackedInt32Array()
 var _gem_pos := PackedVector2Array()
 var _gem_rot := PackedFloat32Array()
+## Bezedné jezírko má svého materiálu pořád dost. Jinak má kameny jen v _pond_gems a ubývají.
+## Nastaví svět.
+var bottomless := true
+## Kameny v jezírku podle pořadí, ve kterém do něj přišly. Bezedné tu má jen kameny vložené
+## navíc, svůj materiál nepočítá.
+var _pond_gems: Array[PackedInt32Array] = []
+## Všechny kameny ve všech jezírkách na začátku. Výměny a krádeže je jen přesouvají.
+var _gem_total := 0
+## Materiál -> úhel šipky na kotlině, kam naposledy ukazovala. Když materiál v žádném jezírku
+## není, šipka tam zůstane prázdná.
+var _compass_last := {}
+## Zobrazené jezírko -> jeho uzel, ať jde po sebrání a vrácení kamene hned překreslit.
+var _pond_nodes := {}
 var _deposit_mat := PackedInt32Array()
 var _deposit_pos := PackedVector2Array()
 var _deposit_rot := PackedFloat32Array()
@@ -161,24 +185,18 @@ static func pond_count(rarity: float, size: int) -> int:
 	return maxi(roundi(on_base * grow), 1)
 
 
-## Jedna kotlina na souši co nejblíž středu. Náhodný posun, ať nesedí pořád na stejném pixelu.
-## Když je střed voda, bere nejbližší souš. Obrys je plný, dovnitř se nevstupuje.
+## Jedna kotlina přesně uprostřed mapy. Střed je souš, tu tam drží generátor mapy
+## (MapGenerator.CENTER_CLEAR). Kdyby přesto byla voda, bere nejbližší souš. Obrys je plný,
+## dovnitř se nevstupuje.
 func _place_basin(map: MapData, rng: RandomNumberGenerator) -> void:
 	if not _kind_of.has(BASIN):
 		return
 	var kind: int = _kind_of[BASIN]
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	var limit := float(map.size) * tile
-	var center := Vector2(limit, limit) * 0.5
-	var wander := BASIN_WANDER * tile
-	var margin := tile * 0.5
-	for _try in 8:
-		var pos := center + Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)) * wander
-		pos.x = clampf(pos.x, margin, limit - margin)
-		pos.y = clampf(pos.y, margin, limit - margin)
-		if _on_land(map, pos):
-			_keep(kind, pos, rng)
-			return
+	var center := Vector2(map.size, map.size) * tile * 0.5
+	if _on_land(map, center):
+		_keep(kind, center, rng)
+		return
 	var spot := _nearest_land(map)
 	if spot < 0:
 		return
@@ -191,9 +209,9 @@ func _place_basin(map: MapData, rng: RandomNumberGenerator) -> void:
 	)
 
 
-## Každý materiál má jezírka v mezikruží kolem kotliny, vzácnější dál. Jezírka drží rozestup
-## POND_GAP, takže mezi nimi vždycky jde projít. Když se do mezikruží všechna nevejdou, zbytek
-## jde kamkoli mezi volný kruh a pás skal.
+## Každý materiál na mapě má jezírka ve svém mezikruží kolem kotliny, vzácnější dál.
+## Pásy se roztáhnou na materiály, které level pustil, a sousedé se jen dotýkají.
+## Jezírka drží rozestup POND_GAP, takže mezi nimi vždycky jde projít.
 func _place_ponds(map: MapData, rng: RandomNumberGenerator) -> void:
 	if _pond_kind < 0 or _by_points.is_empty():
 		return
@@ -201,16 +219,56 @@ func _place_ponds(map: MapData, rng: RandomNumberGenerator) -> void:
 	var origin := Vector2(float(map.size) * tile, float(map.size) * tile) * 0.5
 	if _basin_index >= 0:
 		origin = _pos[_basin_index]
-	var reach := pond_annulus(1.0, map.size)
-	var count := _by_points.size() if _available < 0 else mini(_available, _by_points.size())
+	var materials := _by_points.size()
+	var count := materials if _available < 0 else mini(_available, materials)
+	var capped := capped_ponds(count, materials)
 	for order in count:
 		var mat := _by_points[order]
-		var rarity := material_rarity(order, _by_points.size())
-		var want := pond_count(rarity, map.size)
-		var ring := pond_annulus(rarity, map.size) * tile
-		var placed := _place_ring(map, rng, mat, want, origin, ring.x, ring.y)
-		if placed < want:
-			_place_ring(map, rng, mat, want - placed, origin, POND_CLEAR * tile, reach.y * tile)
+		var want := pond_count(material_rarity(order, materials), map.size) if bottomless else capped[order]
+		var ring := pond_annulus(order, count, map.size) * tile
+		_place_ring(map, rng, mat, want, origin, ring.x, ring.y)
+
+
+## Počty jezírek materiálů od nejběžnějšího, když jezírka nejsou bezedná. Celkem jich je mezi
+## CAPPED_FIRST a CAPPED_LAST podle počtu materiálů na mapě. Každý materiál má aspoň jedno,
+## zbytek se rozdělí podle běžnosti jako v pond_count.
+static func capped_ponds(count: int, materials: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if count <= 0:
+		return out
+	var share := clampf(float(count - CAPPED_FROM) / float(maxi(materials - CAPPED_FROM, 1)), 0.0, 1.0)
+	var total := maxi(roundi(lerpf(CAPPED_FIRST, CAPPED_LAST, share)), count)
+	var weights := PackedFloat32Array()
+	var sum := 0.0
+	for order in count:
+		var common := 1.0 - material_rarity(order, materials)
+		weights.append(float(POND_RARE) + float(POND_COMMON - POND_RARE) * common * common)
+		sum += weights[order]
+	# Každý materiál jedno, zbytek po celých dílech a zbylá jezírka těm s největším zbytkem.
+	var extra := total - count
+	var rests := PackedFloat32Array()
+	var given := 0
+	for order in count:
+		var part := float(extra) * weights[order] / sum
+		out.append(1 + floori(part))
+		rests.append(part - floorf(part))
+		given += floori(part)
+	var order_by_rest: Array[int] = []
+	for order in count:
+		order_by_rest.append(order)
+	order_by_rest.sort_custom(func(a: int, b: int) -> bool: return rests[a] > rests[b])
+	for i in extra - given:
+		out[order_by_rest[i]] += 1
+	return out
+
+
+## Kamenů v plném jezírku, které není bezedné, podle pořadí materiálu od nejběžnějšího.
+static func pond_gems(order: int) -> int:
+	var gems := GEMS_IN_POND
+	for from in FEWER_GEMS:
+		if order + 1 >= from:
+			gems -= 1
+	return maxi(gems, 1)
 
 
 func _pond_cell(x: int, y: int, size: int) -> bool:
@@ -266,18 +324,24 @@ static func material_rarity(order: int, count: int) -> float:
 	return clampf(float(order) / float(maxi(count - 1, 1)), 0.0, 1.0)
 
 
-## Mezikruží jezírek dané vzácnosti: vnitřní a vnější vzdálenost od kotliny v metrech.
-static func pond_annulus(rarity: float, size: int) -> Vector2:
-	var outer := maxf(float(size) * 0.5 - _rim_guard(size), POND_CLEAR + 1.0)
-	var width := float(size) * POND_SPREAD
-	var inner := lerpf(POND_CLEAR, maxf(outer - width, POND_CLEAR), rarity)
-	return Vector2(inner, maxf(minf(inner + width, outer), inner + 1.0))
+## Mezikruží jezírek daného pořadí: vnitřní a vnější vzdálenost od kotliny v metrech.
+## count je počet materiálů, které na mapě mají jezírka. Pásy jsou stejně široké a sousedé
+## se jen dotýkají. Nejběžnější začíná za volným kruhem, nejdražší z nich končí u pásu skal.
+static func pond_annulus(order: int, count: int, size: int) -> Vector2:
+	var reach := maxf(float(size) * 0.5 - _rim_guard(size), POND_CLEAR)
+	var bands := maxi(count, 1)
+	var width := (reach - POND_CLEAR) / float(bands)
+	var inner := POND_CLEAR + float(clampi(order, 0, bands - 1)) * width
+	return Vector2(inner, inner + width)
 
 
-## Odhad vzdálenosti nejbližšího jezírka dané vzácnosti od kotliny v metrech. Jezírka jsou
+## Odhad vzdálenosti nejbližšího jezírka daného pořadí od kotliny v metrech. Jezírka jsou
 ## rozložená po mezikruží, nejbližší je v průměru kousek za vnitřní hranou.
-static func pond_distance(rarity: float, size: int) -> float:
-	var ring := pond_annulus(rarity, size)
+## bands je počet materiálů na mapě, materials počet všech v katalogu. Počet jezírek se
+## bere z celého katalogu, ať vzácnost neposkočí jen proto, že dražší materiály chybí.
+static func pond_distance(order: int, bands: int, materials: int, size: int) -> float:
+	var ring := pond_annulus(order, bands, size)
+	var rarity := material_rarity(order, materials)
 	return ring.x + (ring.y - ring.x) / float(pond_count(rarity, size) + 1)
 
 
@@ -307,6 +371,12 @@ func _remember_pond(mat: int, rng: RandomNumberGenerator) -> void:
 	_pond_slot[index] = slot
 	_pond_rock.append(index)
 	_pond_mat.append(mat)
+	var gems := PackedInt32Array()
+	if not bottomless:
+		for _gem in pond_gems(_by_points.find(mat)):
+			gems.append(mat)
+		_gem_total += gems.size()
+	_pond_gems.append(gems)
 	_scatter_gems(rng)
 
 
@@ -317,9 +387,9 @@ func _scatter_gems(rng: RandomNumberGenerator) -> void:
 	var reach := maxf(mouth - _gem_radius - 1.0, 0.0)
 	var apart := _gem_radius * 0.85
 	var spots: Array[Vector2] = []
-	for _gem in GEMS_IN_POND:
+	for _gem in GEM_SPOTS:
 		var spot := Vector2.ZERO
-		for _try in 8:
+		for _try in 16:
 			spot = Vector2.from_angle(rng.randf() * TAU) * sqrt(rng.randf()) * reach
 			var clear := true
 			for other: Vector2 in spots:
@@ -338,6 +408,10 @@ func _begin_plant(map: MapData) -> void:
 	_pond_slot = PackedInt32Array()
 	_pond_rock = PackedInt32Array()
 	_pond_mat = PackedInt32Array()
+	_pond_gems.clear()
+	_gem_total = 0
+	_compass_last.clear()
+	_pond_nodes.clear()
 	_gem_pos = PackedVector2Array()
 	_gem_rot = PackedFloat32Array()
 	_deposit_mat = PackedInt32Array()
@@ -411,6 +485,11 @@ func _build(kind: int) -> Node2D:
 		var holder := Node2D.new()
 		holder.name = "Gems"
 		node.add_child(holder)
+	if kind == _basin_kind:
+		var compass := BasinCompass.new()
+		compass.name = "Compass"
+		compass.setup(_top[kind], _crystal)
+		node.add_child(compass)
 	return node
 
 
@@ -419,8 +498,10 @@ func acquire(index: int) -> Node2D:
 	if index == _basin_index:
 		_basin_node = node
 		_sync_deposits()
+		_sync_compass()
 	var slot := _pond_slot[index] if index < _pond_slot.size() else -1
 	if slot >= 0:
+		_pond_nodes[slot] = node
 		_sync_pond(node, slot)
 	return node
 
@@ -428,6 +509,9 @@ func acquire(index: int) -> Node2D:
 func release(index: int, node: Node2D) -> void:
 	if node == _basin_node:
 		_basin_node = null
+	var slot := _pond_slot[index] if index < _pond_slot.size() else -1
+	if slot >= 0:
+		_pond_nodes.erase(slot)
 	super.release(index, node)
 
 
@@ -866,13 +950,13 @@ func _rim_kind(weights: Dictionary, rng: RandomNumberGenerator) -> int:
 	return weights.keys()[0]
 
 
-## Materiál jezírka, jehož obrysu se střed postavy dotýká. Žádné je -1.
-func pond_material(pos: Vector2, body: float) -> int:
+## Jezírko, jehož obrysu se střed postavy dotýká. Žádné je -1. Prázdné jezírko se počítá jen
+## s empty, tedy když postava nese kámen a může ho do něj odložit.
+func pond_at(pos: Vector2, body: float, empty: bool = false) -> int:
 	var best := -1
 	var best_dist := INF
 	for slot in _pond_rock.size():
-		var mat := _pond_mat[slot]
-		if mat < 0:
+		if _pond_mat[slot] < 0 or (pond_left(slot) <= 0 and not empty):
 			continue
 		var index := _pond_rock[slot]
 		if not _touches(pos, index, body):
@@ -880,8 +964,137 @@ func pond_material(pos: Vector2, body: float) -> int:
 		var dist := pos.distance_squared_to(_pos[index])
 		if dist < best_dist:
 			best_dist = dist
+			best = slot
+	return best
+
+
+## Kolik kamenů je v jezírku vidět. Bezedné má vždy aspoň GEMS_IN_POND svého materiálu.
+func pond_left(slot: int) -> int:
+	if slot < 0 or slot >= _pond_gems.size():
+		return 0
+	return _pond_gems[slot].size() + (GEMS_IN_POND if bottomless else 0)
+
+
+## Nejdražší kámen v jezírku, prázdné -1.
+func pond_best(slot: int) -> int:
+	var best := _pond_mat[slot] if bottomless else -1
+	for mat in _pond_gems[slot]:
+		if best < 0 or _points[mat] > _points[best]:
 			best = mat
 	return best
+
+
+## Co v jezírku leží, od nejdražšího: dvojice [materiál, počet]. Materiál bezedného jezírka má
+## počet -1.
+func pond_summary(slot: int) -> Array:
+	var counts := {}
+	if bottomless:
+		counts[_pond_mat[slot]] = -1
+	for mat in _pond_gems[slot]:
+		if int(counts.get(mat, 0)) >= 0:
+			counts[mat] = int(counts.get(mat, 0)) + 1
+	var out := []
+	for mat: int in counts:
+		out.append([mat, counts[mat]])
+	out.sort_custom(func(a: Array, b: Array) -> bool: return _points[a[0]] > _points[b[0]])
+	return out
+
+
+## Všechny kameny ve všech jezírkách na začátku levelu.
+func gem_total() -> int:
+	return _gem_total
+
+
+## Výměna u jezírka: postava vezme nejdražší kámen, který v jezírku byl, a nesený (held, -1 je
+## prázdná ruka) v něm nechá. Bezedné jezírko si nechá jen kámen dražší, než je jeho materiál,
+## levnější zmizí. Vrátí vzatý materiál. Do prázdného jezírka se nesený kámen jen odloží
+## a vrátí se -1, s prázdnou rukou se tam nestane nic.
+func swap_gem(slot: int, held: int) -> int:
+	var best := pond_best(slot)
+	if best < 0 and held < 0:
+		return -1
+	var gems := _pond_gems[slot]
+	var at := gems.find(best) if best >= 0 else -1
+	if at >= 0:
+		gems.remove_at(at)
+	_pond_gems[slot] = gems
+	if held >= 0:
+		_keep_gem(slot, held)
+	_refresh_pond(slot)
+	_sync_compass()
+	return best
+
+
+## Ukradený kámen doletěl zpátky do jezírka, ze kterého ho postava vzala.
+func return_gem(slot: int, mat: int) -> void:
+	if slot < 0 or slot >= _pond_gems.size() or mat < 0:
+		return
+	_keep_gem(slot, mat)
+	_refresh_pond(slot)
+	_sync_compass()
+
+
+func _keep_gem(slot: int, mat: int) -> void:
+	if bottomless and _points[mat] <= _points[_pond_mat[slot]]:
+		return
+	var gems := _pond_gems[slot]
+	gems.append(mat)
+	_pond_gems[slot] = gems
+
+
+## Místo ve světě, kam dopadne vracený kámen: další volné místo jezírka.
+func gem_home(slot: int) -> Vector2:
+	var index := _pond_rock[slot]
+	return _pos[index] + _gem_spot(slot, pond_left(slot)).rotated(_turn[index])
+
+
+## Místo kamene v jezírku. Nad GEM_SPOTS se místa opakují, každé kolo o kus posunuté.
+func _gem_spot(slot: int, gem: int) -> Vector2:
+	return _gem_pos[slot * GEM_SPOTS + gem % GEM_SPOTS] + GEM_STACK * float(gem / GEM_SPOTS)
+
+
+func _refresh_pond(slot: int) -> void:
+	var node: Node2D = _pond_nodes.get(slot)
+	if node != null:
+		_sync_pond(node, slot)
+
+
+## Šipky na kotlině, jedna na materiál, po trojicích [úhel od středu kotliny, materiál, leží
+## někde v jezírku]. Šipka míří k jezírku nejblíž kotlině, kde materiál zrovna leží. Když není
+## v žádném (je v kotlině nebo ho někdo nese), zůstane mířit, kam mířila, a je prázdná.
+func compass_targets() -> Array:
+	var targets := []
+	if _basin_index < 0 or _crystal == null:
+		return targets
+	var origin := _pos[_basin_index]
+	var nearest := {}
+	for slot in _pond_mat.size():
+		if _pond_mat[slot] < 0:
+			continue
+		var pos := _pos[_pond_rock[slot]]
+		var held := Array(_pond_gems[slot])
+		if bottomless:
+			held.append(_pond_mat[slot])
+		for mat: int in held:
+			if not nearest.has(mat) or origin.distance_squared_to(pos) < origin.distance_squared_to(nearest[mat]):
+				nearest[mat] = pos
+	for mat in pond_materials():
+		if nearest.has(mat):
+			_compass_last[mat] = ((nearest[mat] as Vector2) - origin).angle()
+		if _compass_last.has(mat):
+			targets.append([_compass_last[mat], mat, nearest.has(mat)])
+	return targets
+
+
+func _sync_compass() -> void:
+	if _basin_node == null:
+		return
+	var compass := _basin_node.get_node_or_null("Compass") as BasinCompass
+	if compass == null:
+		return
+	# Kotlina je otočená, šipky míří ve světě.
+	compass.rotation = -_turn[_basin_index]
+	compass.show_targets(compass_targets())
 
 
 ## Střed kotliny ve světě. Bez kotliny Vector2.INF.
@@ -889,12 +1102,12 @@ func basin_position() -> Vector2:
 	return _pos[_basin_index] if _basin_index >= 0 else Vector2.INF
 
 
-## Jezírka s materiálem: poloha ve světě a číslo materiálu, po dvojicích [pos, mat].
+## Jezírka s materiálem: poloha ve světě, číslo materiálu a jezírka, po trojicích [pos, mat, slot].
 func pond_spots() -> Array:
 	var spots := []
 	for slot in _pond_rock.size():
 		if _pond_mat[slot] >= 0:
-			spots.append([_pos[_pond_rock[slot]], _pond_mat[slot]])
+			spots.append([_pos[_pond_rock[slot]], _pond_mat[slot], slot])
 	return spots
 
 
@@ -942,14 +1155,20 @@ func _sync_pond(node: Node2D, slot: int) -> void:
 	var holder := node.get_node_or_null("Gems") as Node2D
 	if holder == null:
 		return
-	_match_gems(holder, GEMS_IN_POND)
-	for i in GEMS_IN_POND:
+	# Bezedné jezírko ukazuje GEMS_IN_POND svého materiálu a za nimi kameny vložené navíc.
+	var own := GEMS_IN_POND if bottomless else 0
+	var gems := _pond_gems[slot]
+	var count := own + gems.size()
+	_match_gems(holder, count)
+	var size := clampf(sqrt(float(GEMS_IN_POND) / float(maxi(count, 1))), GEM_SHRINK, 1.0)
+	for i in count:
 		var sprite := holder.get_child(i) as Sprite2D
-		var at := slot * GEMS_IN_POND + i
-		sprite.position = _gem_pos[at]
-		sprite.rotation = _gem_rot[at]
+		var spin := _gem_rot[slot * GEM_SPOTS + i % GEM_SPOTS]
+		sprite.position = _gem_spot(slot, i)
+		sprite.rotation = spin
+		sprite.scale = Vector2(size, size)
 		sprite.visible = true
-		_crystal.paint(sprite, _pond_mat[slot], 0.0, _gem_rot[at])
+		_crystal.paint(sprite, _pond_mat[slot] if i < own else gems[i - own], 0.0, spin)
 
 
 func _sync_deposits() -> void:

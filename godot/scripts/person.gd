@@ -42,6 +42,12 @@ const ESCAPE_STEP := 6.0
 ## Dlaň z tools/gen_person.py, HOLD_PALM. Záporné Y je dopředu, jako v atlasu.
 const PALM := Vector2(16.0, -16.0)
 const THROW_TIME := 0.45
+## Ukradený kámen odletí za tolik sekund zpátky do jezírka, ze kterého ho postava vzala.
+const RETURN_TIME := 0.7
+## Dotek jezírka vymění kámen hned. Když postava u jezírka zůstane, vymění znovu po tolika
+## sekundách, dokud neodejde.
+const SWAP_REPEAT := 1.0
+const RETURN_ARC := 48.0
 ## Krok zazní dvakrát za cyklus chůze, při každém dosednutí nohy. Povrchy se zvukem kroků.
 const STEP_SURFACES: PackedStringArray = ["grass", "dirt", "desert", "snow"]
 const STEP_VARIANTS := 4
@@ -84,6 +90,11 @@ var _hold_texture: Texture2D
 var _hand_height := 1.2
 var _held: Sprite2D
 var _held_mat := -1
+## Jezírko, ze kterého je kámen v ruce. Tam se vrátí, když ho příšera ukradne.
+var _held_slot := -1
+## Jezírko, kterého se postava právě dotýká, a za kolik sekund u něj vymění znovu.
+var _touch_slot := -1
+var _touch_left := 0.0
 var _flyer: Sprite2D
 var _fly_from := Vector2.ZERO
 var _fly_to := Vector2.ZERO
@@ -128,7 +139,7 @@ func _process(delta: float) -> void:
 		_step_run(delta, direction)
 	if _flyer != null:
 		_advance_throw(delta)
-	_carry()
+	_carry(delta)
 
 
 func _begin_jump(direction: Vector2) -> void:
@@ -374,16 +385,42 @@ func _attach_hand() -> void:
 	add_child(_held)
 
 
-func _carry() -> void:
+## Kotlina vezme nesený kámen. Jezírko ho vymění za svůj nejdražší kámen, prázdné jezírko si ho
+## nechá a ruka zůstane prázdná. Hned při doteku a potom každých SWAP_REPEAT sekund, dokud
+## postava u jezírka stojí, takže u prázdného jezírka se kámen střídavě odloží a vezme.
+func _carry(delta: float) -> void:
 	if _flyer != null or _crystal == null or _crystal.count() == 0 or _held == null:
 		return
 	if _held_mat >= 0 and _rocks.touches_basin(position, BODY):
 		_throw()
+		_touch_slot = -1
 		return
-	var mat := _rocks.pond_material(position, BODY)
-	if mat < 0 or mat == _held_mat:
+	var slot := _rocks.pond_at(position, BODY, _held_mat >= 0)
+	if slot < 0:
+		_touch_slot = -1
 		return
-	_take(mat)
+	if slot == _touch_slot:
+		_touch_left -= delta
+		if _touch_left > 0.0:
+			return
+	_touch_slot = slot
+	_touch_left = SWAP_REPEAT
+	var held := _held_mat
+	var mat := _rocks.swap_gem(slot, held)
+	if mat >= 0:
+		_take(slot, mat)
+	elif held >= 0:
+		_put_down()
+
+
+## Kámen zůstal v prázdném jezírku, ruka je prázdná.
+func _put_down() -> void:
+	_held.visible = false
+	_held_mat = -1
+	_held_slot = -1
+	_set_hold(false)
+	held_changed.emit(-1)
+	Sound.at("sfx/pickup", global_position, -3.0)
 
 
 ## Pro crowd: postava je kruh o poloměru trupu, není malá a ve skoku přeskočí malé tvory.
@@ -408,18 +445,63 @@ func carried() -> int:
 	return _held_mat
 
 
-## Příšera kámen sebrala. Zmizí, ruka je prázdná.
+## Příšera kámen sebrala. Odletí zpátky do svého jezírka, ruka je prázdná.
 func drop_held() -> void:
 	if _held_mat < 0:
 		return
-	_held.visible = false
-	_held_mat = -1
-	_set_hold(false)
-	held_changed.emit(-1)
+	_send_back()
 	Sound.at("sfx/steal", global_position)
 
 
-func _take(mat: int) -> void:
+## Kámen z ruky odletí obloukem do jezírka, ze kterého ho postava vzala. Až dopadne, jezírku
+## přibude.
+func _send_back() -> void:
+	var mat := _held_mat
+	var slot := _held_slot
+	var start := _held.global_position
+	_held.visible = false
+	_held_mat = -1
+	_held_slot = -1
+	_set_hold(false)
+	held_changed.emit(-1)
+	var host := get_parent() as Node2D
+	if host == null or slot < 0:
+		_rocks.return_gem(slot, mat)
+		return
+	var gem := _crystal.make_sprite()
+	host.add_child(gem)
+	gem.global_position = start
+	gem.z_index = 3
+	_crystal.paint(gem, mat, _hand_height, 0.0)
+	_pad_gem(gem, _hand_height)
+	var spin := (-1.0 if _rng.randf() < 0.5 else 1.0) * TAU * _rng.randf_range(0.75, 1.6)
+	var tween := gem.create_tween()
+	tween.tween_method(_fly_home.bind(gem, gem.position, _rocks.gem_home(slot), spin), 0.0, 1.0, RETURN_TIME)
+	tween.tween_callback(_land_home.bind(gem, slot, mat))
+
+
+func _fly_home(t: float, gem: Sprite2D, from: Vector2, to: Vector2, spin: float) -> void:
+	var eased := 1.0 - pow(1.0 - t, 2.0)
+	var way := to - from
+	var pos := from.lerp(to, eased)
+	if way.length_squared() > 1.0:
+		pos += way.orthogonal().normalized() * sin(t * PI) * signf(spin) * minf(RETURN_ARC, way.length() * 0.25)
+	gem.position = pos
+	gem.rotation = spin * eased
+	_pad_gem(gem, lerpf(_hand_height, 0.0, eased))
+
+
+func _land_home(gem: Sprite2D, slot: int, mat: int) -> void:
+	gem.queue_free()
+	_rocks.return_gem(slot, mat)
+
+
+## V ruce je kámen mat z jezírka slot. Stejný kámen jako předtím jen změní jezírko, kam se
+## vrátí po krádeži, a nezazní.
+func _take(slot: int, mat: int) -> void:
+	_held_slot = slot
+	if mat == _held_mat:
+		return
 	_held_mat = mat
 	_held.position = PALM
 	_held.rotation = 0.0
@@ -439,6 +521,7 @@ func _throw() -> void:
 	var rot := _held.global_rotation
 	_held.visible = false
 	_held_mat = -1
+	_held_slot = -1
 	_set_hold(false)
 	held_changed.emit(-1)
 	var flyer := _crystal.make_sprite()
