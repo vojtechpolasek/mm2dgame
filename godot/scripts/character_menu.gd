@@ -6,6 +6,7 @@ extends Control
 ## podržením skoku se odpojí. Enter nebo Start na gamepadu spustí hru, Esc nebo B vrátí zpět.
 
 const PersonPreview := preload("res://scripts/person_preview.gd")
+const ControllerIcon := preload("res://scripts/controller_icon.gd")
 
 ## Jak dlouho podržet skok, než se hráč odpojí, v sekundách.
 const LEAVE_HOLD := 1.0
@@ -14,6 +15,8 @@ const SWATCH := 18.0
 const TEXT := Color(0.95, 0.93, 0.88)
 const DIM := Color(0.95, 0.93, 0.88, 0.55)
 const ACCENT := Color(0.86, 0.66, 0.3)
+## Strana klávesy v obrázku ovladače, v pixelech.
+const ICON_KEY := 20.0
 
 @onready var _slots: GridContainer = $Center/Column/Slots
 
@@ -89,7 +92,7 @@ func _join(device: int) -> void:
 	var player := GameSession.free_outfit()
 	player["device"] = device
 	GameSession.players.append(player)
-	_rows.append(1)
+	_rows.append(0)
 	_holds.append(0.0)
 	_rebuild()
 	Sound.ui("join")
@@ -164,8 +167,17 @@ func _player_card(slot: int) -> PanelContainer:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 6)
 	card.add_child(column)
-	var title := _label("Hráč %d · %s" % [slot + 1, Controls.device_name(int(player["device"]))], 18, TEXT)
-	column.add_child(title)
+	# Hlavička je u všech ovladačů stejně vysoká, ať karty začínají řádky na stejném místě.
+	var header := HBoxContainer.new()
+	header.custom_minimum_size.y = ControllerIcon.MAX_HEIGHT * ICON_KEY
+	column.add_child(header)
+	var title := _label("Hráč %d" % [slot + 1], 18, TEXT)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	header.add_child(title)
+	var icon := ControllerIcon.new().setup(int(player["device"]), ICON_KEY)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	header.add_child(icon)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	column.add_child(row)
@@ -202,11 +214,23 @@ func _player_card(slot: int) -> PanelContainer:
 
 func _empty_card() -> PanelContainer:
 	var card := _card()
-	var label := _label("Stiskni ↑\npro připojení\n\nšipky · WASD · gamepad", 20, DIM)
+	var column := VBoxContainer.new()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_theme_constant_override("separation", 18)
+	card.add_child(column)
+	var label := _label("Stiskni ↑\npro připojení", 20, DIM)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	card.add_child(label)
+	column.add_child(label)
+	# Čím se dá připojit: šipky, WASD a gamepad.
+	var devices := HBoxContainer.new()
+	devices.alignment = BoxContainer.ALIGNMENT_CENTER
+	devices.add_theme_constant_override("separation", 22)
+	column.add_child(devices)
+	for device: int in [Controls.ARROWS, Controls.WASD, Controls.FIRST_PAD]:
+		var icon := ControllerIcon.new().setup(device, ICON_KEY)
+		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		icon.modulate.a = 0.75
+		devices.add_child(icon)
 	return card
 
 

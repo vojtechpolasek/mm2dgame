@@ -15,7 +15,6 @@ const PADS := 4
 const COUNT := FIRST_PAD + PADS
 ## Páčka gamepadu se počítá až od tohoto vychýlení.
 const DEADZONE := 0.35
-const NAMES: PackedStringArray = ["Šipky", "WASD", "Gamepad 1", "Gamepad 2", "Gamepad 3", "Gamepad 4"]
 const DIRECTIONS: PackedStringArray = ["left", "right", "up", "down"]
 
 
@@ -51,10 +50,6 @@ func jump_held(device: int) -> bool:
 ## Šipka v daném směru právě stisknutá. what je left, right, up nebo down.
 func pressed(device: int, what: String) -> bool:
 	return Input.is_action_just_pressed(action(device, what))
-
-
-func device_name(device: int) -> String:
-	return NAMES[device] if device >= 0 and device < NAMES.size() else "?"
 
 
 func _bind_device(device: int) -> void:
