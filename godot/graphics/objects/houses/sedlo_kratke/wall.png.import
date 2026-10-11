@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://hsybcrnxjowcl"
-path="res://.godot/imported/roof.png-48510471f3555e2fec8991ca0f7a3299.ctex"
+uid="uid://q3qeyl2dnqru2"
+path="res://.godot/imported/wall.png-d08e469cd9b1f3c8858a4a5702e35998.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://graphics/objects/houses/sedlo_male/roof.png"
-dest_files=["res://.godot/imported/roof.png-48510471f3555e2fec8991ca0f7a3299.ctex"]
+source_file="res://graphics/objects/houses/sedlo_kratke/wall.png"
+dest_files=["res://.godot/imported/wall.png-d08e469cd9b1f3c8858a4a5702e35998.ctex"]
 
 [params]
 

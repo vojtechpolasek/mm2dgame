@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://i23vh73k4txrl"
-path="res://.godot/imported/wall.png-4fc8e5e81585a14e6eb1639c5848c011.ctex"
+uid="uid://2lcqqrkdh2jd4"
+path="res://.godot/imported/wall.png-939b1e44dc9da6a7a098e6d9b4b4ca55.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://graphics/objects/houses/tram_maly/wall.png"
-dest_files=["res://.godot/imported/wall.png-4fc8e5e81585a14e6eb1639c5848c011.ctex"]
+source_file="res://graphics/objects/houses/tram_kratky/wall.png"
+dest_files=["res://.godot/imported/wall.png-939b1e44dc9da6a7a098e6d9b4b4ca55.ctex"]
 
 [params]
 

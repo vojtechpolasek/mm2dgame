@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://sqakpffokk2mf"
-path="res://.godot/imported/roof.png-fbf63ce7679d8a0472523d56ac1a828e.ctex"
+uid="uid://grjmdirbpvw3a"
+path="res://.godot/imported/roof.png-94118c9f2ea35e9e419c7945a9871ee7.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://graphics/objects/houses/tram_maly/roof.png"
-dest_files=["res://.godot/imported/roof.png-fbf63ce7679d8a0472523d56ac1a828e.ctex"]
+source_file="res://graphics/objects/houses/sedlo_dlouhe/roof.png"
+dest_files=["res://.godot/imported/roof.png-94118c9f2ea35e9e419c7945a9871ee7.ctex"]
 
 [params]
 

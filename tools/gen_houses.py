@@ -2,7 +2,8 @@
 """Domky z pohledu shora. Vidět je střecha, stěna jen u kraje obrazovky.
 
 64 px je 1 m, stejně jako u postavy, skal a stromů. Kreslí se ve čtyřnásobném
-rozlišení. Každý dům má dvě vrstvy a tři velikosti od každého typu:
+rozlišení. Sedlo a trám mají dvě velikosti, menší ve dvou délkách.
+Jurta má tři velikosti. Každý dům má dvě vrstvy:
 
   sedlo  obdélník rozpůlený hřebenem, hřeben je nejvýš
   tram   nejvyšší bod uprostřed, trámy ze středu do rohů
@@ -85,13 +86,15 @@ class House:
 
 
 # width a depth jsou metry půdorysu stěny. height je výška střechy v metrech.
+# Menší sedlo i trám mají stejnou hloubku a výšku, liší se jen délkou.
+LAYER_PREVIEW = ("sedlo_dlouhe", "tram_dlouhy", "jurta_stredni")
 HOUSES: tuple[House, ...] = (
-    House("sedlo_male", "sedlo malé", "sedlo", 4.4, 3.2, 3.4),
-    House("sedlo_stredni", "sedlo střední", "sedlo", 6.4, 4.4, 4.2),
-    House("sedlo_velke", "sedlo velké", "sedlo", 8.6, 5.6, 5.0),
-    House("tram_maly", "trám malý", "tram", 3.8, 3.8, 3.4),
-    House("tram_stredni", "trám střední", "tram", 5.4, 5.4, 4.2),
-    House("tram_velky", "trám velký", "tram", 7.4, 6.6, 5.0),
+    House("sedlo_kratke", "sedlo krátké", "sedlo", 4.2, 3.2, 3.4),
+    House("sedlo_dlouhe", "sedlo dlouhé", "sedlo", 7.6, 3.2, 3.4),
+    House("sedlo_velke", "sedlo velké", "sedlo", 9.2, 5.4, 5.0),
+    House("tram_kratky", "trám krátký", "tram", 4.0, 3.6, 3.4),
+    House("tram_dlouhy", "trám dlouhý", "tram", 7.2, 3.6, 3.4),
+    House("tram_velky", "trám velký", "tram", 8.0, 6.4, 5.0),
     House("jurta_mala", "jurta malá", "jurta", 3.8, 3.8, 3.2),
     House("jurta_stredni", "jurta střední", "jurta", 5.4, 5.4, 3.8),
     House("jurta_velka", "jurta velká", "jurta", 7.2, 7.2, 4.6),
@@ -746,7 +749,7 @@ def build(selected: list[House]) -> dict[str, dict]:
         edge = trim(compose(painted_wall, painted_roof, shadow, shift))
         overview.append((center, house.label))
         edge_view.append((edge, house.label))
-        if house.name.endswith("stredni"):
+        if house.name in LAYER_PREVIEW:
             layers.extend(
                 (
                     (trim(painted_wall), f"{house.label} · stěna"),
@@ -794,12 +797,25 @@ def build(selected: list[House]) -> dict[str, dict]:
     }
 
 
+def remove_stale() -> None:
+    if not OUT_DIR.exists():
+        return
+    keep = {house.name for house in HOUSES}
+    for child in OUT_DIR.iterdir():
+        if child.is_dir() and child.name not in keep:
+            for item in child.iterdir():
+                item.unlink()
+            child.rmdir()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     names = tuple(house.name for house in HOUSES)
     parser.add_argument("--name", choices=names, help="jen jeden dům, jinak všech devět")
     args = parser.parse_args()
     selected = [house for house in HOUSES if args.name in (None, house.name)]
+    if args.name is None:
+        remove_stale()
     built = build(selected)
     if args.name is None:
         save_grid(built["overview"], 3, PREVIEW / "houses.png", 2)

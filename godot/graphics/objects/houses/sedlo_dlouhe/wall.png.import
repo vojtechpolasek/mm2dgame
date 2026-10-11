@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://4t6iksifpaalw"
-path="res://.godot/imported/wall.png-c3e9066246ea347a610479349455219f.ctex"
+uid="uid://z6yrh4s6zqmb6"
+path="res://.godot/imported/wall.png-120d5a537ba8c83208abf4a2ca8c2f69.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://graphics/objects/houses/sedlo_stredni/wall.png"
-dest_files=["res://.godot/imported/wall.png-c3e9066246ea347a610479349455219f.ctex"]
+source_file="res://graphics/objects/houses/sedlo_dlouhe/wall.png"
+dest_files=["res://.godot/imported/wall.png-120d5a537ba8c83208abf4a2ca8c2f69.ctex"]
 
 [params]
 

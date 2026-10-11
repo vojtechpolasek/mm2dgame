@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://um5lwyhjvh24u"
-path="res://.godot/imported/roof.png-866b4da6886aa57d1efda8e3c45d54ed.ctex"
+uid="uid://tdr2slrqyztat"
+path="res://.godot/imported/roof.png-59ee87c9738164ca1fb1eee96179ed51.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://graphics/objects/houses/tram_stredni/roof.png"
-dest_files=["res://.godot/imported/roof.png-866b4da6886aa57d1efda8e3c45d54ed.ctex"]
+source_file="res://graphics/objects/houses/tram_dlouhy/roof.png"
+dest_files=["res://.godot/imported/roof.png-59ee87c9738164ca1fb1eee96179ed51.ctex"]
 
 [params]
 
