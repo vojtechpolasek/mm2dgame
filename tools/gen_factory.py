@@ -6,16 +6,18 @@ stejně jako domečky. Osmiúhelník je přes plochy široký jako kotlina,
 tedy 6 m. Výstupek z jižní hrany přesahuje.
 
 Spodek (0 m):
-  podlaha osmiúhelníku, sedm dopravníků od hran ke středu,
-  čtvercový výstupek na jižní hraně (tam ve hře vyjedou krabičky)
-  a kruhová plocha na materiál uprostřed.
-  Dopravníky jsou jeden snímek. Pohyb pásu by potom byl posun
+  kamenná dlažba v osmiúhelníku se zvlněnou zídkou a železným kováním
+  v rozích, sedm dopravníků od hran ke středu s hnacím válcem a patkami,
+  poklopy mezi pásy, čtvercový výstupek na jižní hraně (tam ve hře
+  vyjedou krabičky) a uprostřed štěrková plocha na materiál s litinovou
+  mříží. Dopravníky jsou jeden snímek. Pohyb pásu by potom byl posun
   toho vzoru, ne další obrázky.
 
 Mezikruží (výška RING_H): samostatná vrstva, střed je průhledný,
 takže sklad pod ním zůstane vidět. Obrázek je vystředěný na osu,
-kolem které se vrstva ve hře otočí. Jeden díl má mosazný poklop,
-aby otočení bylo poznat.
+kolem které se vrstva ve hře otočí. Nýtované pláty s rzí, ozubený
+věnec a větrací mřížky. Jeden díl má mosazný poklop, aby otočení
+bylo poznat.
 
 Vrstva nese váhy materiálu, ne hotovou barvu. Alfa je krytí.
 Spodek: R podlaha, G kov, B sklad.
@@ -34,7 +36,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from gen_houses import SHADE_FLOOR, colorize, hash01, load_font, smoothstep
+from gen_houses import SHADE_FLOOR, colorize, fbm, hash01, load_font, organic, smoothstep, stone_shade
 from gen_trees import on_grass
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -139,43 +141,101 @@ def octagon(x: np.ndarray, y: np.ndarray, apothem: float) -> tuple[np.ndarray, n
     return inside, dist
 
 
-def paint_base(x: np.ndarray, y: np.ndarray) -> Mask:
-    cell = int(round((x.shape[1] / SS)))
+def blend(mask: Mask, where: np.ndarray, channel: int, amount: np.ndarray) -> None:
+    """Přimíchá druhý materiál, třeba rez do plechu. Krytí a světlost zůstanou."""
+    amount = np.clip(amount, 0.0, 1.0)
+    keep = 1.0 - amount
+    mask.ch[:, where] *= keep[where]
+    mask.ch[channel, where] += amount[where]
+
+
+def disc(x: np.ndarray, y: np.ndarray, cx: float, cy: float, radius: float) -> np.ndarray:
+    return (x - cx) ** 2 + (y - cy) ** 2 <= radius * radius
+
+
+def paint_base(x0: np.ndarray, y0: np.ndarray) -> Mask:
+    cell = int(round((x0.shape[1] / SS)))
     mask = Mask(cell)
-    n = x.shape[0]
     ap = m(FLAT)
+    # Zděný obvod se vlní, stroje uvnitř drží rovné souřadnice x0, y0.
+    x, y = organic(x0, y0, 401, 0.0, m(0.07))
     inside, edge = octagon(x, y, ap)
-    grain = noise(n, 11)
-    rim = smoothstep(m(0.42), 0.0, edge)
-    floor_shade = (0.56 + 0.18 * grain) * (1.0 - 0.30 * rim)
-    mask.fill(inside, FLOOR, floor_shade)
+    flags = stone_shade(x, y, m(0.62), 403)
+    weather = 0.84 + 0.24 * fbm(x, y, m(2.2), 405)
+    mask.fill(inside, FLOOR, flags * weather * (1.0 - 0.2 * smoothstep(m(0.6), 0.0, edge)))
 
-    curb = inside & (edge < m(0.16)) & (edge >= 0.0)
-    mask.fill(curb, METAL, 0.62 + 0.08 * grain)
+    # Obvodová zídka z větších kamenů, nahoře světlejší.
+    curb = inside & (edge < m(0.34))
+    blocks = stone_shade(x, y, m(0.36), 407, (1.3, 1.3))
+    mask.fill(curb, FLOOR, blocks * (0.72 + 0.3 * smoothstep(0.0, m(0.2), edge)))
+    paint_brackets(mask, x0, y0, inside, edge)
 
-    dist = np.hypot(x, y)
-    yard = dist <= m(YARD)
-    yard_shade = 0.74 + 0.10 * noise(n, 19, 6)
-    yard_shade = yard_shade * (1.0 - 0.22 * smoothstep(m(YARD - 0.16), m(YARD), dist))
-    mask.fill(yard, YARD_CH, yard_shade)
-    # Kříž na ploše, ať je vidět, že se sklad s mezikružím netočí.
-    arm = m(0.07)
-    cross = yard & (((np.abs(x) <= arm) & (np.abs(y) <= m(0.85))) | ((np.abs(y) <= arm) & (np.abs(x) <= m(0.85))))
-    mask.fill(cross, METAL, 0.46)
+    dist0 = np.hypot(x0, y0)
+    yard = dist0 <= m(YARD)
+    gravel = stone_shade(x0, y0, m(0.16), 409)
+    earth = 0.62 + 0.26 * fbm(x0, y0, m(0.9), 411)
+    mask.fill(yard, YARD_CH, (0.55 * earth + 0.45 * gravel) * (1.0 - 0.2 * smoothstep(m(YARD - 0.3), m(YARD), dist0)))
+    edging = yard & (dist0 >= m(YARD - 0.16))
+    mask.fill(edging, FLOOR, stone_shade(x0, y0, m(0.22), 413) * 0.82)
+    paint_drain(mask, x0, y0)
 
-    paint_belts(mask, x, y, inside)
-    paint_dock(mask, x, y, grain)
+    paint_manholes(mask, x0, y0, inside)
+    paint_belts(mask, x0, y0, inside)
+    paint_dock(mask, x0, y0, x, y)
     return mask
+
+
+def paint_brackets(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray, edge: np.ndarray) -> None:
+    """Železné kování v rozích zídky. Drží ji pohromadě a je to první technický znak."""
+    reach = m(FLAT) / math.cos(math.pi / 8.0)
+    for k in range(8):
+        ang = (k + 0.5) * math.pi / 4.0
+        vx, vy = math.cos(ang) * reach, math.sin(ang) * reach
+        plate = inside & (edge < m(0.36)) & disc(x, y, vx, vy, m(0.5))
+        mask.fill(plate, METAL, 0.6)
+        for step in (0.2, 0.38):
+            bx, by = math.cos(ang) * (reach - m(step) * 1.4), math.sin(ang) * (reach - m(step) * 1.4)
+            for turn in (-1.0, 1.0):
+                tx, ty = -math.sin(ang) * turn * m(0.16), math.cos(ang) * turn * m(0.16)
+                mask.fill(plate & disc(x, y, bx + tx, by + ty, m(0.05)), METAL, 0.92)
+
+
+def paint_drain(mask: Mask, x: np.ndarray, y: np.ndarray) -> None:
+    """Litinová mříž uprostřed skladu. Ukazuje střed, který se neotáčí."""
+    dist = np.hypot(x, y)
+    cover = dist <= m(0.36)
+    mask.fill(cover, METAL, 0.5)
+    slot = cover & (dist > m(0.1)) & (dist < m(0.3)) & (np.mod(np.arctan2(y, x) * 8.0 / math.pi, 1.0) < 0.42)
+    mask.fill(slot, METAL, 0.26)
+    mask.fill(cover & (dist >= m(0.3)), METAL, 0.78)
+    mask.fill(dist <= m(0.07), METAL, 0.86)
+
+
+def paint_manholes(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray) -> None:
+    """Poklopy mezi pásy, do podzemí továrny."""
+    radius = m((RING_OUT + FLAT) * 0.5 + 0.1)
+    for k in range(8):
+        ang = (k + 0.5) * math.pi / 4.0
+        cx, cy = math.cos(ang) * radius, math.sin(ang) * radius
+        lid = inside & disc(x, y, cx, cy, m(0.34))
+        mask.fill(lid, METAL, 0.54)
+        mask.fill(lid & ~disc(x, y, cx, cy, m(0.27)), METAL, 0.76)
+        groove = lid & disc(x, y, cx, cy, m(0.22)) & (
+            (np.abs((x - cx) * math.cos(ang) + (y - cy) * math.sin(ang)) < m(0.025))
+            | (np.abs(-(x - cx) * math.sin(ang) + (y - cy) * math.cos(ang)) < m(0.025))
+        )
+        mask.fill(groove, METAL, 0.3)
 
 
 def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray) -> None:
     """Sedm pásů od ploché hrany ke kolu. Jižní hrana má místo pásu výstupek."""
     half = m(BELT_HALF)
     rail = m(0.09)
-    outer = m(FLAT) - m(0.18)
+    outer = m(FLAT) + m(0.2)
     inner = m(RING_OUT) - m(0.18)
     pitch = m(0.36)
     slat_w = m(0.07)
+    dirt = 0.82 + 0.26 * fbm(x, y, m(0.8), 421)
     for k in range(8):
         if k == SOUTH:
             continue
@@ -184,37 +244,46 @@ def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray) ->
         along = x * nx + y * ny
         side = -x * ny + y * nx
         span = inside & (along >= inner) & (along <= outer)
+        # Patky stojanu vedle pásu, po délce v pravidelném kroku.
+        foot = span & (np.abs(side) > half) & (np.abs(side) <= half + m(0.12)) & (np.mod(along, m(0.9)) < m(0.16))
+        mask.fill(foot, METAL, 0.62)
         belt = span & (np.abs(side) <= half)
         center = span & (np.abs(side) <= half - rail)
         rails = belt & ~center
-        mask.fill(belt, METAL, 0.40)
-        mask.fill(rails, METAL, 0.78)
+        mask.fill(belt, METAL, 0.36 * dirt)
+        rail_light = 0.62 + 0.3 * smoothstep(0.0, rail * 0.6, half - np.abs(side))
+        mask.fill(rails, METAL, rail_light)
         slats = center & (np.mod(along, pitch) < slat_w)
-        mask.fill(slats, METAL, 0.90)
+        mask.fill(slats, METAL, 0.84 * dirt)
+        # Hnací válec u vnějšího konce, oblý: uprostřed světlý.
+        drum_at = m(FLAT) - m(0.62)
+        drum = center & (np.abs(along - drum_at) <= m(0.13))
+        mask.fill(drum, METAL, 0.5 + 0.45 * (1.0 - np.abs(along - drum_at) / m(0.13)))
+        bolt = span & (np.abs(np.abs(side) - (half - rail * 0.5)) < m(0.04)) & (np.abs(along - drum_at) < m(0.04))
+        mask.fill(bolt, METAL, 0.98)
 
 
-def paint_dock(mask: Mask, x: np.ndarray, y: np.ndarray, grain: np.ndarray) -> None:
+def paint_dock(mask: Mask, x: np.ndarray, y: np.ndarray, wx: np.ndarray, wy: np.ndarray) -> None:
     ap = m(FLAT)
     side = m(DOCK)
-    overlap = m(0.06)
-    dock = (np.abs(x) <= side / 2.0) & (y >= ap - overlap) & (y <= ap + side)
-    mask.fill(dock, FLOOR, 0.64 + 0.12 * grain)
-    rim = m(0.14)
-    border = dock & (
-        (np.abs(x) >= side / 2.0 - rim)
-        | (y <= ap - overlap + rim)
-        | (y >= ap + side - rim)
-    )
-    mask.fill(border, METAL, 0.70)
-    plate = (
-        (np.abs(x) <= side / 2.0 - m(0.42))
-        & (y >= ap + m(0.42))
-        & (y <= ap + side - m(0.42))
-    )
-    mask.fill(plate, YARD_CH, 0.86)
-    # Válečky u vnější hrany, kudy krabička vyjede ven.
-    roller = plate & (np.mod(y, m(0.34)) < m(0.05)) & (y > ap + side - m(1.15))
-    mask.fill(roller, METAL, 0.55)
+    overlap = m(0.3)
+    dock = (np.abs(wx) <= side / 2.0) & (wy >= ap - overlap) & (wy <= ap + side)
+    mask.fill(dock, FLOOR, stone_shade(wx, wy, m(0.4), 431, (1.2, 1.2)) * 0.92)
+    plate = (np.abs(x) <= side / 2.0 - m(0.38)) & (y >= ap + m(0.3)) & (y <= ap + side - m(0.38))
+    frame = (np.abs(x) <= side / 2.0 - m(0.26)) & (y >= ap + m(0.18)) & (y <= ap + side - m(0.26))
+    mask.fill(frame, METAL, 0.66)
+    # Výdejní deska z prken, kudy krabička vyjede.
+    plank = np.mod(x / m(0.32), 1.0)
+    grain = hash01(np.floor(x / m(0.32)), np.floor(y / m(0.08)), 433)
+    mask.fill(plate, YARD_CH, (0.78 + 0.14 * grain) * np.where(plank < 0.08, 0.6, 1.0))
+    roller_zone = plate & (y > ap + side - m(1.05))
+    phase = np.mod(y / m(0.3), 1.0)
+    roller = roller_zone & (phase < 0.45)
+    mask.fill(roller, METAL, 0.45 + 0.5 * np.sin(phase / 0.45 * math.pi))
+    for sx in (-1.0, 1.0):
+        bolt = disc(x, y, sx * (side / 2.0 - m(0.32)), ap + m(0.24), m(0.05))
+        bolt |= disc(x, y, sx * (side / 2.0 - m(0.32)), ap + side - m(0.32), m(0.05))
+        mask.fill(bolt, METAL, 0.95)
 
 
 def paint_ring(x: np.ndarray, y: np.ndarray) -> Mask:
@@ -223,29 +292,42 @@ def paint_ring(x: np.ndarray, y: np.ndarray) -> Mask:
     n = x.shape[0]
     dist = np.hypot(x, y)
     outer, inner = m(RING_OUT), m(RING_IN)
+    ang = np.arctan2(y, x)
+    teeth = 44
+    tooth_phase = np.mod(ang * teeth / math.tau, 1.0)
+    tooth_w = np.abs(tooth_phase - 0.5) * 2.0
+    tooth_top = outer + m(0.17) * np.clip(1.6 - 1.6 * tooth_w, 0.0, 1.0)
+    gear = (dist > outer) & (dist <= tooth_top) & (tooth_w < 0.82)
     ring = (dist <= outer) & (dist >= inner)
     grain = noise(n, 29, 5)
     t = np.clip((dist - inner) / (outer - inner), 0.0, 1.0)
-    ang = np.arctan2(y, x)
     # Spáry míří do rohů osmiúhelníku, díly sedí nad plochými stranami.
     # Severní poklop je pak uprostřed dílu a spára jím nevede.
     sector = math.pi / 4.0
     aligned = ang - math.pi / 8.0
     sector_i = np.floor(np.mod(aligned + math.pi, math.tau) / sector)
-    alt = np.where(np.mod(sector_i, 2) == 0, 0.05, -0.03).astype(np.float32)
-    shade = np.clip(0.50 + 0.30 * t + 0.08 * grain + alt, 0.0, 1.0)
-    mask.fill(ring, PLATE, shade)
-
+    alt = (hash01(sector_i, np.zeros_like(sector_i), 31) - 0.5) * 0.12
     seam_ang = np.minimum(np.mod(aligned, sector), sector - np.mod(aligned, sector))
-    seams = ring & (seam_ang * np.maximum(dist, 1.0) < m(0.055))
-    mask.fill(seams, LIP, 0.34)
+    seam_px = seam_ang * np.maximum(dist, 1.0)
+    # Plát je vyboulený: u spár a lemů tmavší, uprostřed světlejší.
+    bulge = smoothstep(0.0, m(0.4), np.minimum(seam_px, np.minimum(dist - inner, outer - dist)))
+    shade = np.clip((0.46 + 0.26 * t + 0.06 * grain + alt) * (0.82 + 0.22 * bulge), 0.0, 1.0)
+    mask.fill(ring, PLATE, shade)
+    mask.fill(gear, LIP, 0.56 + 0.3 * (1.0 - tooth_w))
+    # Rez a ošoupání, ne všude stejně.
+    rust = smoothstep(0.55, 0.85, fbm(x, y, m(0.9), 33)) * 0.55
+    blend(mask, ring, LIP, rust)
 
-    lip_w = m(0.12)
-    mask.fill(ring & (dist <= inner + lip_w), LIP, 0.40)
-    mask.fill(ring & (dist >= outer - lip_w), LIP, 0.48)
+    mask.fill(ring & (seam_px < m(0.05)), LIP, 0.3)
+    lip_w = m(0.14)
+    inner_lip = ring & (dist <= inner + lip_w)
+    mask.fill(inner_lip, LIP, 0.38 + 0.4 * np.sin(np.clip((dist - inner) / lip_w, 0.0, 1.0) * math.pi))
+    outer_lip = ring & (dist >= outer - lip_w)
+    mask.fill(outer_lip, LIP, 0.42 + 0.36 * np.sin(np.clip((outer - dist) / lip_w, 0.0, 1.0) * math.pi))
 
-    # Poklop na severu. Jediný takový díl, proto je otočení vidět.
     north = np.abs(np.arctan2(np.sin(ang + math.pi / 2.0), np.cos(ang + math.pi / 2.0)))
+    paint_vents(mask, x, y, ring, dist, ang)
+    # Poklop na severu. Jediný takový díl, proto je otočení vidět.
     hatch = ring & (north < 0.30) & (dist > inner + m(0.38)) & (dist < outer - m(0.38))
     mask.fill(hatch, BRASS, 0.78 + 0.10 * grain)
     hatch_rim = hatch & (
@@ -254,26 +336,49 @@ def paint_ring(x: np.ndarray, y: np.ndarray) -> Mask:
         | (dist > outer - m(0.50))
     )
     mask.fill(hatch_rim, LIP, 0.42)
-    knob = (x * x + (y + m((RING_IN + RING_OUT) * 0.5)) ** 2) < m(0.16) ** 2
+    mid = m((RING_IN + RING_OUT) * 0.5)
+    hinge = ring & (np.abs(x) <= m(0.36)) & (np.abs(y + inner + m(0.33)) <= m(0.05))
+    mask.fill(hinge, LIP, 0.7)
+    knob = disc(x, y, 0.0, -mid - m(0.18), m(0.12))
     mask.fill(ring & knob, BRASS, 0.96)
 
-    paint_rivets(mask, x, y, ring)
+    paint_rivets(mask, x, y, ring, dist, aligned)
     return mask
 
 
-def paint_rivets(mask: Mask, x: np.ndarray, y: np.ndarray, ring: np.ndarray) -> None:
-    rivet = np.zeros(x.shape, dtype=bool)
-    radius = m((RING_IN + RING_OUT) * 0.5)
-    # Severní díl má poklop, nýty tam nepřekrývají mosaz.
-    for i in range(16):
-        ang = (i + 0.5) * math.pi / 8.0
-        north = (ang + math.pi / 2.0 + math.pi) % math.tau - math.pi
-        if abs(north) < 0.42:
-            continue
-        px = math.cos(ang) * radius
-        py = math.sin(ang) * radius
-        rivet |= (x - px) ** 2 + (y - py) ** 2 < m(0.065) ** 2
-    mask.fill(ring & rivet, LIP, 0.72)
+def paint_vents(mask: Mask, x: np.ndarray, y: np.ndarray, ring: np.ndarray, dist: np.ndarray, ang: np.ndarray) -> None:
+    """Dvě mřížky větrání. Jsou na jih a na jihovýchod, poklop drží sever sám."""
+    mid = m((RING_IN + RING_OUT) * 0.5)
+    for turn in (math.pi / 2.0, math.pi / 4.0 - 0.1):
+        local = np.arctan2(np.sin(ang - turn), np.cos(ang - turn))
+        arc = local * dist
+        box = ring & (np.abs(arc) <= m(0.42)) & (np.abs(dist - mid) <= m(0.26))
+        mask.fill(box, LIP, 0.34)
+        slat = box & (np.mod((dist - mid) / m(0.11), 1.0) < 0.45) & (np.abs(arc) <= m(0.36))
+        mask.fill(slat, PLATE, 0.7)
+
+
+def paint_rivets(
+    mask: Mask, x: np.ndarray, y: np.ndarray, ring: np.ndarray, dist: np.ndarray, aligned: np.ndarray
+) -> None:
+    """Nýty v řadách podél spár a obou lemů."""
+    inner, outer = m(RING_IN), m(RING_OUT)
+    sector = math.pi / 4.0
+    local = np.mod(aligned, sector)
+    near = np.minimum(local, sector - local) * np.maximum(dist, 1.0)
+    pitch = m(0.28)
+    head = m(0.05)
+    radial = np.mod(dist - inner, pitch) - pitch * 0.5
+    seam_row = (np.abs(near - m(0.13)) <= head) & (np.abs(radial) <= head)
+    seam_row &= (dist > inner + m(0.24)) & (dist < outer - m(0.24))
+    circ_pitch = m(0.34) / np.maximum(dist, 1.0)
+    around = np.mod(aligned, circ_pitch) - circ_pitch * 0.5
+    arc_off = around * dist
+    lip_row = np.zeros_like(ring)
+    for at in (inner + m(0.25), outer - m(0.25)):
+        lip_row |= (np.abs(dist - at) <= head) & (np.abs(arc_off) <= head)
+    rivet = ring & (seam_row | lip_row) & (mask.ch[1] < 0.5)
+    mask.fill(rivet, LIP, 0.8)
 
 
 def crop_square(image: Image.Image, pad: int = 4) -> Image.Image:

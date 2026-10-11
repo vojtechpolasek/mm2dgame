@@ -19,8 +19,8 @@
         "metal",
         "yard"
       ],
-      "cell": 578,
-      "center": 289
+      "cell": 580,
+      "center": 290
     },
     "ring": {
       "file": "ring.png",
@@ -31,8 +31,8 @@
         "lip"
       ],
       "center_clear": true,
-      "cell": 578,
-      "center": 289
+      "cell": 580,
+      "center": 290
     }
   }
 }
