@@ -1,0 +1,332 @@
+{
+  "px_per_meter": 64,
+  "height_unit": "m",
+  "filter": "linear",
+  "shader": "res://shaders/house_layer.gdshader",
+  "shade": [
+    0.42,
+    1.1
+  ],
+  "shade_floor": 0.2,
+  "sheen": [
+    0.16,
+    0.7
+  ],
+  "parallax_preview": {
+    "x": 10.24,
+    "y": 5.76
+  },
+  "colors": {
+    "sláma": {
+      "roof": "C49448",
+      "wall": "E8D8BC",
+      "wood": "6C4828",
+      "glass": "96C4CE",
+      "opening": "241E1A"
+    },
+    "taška": {
+      "roof": "A8362E",
+      "wall": "F4F0E8",
+      "wood": "5C3E2C",
+      "glass": "78B0C2",
+      "opening": "201A18"
+    },
+    "dřevo": {
+      "roof": "704A2E",
+      "wall": "BA9A70",
+      "wood": "3E281A",
+      "glass": "84B4BE",
+      "opening": "1C1612"
+    }
+  },
+  "houses": {
+    "sedlo_male": {
+      "label": "sedlo malé",
+      "kind": "sedlo",
+      "width_m": 4.4,
+      "depth_m": 3.2,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 286,
+          "center": 143
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 3.4,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 312,
+          "center": 156
+        }
+      }
+    },
+    "sedlo_stredni": {
+      "label": "sedlo střední",
+      "kind": "sedlo",
+      "width_m": 6.4,
+      "depth_m": 4.4,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 414,
+          "center": 207
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 4.2,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 440,
+          "center": 220
+        }
+      }
+    },
+    "sedlo_velke": {
+      "label": "sedlo velké",
+      "kind": "sedlo",
+      "width_m": 8.6,
+      "depth_m": 5.6,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 556,
+          "center": 278
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 5.0,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 580,
+          "center": 290
+        }
+      }
+    },
+    "tram_maly": {
+      "label": "trám malý",
+      "kind": "tram",
+      "width_m": 3.8,
+      "depth_m": 3.8,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 248,
+          "center": 124
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 3.4,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 274,
+          "center": 137
+        }
+      }
+    },
+    "tram_stredni": {
+      "label": "trám střední",
+      "kind": "tram",
+      "width_m": 5.4,
+      "depth_m": 5.4,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 350,
+          "center": 175
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 4.2,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 376,
+          "center": 188
+        }
+      }
+    },
+    "tram_velky": {
+      "label": "trám velký",
+      "kind": "tram",
+      "width_m": 7.4,
+      "depth_m": 6.6,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 478,
+          "center": 239
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 5.0,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 504,
+          "center": 252
+        }
+      }
+    },
+    "jurta_mala": {
+      "label": "jurta malá",
+      "kind": "jurta",
+      "width_m": 3.8,
+      "depth_m": 3.8,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 248,
+          "center": 124
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 3.2,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 274,
+          "center": 137
+        }
+      }
+    },
+    "jurta_stredni": {
+      "label": "jurta střední",
+      "kind": "jurta",
+      "width_m": 5.4,
+      "depth_m": 5.4,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 350,
+          "center": 175
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 3.8,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 376,
+          "center": 188
+        }
+      }
+    },
+    "jurta_velka": {
+      "label": "jurta velká",
+      "kind": "jurta",
+      "width_m": 7.2,
+      "depth_m": 7.2,
+      "layers": {
+        "wall": {
+          "file": "wall.png",
+          "height": 0.0,
+          "slot": 1.0,
+          "channels": [
+            "wall",
+            "wood",
+            "glass"
+          ],
+          "cell": 466,
+          "center": 233
+        },
+        "roof": {
+          "file": "roof.png",
+          "height": 4.6,
+          "slot": 0.0,
+          "channels": [
+            "roof",
+            "wood",
+            "opening"
+          ],
+          "cell": 492,
+          "center": 246
+        }
+      }
+    }
+  }
+}
