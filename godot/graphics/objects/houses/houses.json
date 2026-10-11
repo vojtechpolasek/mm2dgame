@@ -43,8 +43,8 @@
     "sedlo_kratke": {
       "label": "sedlo krátké",
       "kind": "sedlo",
-      "width_m": 4.2,
-      "depth_m": 3.2,
+      "width_m": 5.8,
+      "depth_m": 4.6,
       "layers": {
         "wall": {
           "file": "wall.png",
@@ -55,28 +55,28 @@
             "wood",
             "glass"
           ],
-          "cell": 274,
-          "center": 137
+          "cell": 376,
+          "center": 188
         },
         "roof": {
           "file": "roof.png",
-          "height": 3.4,
+          "height": 4.0,
           "slot": 0.0,
           "channels": [
             "roof",
             "wood",
             "opening"
           ],
-          "cell": 300,
-          "center": 150
+          "cell": 402,
+          "center": 201
         }
       }
     },
     "sedlo_dlouhe": {
       "label": "sedlo dlouhé",
       "kind": "sedlo",
-      "width_m": 7.6,
-      "depth_m": 3.2,
+      "width_m": 8.4,
+      "depth_m": 4.6,
       "layers": {
         "wall": {
           "file": "wall.png",
@@ -87,27 +87,27 @@
             "wood",
             "glass"
           ],
-          "cell": 492,
-          "center": 246
+          "cell": 542,
+          "center": 271
         },
         "roof": {
           "file": "roof.png",
-          "height": 3.4,
+          "height": 4.0,
           "slot": 0.0,
           "channels": [
             "roof",
             "wood",
             "opening"
           ],
-          "cell": 516,
-          "center": 258
+          "cell": 568,
+          "center": 284
         }
       }
     },
     "sedlo_velke": {
       "label": "sedlo velké",
       "kind": "sedlo",
-      "width_m": 9.2,
+      "width_m": 9.4,
       "depth_m": 5.4,
       "layers": {
         "wall": {
@@ -119,28 +119,28 @@
             "wood",
             "glass"
           ],
-          "cell": 594,
-          "center": 297
+          "cell": 606,
+          "center": 303
         },
         "roof": {
           "file": "roof.png",
-          "height": 5.0,
+          "height": 4.6,
           "slot": 0.0,
           "channels": [
             "roof",
             "wood",
             "opening"
           ],
-          "cell": 620,
-          "center": 310
+          "cell": 632,
+          "center": 316
         }
       }
     },
     "tram_kratky": {
       "label": "trám krátký",
       "kind": "tram",
-      "width_m": 4.0,
-      "depth_m": 3.6,
+      "width_m": 5.2,
+      "depth_m": 4.8,
       "layers": {
         "wall": {
           "file": "wall.png",
@@ -151,28 +151,28 @@
             "wood",
             "glass"
           ],
-          "cell": 260,
-          "center": 130
+          "cell": 338,
+          "center": 169
         },
         "roof": {
           "file": "roof.png",
-          "height": 3.4,
+          "height": 4.0,
           "slot": 0.0,
           "channels": [
             "roof",
             "wood",
             "opening"
           ],
-          "cell": 286,
-          "center": 143
+          "cell": 364,
+          "center": 182
         }
       }
     },
     "tram_dlouhy": {
       "label": "trám dlouhý",
       "kind": "tram",
-      "width_m": 7.2,
-      "depth_m": 3.6,
+      "width_m": 7.8,
+      "depth_m": 4.8,
       "layers": {
         "wall": {
           "file": "wall.png",
@@ -183,28 +183,28 @@
             "wood",
             "glass"
           ],
-          "cell": 466,
-          "center": 233
+          "cell": 504,
+          "center": 252
         },
         "roof": {
           "file": "roof.png",
-          "height": 3.4,
+          "height": 4.0,
           "slot": 0.0,
           "channels": [
             "roof",
             "wood",
             "opening"
           ],
-          "cell": 492,
-          "center": 246
+          "cell": 530,
+          "center": 265
         }
       }
     },
     "tram_velky": {
       "label": "trám velký",
       "kind": "tram",
-      "width_m": 8.0,
-      "depth_m": 6.4,
+      "width_m": 8.6,
+      "depth_m": 6.0,
       "layers": {
         "wall": {
           "file": "wall.png",
@@ -215,20 +215,20 @@
             "wood",
             "glass"
           ],
-          "cell": 516,
-          "center": 258
+          "cell": 556,
+          "center": 278
         },
         "roof": {
           "file": "roof.png",
-          "height": 5.0,
+          "height": 4.6,
           "slot": 0.0,
           "channels": [
             "roof",
             "wood",
             "opening"
           ],
-          "cell": 542,
-          "center": 271
+          "cell": 580,
+          "center": 290
         }
       }
     },

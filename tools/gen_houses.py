@@ -89,12 +89,12 @@ class House:
 # Menší sedlo i trám mají stejnou hloubku a výšku, liší se jen délkou.
 LAYER_PREVIEW = ("sedlo_dlouhe", "tram_dlouhy", "jurta_stredni")
 HOUSES: tuple[House, ...] = (
-    House("sedlo_kratke", "sedlo krátké", "sedlo", 4.2, 3.2, 3.4),
-    House("sedlo_dlouhe", "sedlo dlouhé", "sedlo", 7.6, 3.2, 3.4),
-    House("sedlo_velke", "sedlo velké", "sedlo", 9.2, 5.4, 5.0),
-    House("tram_kratky", "trám krátký", "tram", 4.0, 3.6, 3.4),
-    House("tram_dlouhy", "trám dlouhý", "tram", 7.2, 3.6, 3.4),
-    House("tram_velky", "trám velký", "tram", 8.0, 6.4, 5.0),
+    House("sedlo_kratke", "sedlo krátké", "sedlo", 5.8, 4.6, 4.0),
+    House("sedlo_dlouhe", "sedlo dlouhé", "sedlo", 8.4, 4.6, 4.0),
+    House("sedlo_velke", "sedlo velké", "sedlo", 9.4, 5.4, 4.6),
+    House("tram_kratky", "trám krátký", "tram", 5.2, 4.8, 4.0),
+    House("tram_dlouhy", "trám dlouhý", "tram", 7.8, 4.8, 4.0),
+    House("tram_velky", "trám velký", "tram", 8.6, 6.0, 4.6),
     House("jurta_mala", "jurta malá", "jurta", 3.8, 3.8, 3.2),
     House("jurta_stredni", "jurta střední", "jurta", 5.4, 5.4, 3.8),
     House("jurta_velka", "jurta velká", "jurta", 7.2, 7.2, 4.6),
@@ -633,6 +633,46 @@ def save_grid(items: list[tuple[Image.Image, str]], columns: int, path: Path, sc
     sheet.save(path)
 
 
+def on_checker(image: Image.Image, cell: int = 8) -> Image.Image:
+    bg = Image.new("RGBA", image.size)
+    draw = ImageDraw.Draw(bg)
+    light, dark = (68, 68, 74, 255), (42, 42, 48, 255)
+    width, height = image.size
+    for top in range(0, height, cell):
+        for left in range(0, width, cell):
+            fill = light if (left // cell + top // cell) % 2 == 0 else dark
+            draw.rectangle((left, top, left + cell, top + cell), fill=fill)
+    bg.alpha_composite(image)
+    return bg.convert("RGB")
+
+
+def save_masks(path: Path) -> None:
+    """Surové soubory vrstev. R, G a B jsou materiály, ne výsledná barva."""
+    items: list[tuple[Image.Image, str]] = []
+    for house in HOUSES:
+        for filename in ("wall.png", "roof.png"):
+            image = Image.open(OUT_DIR / house.name / filename).convert("RGBA")
+            items.append((image, f"{house.name}/{filename}"))
+    gap, caption = 14, 26
+    columns = 6
+    slot_w = max(image.width for image, _label in items)
+    slot_h = max(image.height for image, _label in items)
+    rows = math.ceil(len(items) / columns)
+    sheet = Image.new("RGB", (columns * slot_w + (columns + 1) * gap, rows * (slot_h + caption) + (rows + 1) * gap), (32, 32, 36))
+    draw = ImageDraw.Draw(sheet)
+    font = load_font(16)
+    for index, (image, label) in enumerate(items):
+        col, row = index % columns, index // columns
+        x = gap + col * (slot_w + gap)
+        y = gap + row * (slot_h + caption + gap)
+        draw.text((x, y), label, fill=(230, 226, 214), font=font)
+        ox = x + (slot_w - image.width) // 2
+        oy = y + caption + (slot_h - image.height) // 2
+        sheet.paste(on_checker(image), (ox, oy))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(path)
+
+
 def colored(wall: Image.Image, roof: Image.Image, palette: str) -> tuple[Image.Image, Image.Image]:
     colors = PALETTES[palette]
     return colorize(wall, wall_tints(colors)), colorize(roof, roof_tints(colors))
@@ -822,11 +862,13 @@ def main() -> None:
         save_grid(built["edge"], 3, PREVIEW / "houses_kraj.png", 2)
         save_grid(built["layers"], 4, PREVIEW / "houses_vrstvy.png", 2)
         save_grid(built["colors"], 3, PREVIEW / "houses_barvy.png", 2)
+        save_masks(PREVIEW / "houses_masky.png")
         info = write_info(built["catalog"])
         print(PREVIEW / "houses.png")
         print(PREVIEW / "houses_vrstvy.png")
         print(PREVIEW / "houses_kraj.png")
         print(PREVIEW / "houses_barvy.png")
+        print(PREVIEW / "houses_masky.png")
         print(info)
 
 
