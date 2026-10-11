@@ -76,7 +76,7 @@ SOUTH = 2
 TINTS_BASE = (
     (176, 164, 140),  # podlaha
     (102, 106, 112),  # kov
-    (214, 186, 120),  # sklad
+    (134, 116, 88),  # sklad, středně tmavý: prach světlých i tmavých materiálů je na něm vidět
 )
 TINTS_RING = (
     (150, 134, 108),  # pláty

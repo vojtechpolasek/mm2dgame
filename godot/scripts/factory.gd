@@ -22,7 +22,7 @@ const BELT_DELAY := 0.2
 const DROP_PAST_DRUM := 8.0
 ## Prach: zrnek na jedno zvíření, jak dlouho létají a kolikrát za sekundu oběhnou střed.
 ## Jiskry přibývají s třpytivostí materiálu, nejvýš SPARKS_MAX.
-const DUST_AMOUNT := 26
+const DUST_AMOUNT := 36
 const DUST_LIFE := 3.4
 const DUST_ORBIT := Vector2(0.16, 0.42)
 const SPARKS_MAX := 14
@@ -167,11 +167,11 @@ func _nearest_belt(local: Vector2) -> int:
 ## Jedno zvíření je pár desítek zrnek na procesoru, ať to stačí i starému stroji.
 func _swirl(mat: int) -> void:
 	var color := _crystal.color_of(mat)
-	var cloud := _particles(DUST_AMOUNT, Vector2(0.35, 0.75))
-	cloud.color = color
+	var cloud := _particles(DUST_AMOUNT, Vector2(0.3, 0.8))
+	# Tmavší i světlejší zrnka, ať je prach vidět i na skladu podobné barvy.
 	var shades := Gradient.new()
-	shades.set_color(0, color.darkened(0.3))
-	shades.set_color(1, color.lightened(0.3))
+	shades.set_color(0, color.darkened(0.5))
+	shades.set_color(1, color.lightened(0.4))
 	cloud.color_initial_ramp = shades
 	cloud.color_ramp = _fade([0.0, 0.85, 0.7, 0.0])
 	var sparkle := _crystal.sparkle_of(mat)
@@ -193,15 +193,15 @@ func _particles(amount: int, size: Vector2) -> CPUParticles2D:
 	cloud.randomness = 0.5
 	cloud.local_coords = true
 	cloud.emission_shape = CPUParticles2D.EMISSION_SHAPE_SPHERE
-	cloud.emission_sphere_radius = _yard * 0.4
+	cloud.emission_sphere_radius = _yard * 0.72
 	cloud.spread = 180.0
 	cloud.gravity = Vector2.ZERO
 	cloud.initial_velocity_min = 4.0
 	cloud.initial_velocity_max = 16.0
 	cloud.orbit_velocity_min = DUST_ORBIT.x
 	cloud.orbit_velocity_max = DUST_ORBIT.y
-	cloud.radial_accel_min = -8.0
-	cloud.radial_accel_max = 0.0
+	cloud.radial_accel_min = -3.0
+	cloud.radial_accel_max = 1.0
 	cloud.damping_min = 2.0
 	cloud.damping_max = 5.0
 	cloud.scale_amount_min = size.x
