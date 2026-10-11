@@ -2,10 +2,10 @@
   "px_per_meter": 64,
   "height_unit": "m",
   "wired_into_godot": false,
-  "flat_to_flat_m": 11.2,
-  "vertex_to_vertex_m": 12.123,
+  "flat_to_flat_m": 6.0,
+  "vertex_to_vertex_m": 6.494,
   "dock_edge": "south",
-  "dock_m": 2.7,
+  "dock_m": 1.446,
   "conveyors": {
     "count": 7,
     "animated": false
@@ -19,20 +19,20 @@
         "metal",
         "yard"
       ],
-      "cell": 1072,
-      "center": 536
+      "cell": 578,
+      "center": 289
     },
     "ring": {
       "file": "ring.png",
-      "height": 3.0,
+      "height": 1.607,
       "channels": [
         "plate",
         "brass",
         "lip"
       ],
       "center_clear": true,
-      "cell": 1072,
-      "center": 536
+      "cell": 578,
+      "center": 289
     }
   }
 }

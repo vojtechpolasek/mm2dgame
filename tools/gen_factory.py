@@ -2,8 +2,8 @@
 """Továrna z pohledu shora. Zatím jen grafika, do Godotu se nezapojí.
 
 64 px je 1 m. Kreslí se ve čtyřnásobném rozlišení a složí se do masky,
-stejně jako domečky. Je to největší stavba: pravidelný osmiúhelník
-s plochou stranou dole.
+stejně jako domečky. Osmiúhelník je přes plochy široký jako kotlina,
+tedy 6 m. Výstupek z jižní hrany přesahuje.
 
 Spodek (0 m):
   podlaha osmiúhelníku, sedm dopravníků od hran ke středu,
@@ -46,8 +46,9 @@ SS = 4
 PARALLAX = 0.016
 EDGE = (640.0 * PARALLAX, 360.0 * PARALLAX)
 
-# Apothem je vzdálenost ze středu na plochou stranu. Přes plochy je 11,2 m,
-# největší domek má 9,4 m. Výstupek sedí na jižní ploše a nepřesahuje její konce.
+# Návrhové metry jsou z větší kresby. SCALE je srovná s kotlinou:
+# pata kotliny má 384 px, tedy 6 m v průměru. Přes plochy je osmiúhelník
+# stejně široký. Výstupek sedí na jižní ploše a nepřesahuje její konce.
 FLAT = 5.6
 DOCK = 2.7
 RING_OUT = 3.55
@@ -55,6 +56,7 @@ RING_IN = 2.02
 YARD = 2.18
 RING_H = 3.0
 BELT_HALF = 0.56
+SCALE = 6.0 / (FLAT * 2.0)
 
 FLOOR, METAL, YARD_CH = 0, 1, 2
 PLATE, BRASS, LIP = 0, 1, 2
@@ -89,12 +91,16 @@ class Mask:
         self.cover[where] = 1.0
 
 
+def real(meters: float) -> float:
+    return meters * SCALE
+
+
 def m(meters: float) -> float:
-    return meters * PX
+    return real(meters) * PX
 
 
 def cell_for() -> int:
-    reach = max(FLAT + DOCK + 0.35, FLAT / math.cos(math.pi / 8) + 0.35)
+    reach = max(real(FLAT + DOCK + 0.35), real(FLAT) / math.cos(math.pi / 8) + real(0.35))
     cell = int(math.ceil(reach * PX * 2.0 + 8.0))
     if cell % 2:
         cell += 1
@@ -439,10 +445,10 @@ def write_info(base: Image.Image, ring: Image.Image) -> Path:
         "px_per_meter": PX,
         "height_unit": "m",
         "wired_into_godot": False,
-        "flat_to_flat_m": FLAT * 2.0,
-        "vertex_to_vertex_m": round(2.0 * FLAT / math.cos(math.pi / 8), 3),
+        "flat_to_flat_m": round(real(FLAT) * 2.0, 3),
+        "vertex_to_vertex_m": round(real(FLAT) * 2.0 / math.cos(math.pi / 8), 3),
         "dock_edge": "south",
-        "dock_m": DOCK,
+        "dock_m": round(real(DOCK), 3),
         "conveyors": {"count": 7, "animated": False},
         "layers": {
             "base": {
@@ -454,7 +460,7 @@ def write_info(base: Image.Image, ring: Image.Image) -> Path:
             },
             "ring": {
                 "file": "ring.png",
-                "height": RING_H,
+                "height": round(real(RING_H), 3),
                 "channels": ["plate", "brass", "lip"],
                 "center_clear": True,
                 "cell": ring.width,
@@ -493,7 +499,7 @@ def main() -> None:
     painted_base = colorize(base, TINTS_BASE)
     painted_ring = colorize(ring, TINTS_RING)
     turned = colorize(ring.rotate(28, resample=Image.Resampling.BICUBIC), TINTS_RING)
-    shift = (round(EDGE[0] * RING_H), round(EDGE[1] * RING_H))
+    shift = (round(EDGE[0] * real(RING_H)), round(EDGE[1] * real(RING_H)))
     together = trim(compose(painted_base, painted_ring, (0, 0)))
     rotated = trim(compose(painted_base, turned, (0, 0)))
     edge = trim(compose(painted_base, painted_ring, shift))
@@ -502,7 +508,7 @@ def main() -> None:
         [
             (fit(trim(painted_base), tile), "spodek"),
             (fit(trim(painted_ring), tile), "mezikruží"),
-            (fit(together, tile), "spolu"),
+            (fit(together, tile), "spolu · 6 m"),
             (fit(rotated, tile), "otočené o 28°"),
             (fit(edge, tile), "u kraje"),
         ],
@@ -511,8 +517,8 @@ def main() -> None:
     )
     save_masks(base, ring, PREVIEW / "tovarna_masky.png")
     info = write_info(base, ring)
-    print(f"spodek {base.width} px, mezikruží {ring.width} px, výška {RING_H} m")
-    print(f"přes plochy {FLAT * 2:.1f} m, výstupek {DOCK:.1f} m na jih")
+    print(f"spodek {base.width} px, mezikruží {ring.width} px, výška {real(RING_H):.2f} m")
+    print(f"přes plochy {real(FLAT) * 2:.1f} m, výstupek {real(DOCK):.2f} m na jih")
     print(PREVIEW / "tovarna.png")
     print(PREVIEW / "tovarna_masky.png")
     print(info)
