@@ -16,10 +16,11 @@ Součet vah děleno krytím nese světlost, stejně jako u postavy:
 Barvy skládá godot/shaders/house_layer.gdshader. Průhledné pixely mají váhy 0,
 import proto nesmí opravovat okraje průhlednosti.
 
-Stěna je celá pod střechou. Z rohů (u jurty z obvodu) jdou čáry ke středu
-a rozdělí půdorys na stěny. Okno a dveře jsou lichoběžník: u obvodu širší,
-hrany míří do středu. Uprostřed obrazovky střecha stěnu zakryje. U kraje
-střecha ujede a vykoukne jen pás stěny, který zrovna míří ke kameře.
+Stěna je celá pod střechou. U obdélníku jdou rohy pod 45 stupni a uříznou
+stěnu; dlouhá stěna je lichoběžník, krátká trojúhelník. Čára rohu je jen
+slabý předěl. Okno a dveře jedou s tím úhlem, u obvodu jsou širší. U jurty
+jdou čáry z obvodu do středu. Uprostřed obrazovky střecha stěnu zakryje.
+U kraje střecha ujede a vykoukne jen pás stěny, který zrovna míří ke kameře.
 
 Náhled „u kraje“ je dům v rohu okna 1280×720. Posun je stejný jako
 ObjectLayers.PARALLAX.
@@ -213,30 +214,68 @@ def rect_sides(x: np.ndarray, y: np.ndarray, hx: float, hy: float) -> dict[str, 
     }
 
 
-def side_st(x: np.ndarray, y: np.ndarray, hx: float, hy: float, side: str) -> tuple[np.ndarray, np.ndarray]:
-    """s je podél stěny (−1..1), t je 0 na obvodu a 1 ve středu."""
-    if side == "south":
-        edge = np.clip(y / hy, 1e-4, None)
-        return (x / hx) / edge, 1.0 - y / hy
-    if side == "north":
-        edge = np.clip(-y / hy, 1e-4, None)
-        return (x / hx) / edge, 1.0 + y / hy
-    if side == "east":
-        edge = np.clip(x / hx, 1e-4, None)
-        return (y / hy) / edge, 1.0 - x / hx
-    edge = np.clip(-x / hx, 1e-4, None)
-    return (y / hy) / edge, 1.0 + x / hx
-
-
 def quad(mask: np.ndarray, s: np.ndarray, t: np.ndarray, s0: float, s1: float, t0: float, t1: float) -> np.ndarray:
     return mask & (s >= s0) & (s <= s1) & (t >= t0) & (t <= t1)
 
 
-def diagonal_posts(x: np.ndarray, y: np.ndarray, hx: float, hy: float, width: float) -> np.ndarray:
+def edge_distances(x: np.ndarray, y: np.ndarray, hx: float, hy: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    return hy + y, hx - x, hy - y, hx + x
+
+
+def miter_sides(x: np.ndarray, y: np.ndarray, hx: float, hy: float) -> dict[str, np.ndarray]:
+    """Stěny podle nejbližší hrany. Předěl sousedů je 45 stupňů, ne cesta do středu."""
     inside = (np.abs(x) <= hx) & (np.abs(y) <= hy)
-    d1 = np.abs(x * hy - y * hx) / math.hypot(hx, hy)
-    d2 = np.abs(x * hy + y * hx) / math.hypot(hx, hy)
-    return inside & ((d1 <= width) | (d2 <= width))
+    north_d, east_d, south_d, west_d = edge_distances(x, y, hx, hy)
+    return {
+        "south": inside & (south_d <= north_d) & (south_d <= east_d) & (south_d <= west_d),
+        "north": inside & (north_d < south_d) & (north_d <= east_d) & (north_d <= west_d),
+        "east": inside & (east_d < south_d) & (east_d < north_d) & (east_d <= west_d),
+        "west": inside & (west_d < south_d) & (west_d < north_d) & (west_d < east_d),
+    }
+
+
+def miter_ud(x: np.ndarray, y: np.ndarray, hx: float, hy: float, side: str) -> tuple[np.ndarray, np.ndarray]:
+    """u je 0..1 podél stěny, depth je vzdálenost od obvodu v px. Bok se zužuje pod 45°."""
+    if side == "south":
+        depth = hy - y
+        left = -hx + depth
+        span = hx - depth
+    elif side == "north":
+        depth = hy + y
+        left = -hx + depth
+        span = hx - depth
+        return (x - left) / np.maximum(2.0 * span, 1e-3), depth
+    elif side == "east":
+        depth = hx - x
+        left = -hy + depth
+        span = hy - depth
+        return (y - left) / np.maximum(2.0 * span, 1e-3), depth
+    else:
+        depth = hx + x
+        left = -hy + depth
+        span = hy - depth
+        return (y - left) / np.maximum(2.0 * span, 1e-3), depth
+    return (x - left) / np.maximum(2.0 * span, 1e-3), depth
+
+
+def miter_seams(x: np.ndarray, y: np.ndarray, hx: float, hy: float, width: float) -> np.ndarray:
+    """Jen předěl sousedních stěn. Protější stěny uprostřed čáru nemají."""
+    inside = (np.abs(x) <= hx) & (np.abs(y) <= hy)
+    north_d, east_d, south_d, west_d = edge_distances(x, y, hx, hy)
+
+    def crease(a: np.ndarray, b: np.ndarray, *farther: np.ndarray) -> np.ndarray:
+        on_line = np.abs(a - b) <= width
+        closest = on_line
+        for other in farther:
+            closest = closest & (a <= other + width)
+        return closest
+
+    return inside & (
+        crease(north_d, east_d, south_d, west_d)
+        | crease(north_d, west_d, south_d, east_d)
+        | crease(south_d, east_d, north_d, west_d)
+        | crease(south_d, west_d, north_d, east_d)
+    )
 
 
 def wall_lengths(house: House) -> dict[str, float]:
@@ -268,54 +307,56 @@ def paint_opening(
     channel: int,
     shade: float,
     frame: float = 0.0,
+    depth_pad: float = 0.02,
 ) -> None:
     if frame > 0.0:
-        pad_s = frame
-        pad_t = frame * 0.65
-        mask.fill(quad(where, s, t, s0 - pad_s, s1 + pad_s, max(0.0, t0 - pad_t), t1 + pad_t), WOOD, 0.72)
+        mask.fill(quad(where, s, t, s0 - frame, s1 + frame, max(0.0, t0 - depth_pad), t1 + depth_pad), WOOD, 0.72)
     mask.fill(quad(where, s, t, s0, s1, t0, t1), channel, shade)
 
 
 def paint_rect_wall(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> None:
     hx, hy = m(house.width) / 2.0, m(house.depth) / 2.0
-    sides = rect_sides(x, y, hx, hy)
+    sides = miter_sides(x, y, hx, hy)
+    depth_limit = min(hx, hy)
     salt = sum(ord(char) for char in house.name)
+    course = m(0.32)
     for side, where in sides.items():
-        s, t = side_st(x, y, hx, hy, side)
-        length = wall_lengths(house)[side]
-        boards = max(4, int(length / 0.34))
-        groove = np.abs(np.mod(s * boards + 1.0, 2.0) - 1.0) < 0.11
-        grain = hash01(np.floor(s * boards), np.floor(t * 18.0), salt + len(side))
-        shade = (0.58 + 0.42 * (1.0 - np.clip(t, 0.0, 1.0))) * np.where(groove, 0.78, 1.0)
-        shade = shade * (0.9 + 0.1 * grain)
+        u, depth = miter_ud(x, y, hx, hy, side)
+        t = np.clip(depth / depth_limit, 0.0, 1.0)
+        groove = (np.mod(depth, course) < m(0.035)) & (depth > 1.0)
+        grain = hash01(np.floor(u * 32.0), np.floor(depth / 4.0), salt + len(side))
+        shade = (0.58 + 0.42 * (1.0 - t)) * np.where(groove, 0.88, 1.0)
+        shade = shade * (0.92 + 0.08 * grain)
         mask.fill(where, WALL, shade)
 
-    mask.fill(diagonal_posts(x, y, hx, hy, m(0.09)), WOOD, 0.8)
+    seam = miter_seams(x, y, hx, hy, m(0.035)) & (mask.cover > 0.0)
+    mask.shade[seam] *= 0.78
 
     for side, where in sides.items():
-        s, t = side_st(x, y, hx, hy, side)
+        u, depth = miter_ud(x, y, hx, hy, side)
+        t = depth / depth_limit
         length = wall_lengths(house)[side]
         door = side == "west"
         if door:
-            half = DOOR_W / length
-            paint_opening(mask, where, s, t, -half, half, 0.0, 0.46, WOOD, 0.62, frame=0.035)
+            half = (DOOR_W / 2.0) / length
+            paint_opening(mask, where, u, t, 0.5 - half, 0.5 + half, 0.0, 0.46, WOOD, 0.62, frame=0.06 / length)
             pane = half * 0.42
-            paint_opening(mask, where, s, t, -pane, pane, 0.24, 0.40, GLASS, 0.95)
-        span = WINDOW_W / length
+            paint_opening(mask, where, u, t, 0.5 - pane, 0.5 + pane, 0.24, 0.40, GLASS, 0.95)
+        half = (WINDOW_W / 2.0) / length
         for center in window_centers(length, door):
-            mid = center / (length / 2.0)
+            mid = 0.5 + center / length
             paint_opening(
                 mask,
                 where,
-                s,
+                u,
                 t,
-                mid - span,
-                mid + span,
+                mid - half,
+                mid + half,
                 0.02,
                 0.55,
                 GLASS,
                 0.95,
-                frame=WINDOW_W / length * 0.22,
+                frame=0.08 / length,
             )
 
 
