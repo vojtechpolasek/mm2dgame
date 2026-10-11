@@ -8,6 +8,9 @@ rozlišení. Každý dům má dvě vrstvy a tři velikosti od každého typu:
   tram   nejvyšší bod uprostřed, trámy ze středu do rohů
   jurta  kruh, střecha s věncem a tyčemi
 
+Krytina je došková. Snopy jdou po spádu, od hřebene dolů k okapu,
+ne v řadách napříč.
+
 Vrstva nese váhy materiálu, ne hotovou barvu. Alfa je krytí.
 Střecha (výška domu): R krytina, G dřevo, B otvor (kouřová díra jurty).
 Stěna (0 m, stojí jako pařez): R stěna, G dřevo, B sklo.
@@ -399,28 +402,35 @@ def paint_yurt_wall(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> N
         mask.fill(inside & (local <= win_half) & (t >= 0.04) & (t <= 0.44), GLASS, 0.95)
 
 
-def shingle_shade(slope: np.ndarray, along: np.ndarray, rows: float, tile: float, salt: int, bias: np.ndarray) -> np.ndarray:
-    row = np.floor(slope * rows)
-    col = np.floor(along / tile + (row % 2) * 0.5)
-    grain = hash01(col, row, salt)
-    shade = (1.0 - 0.5 * np.clip(slope, 0.0, 1.0)) * bias * (0.84 + 0.16 * grain)
-    frac = slope * rows - row
-    return shade * np.where((frac < 0.1) & (slope > 0.02), 0.8, 1.0)
+def thatch_shade(down: np.ndarray, across: np.ndarray, salt: int, bias: np.ndarray) -> np.ndarray:
+    """Došek. down je 0 na hřebeni a 1 u okapu, snop běží po spádu."""
+    bundle_w = m(0.2)
+    wiggle = 0.05 * np.sin(down * 16.0 + np.floor(across / bundle_w))
+    phase = across / bundle_w + wiggle
+    bundle = np.floor(phase)
+    local = phase - bundle
+    seam = np.minimum(local, 1.0 - local) < 0.1
+    fiber = hash01(np.floor(across / m(0.04)), np.floor(down * 5.0), salt)
+    tone = hash01(bundle, np.zeros(bundle.shape, np.float32), salt + 4)
+    down_c = np.clip(down, 0.0, 1.0)
+    shade = (1.0 - 0.36 * down_c) * bias * (0.78 + 0.22 * tone) * (0.9 + 0.1 * fiber)
+    shade = np.where(seam, shade * 0.62, shade)
+    end = 0.76 + 0.2 * hash01(bundle, np.ones(bundle.shape, np.float32), salt + 8)
+    shade = np.where(down_c > end, shade * 0.55, shade)
+    return np.clip(shade, 0.0, 1.0)
 
 
 def paint_gable(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> None:
     hx = m(house.width) / 2.0 + m(OVERHANG)
     hy = m(house.depth) / 2.0 + m(OVERHANG)
     inside = (np.abs(x) <= hx) & (np.abs(y) <= hy)
-    slope = np.abs(y) / hy
-    bias = np.where(y < 0.0, 0.72, 1.0).astype(np.float32)
-    shade = shingle_shade(slope, x, max(hy / m(0.28), 4.0), m(0.34), 11, bias)
-    mask.fill(inside, ROOF, shade)
-    eave = m(0.1)
-    trim = inside & ((hx - np.abs(x) <= eave) | (hy - np.abs(y) <= eave))
-    mask.fill(trim, WOOD, 0.66)
-    ridge = inside & (np.abs(y) <= m(0.1))
-    mask.fill(ridge, WOOD, 0.95)
+    down = np.abs(y) / hy
+    across = np.where(y < 0.0, x + m(0.1), x)
+    bias = np.where(y < 0.0, 0.74, 1.0).astype(np.float32)
+    mask.fill(inside, ROOF, thatch_shade(down, across, 11, bias))
+    # Štítové hrany drží dřevo. Okap je střapatý konec došku, ne prkno.
+    mask.fill(inside & (hx - np.abs(x) <= m(0.05)), WOOD, 0.55)
+    mask.fill(inside & (np.abs(y) <= m(0.06)), WOOD, 0.9)
 
 
 def paint_hip(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> None:
@@ -434,11 +444,11 @@ def paint_hip(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> None:
     bias = np.where(sides["east"], 0.86, bias)
     bias = np.where(sides["west"], 0.8, bias)
     bias = np.where(sides["north"], 0.7, bias)
-    along = np.where(np.abs(x) / hx >= np.abs(y) / hy, y, x)
-    shade = shingle_shade(slope, along, max(max(hx, hy) / m(0.28), 4.0), m(0.32), 23, bias)
-    mask.fill(inside, ROOF, shade)
-    eave = m(0.1)
-    mask.fill(inside & ((hx - np.abs(x) <= eave) | (hy - np.abs(y) <= eave)), WOOD, 0.64)
+    # Od vrcholu dolů k okapu. Na bocích by rovnoběžné řady zase vypadaly jako stěna.
+    bundles = max(28, int(math.tau * max(hx, hy) / m(0.22)))
+    ang = np.mod(np.arctan2(y, x) + math.pi, math.tau)
+    across = ang / (math.tau / bundles) * m(0.2)
+    mask.fill(inside, ROOF, thatch_shade(slope, across, 23, bias))
     d1 = np.abs(x * hy - y * hx) / math.hypot(hx, hy)
     d2 = np.abs(x * hy + y * hx) / math.hypot(hx, hy)
     mask.fill(inside & ((d1 <= m(0.1)) | (d2 <= m(0.1))), WOOD, 0.9)
@@ -451,26 +461,31 @@ def paint_yurt_roof(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> N
     slope = dist / radius
     angle = np.arctan2(y, x)
     salt = sum(ord(char) for char in house.name)
-    rows = max(radius / m(0.32), 5.0)
-    row = np.floor(slope * rows)
-    grain = hash01(np.floor(angle * 10.0), row, salt)
-    shade = (1.0 - 0.42 * slope) * (0.88 + 0.12 * grain)
-    frac = slope * rows - row
-    shade = shade * np.where((frac < 0.1) & (slope > 0.08), 0.84, 1.0)
-    mask.fill(inside, ROOF, shade)
-
-    poles = 12 if house.width < 4.5 else 16 if house.width < 6.5 else 20
-    sector = math.tau / poles
-    delta = np.mod(angle + math.pi / poles, sector)
-    delta = np.minimum(delta, sector - delta)
-    arc = delta * np.maximum(dist, 1.0)
     hole = radius * 0.16
     crown_out = hole + m(0.16)
-    pole = inside & (dist >= crown_out) & (dist <= radius - m(0.08)) & (arc <= m(0.055))
-    mask.fill(pole, WOOD, 0.86)
+    bundles = max(18, int(math.tau * radius / m(0.22)))
+    sector = math.tau / bundles
+    ang = np.mod(angle + math.pi, math.tau)
+    bundle = np.floor(ang / sector)
+    local = ang / sector - bundle
+    seam = np.minimum(local, 1.0 - local) < 0.09
+    tone = hash01(bundle, np.zeros(bundle.shape, np.float32), salt)
+    fiber = hash01(np.floor(ang / (sector * 0.28)), np.floor(slope * 4.0), salt + 2)
+    shade = (1.0 - 0.34 * slope) * (0.78 + 0.22 * tone) * (0.9 + 0.1 * fiber)
+    shade = np.where(seam & (dist > crown_out), shade * 0.64, shade)
+    end = 0.78 + 0.18 * hash01(bundle, np.ones(bundle.shape, np.float32), salt + 6)
+    shade = np.where(slope > end, shade * 0.55, shade)
+    mask.fill(inside, ROOF, np.clip(shade, 0.0, 1.0))
+
+    poles = 8 if house.width < 4.5 else 10 if house.width < 6.5 else 12
+    pole_sector = math.tau / poles
+    delta = np.mod(angle + math.pi / poles, pole_sector)
+    delta = np.minimum(delta, pole_sector - delta)
+    arc = delta * np.maximum(dist, 1.0)
+    pole = inside & (dist >= crown_out) & (dist <= radius - m(0.06)) & (arc <= m(0.04))
+    mask.fill(pole, WOOD, 0.82)
     mask.fill(inside & (dist >= hole) & (dist <= crown_out), WOOD, 0.94)
     mask.fill(dist <= hole, OPENING, 0.35)
-    mask.fill(inside & (radius - dist <= m(0.08)), WOOD, 0.62)
 
 
 def render(house: House) -> tuple[Image.Image, Image.Image, int]:
