@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Továrna z pohledu shora. Zatím jen grafika, do Godotu se nezapojí.
+"""Továrna z pohledu shora. Ve hře stojí uprostřed mapy místo kotliny.
 
 64 px je 1 m. Kreslí se ve čtyřnásobném rozlišení a složí se do masky,
 stejně jako domečky. Osmiúhelník je přes plochy široký jako kotlina,
@@ -10,8 +10,8 @@ Spodek (0 m):
   v rozích, sedm dopravníků od hran ke středu s hnacím válcem a patkami,
   poklopy mezi pásy, čtvercový výstupek na jižní hraně (tam ve hře
   vyjedou krabičky) a uprostřed štěrková plocha na materiál s litinovou
-  mříží. Dopravníky jsou jeden snímek. Pohyb pásu by potom byl posun
-  toho vzoru, ne další obrázky.
+  mříží. Příčky pásů v masce pro hru nejsou, kreslí je factory_layer.gdshader
+  a posouvá je, když po pásu jede kámen. Náhled je má namalované.
 
 Mezikruží (výška RING_H): samostatná vrstva, střed je průhledný,
 takže sklad pod ním zůstane vidět. Obrázek je vystředěný na osu,
@@ -36,11 +36,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from gen_houses import SHADE_FLOOR, colorize, fbm, hash01, load_font, organic, smoothstep, stone_shade
+from gen_houses import SHADE, SHADE_FLOOR, SHEEN, colorize, fbm, hash01, load_font, organic, smoothstep, stone_shade
 from gen_trees import on_grass
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = ROOT / "tools" / "out" / "factory"
+OUT_DIR = ROOT / "godot" / "graphics" / "objects" / "factory"
 PREVIEW = ROOT / "tools" / "preview"
 
 PX = 64
@@ -58,6 +58,13 @@ RING_IN = 2.02
 YARD = 2.18
 RING_H = 3.0
 BELT_HALF = 0.56
+BELT_RAIL = 0.09
+BELT_PITCH = 0.36
+BELT_SLAT = 0.07
+BELT_SHADE = 0.36
+SLAT_SHADE = 0.84
+DRUM_IN = 0.62
+DRUM_HALF = 0.13
 SCALE = 6.0 / (FLAT * 2.0)
 
 FLOOR, METAL, YARD_CH = 0, 1, 2
@@ -153,7 +160,7 @@ def disc(x: np.ndarray, y: np.ndarray, cx: float, cy: float, radius: float) -> n
     return (x - cx) ** 2 + (y - cy) ** 2 <= radius * radius
 
 
-def paint_base(x0: np.ndarray, y0: np.ndarray) -> Mask:
+def paint_base(x0: np.ndarray, y0: np.ndarray, slats: bool) -> Mask:
     cell = int(round((x0.shape[1] / SS)))
     mask = Mask(cell)
     ap = m(FLAT)
@@ -180,7 +187,7 @@ def paint_base(x0: np.ndarray, y0: np.ndarray) -> Mask:
     paint_drain(mask, x0, y0)
 
     paint_manholes(mask, x0, y0, inside)
-    paint_belts(mask, x0, y0, inside)
+    paint_belts(mask, x0, y0, inside, slats)
     paint_dock(mask, x0, y0, x, y)
     return mask
 
@@ -227,14 +234,18 @@ def paint_manholes(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray)
         mask.fill(groove, METAL, 0.3)
 
 
-def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray) -> None:
+def belt_span() -> tuple[float, float]:
+    """Pás od kola k hraně, vzdálenost od středu v px. Kolo pás zakryje."""
+    return m(RING_OUT) - m(0.18), m(FLAT) + m(0.2)
+
+
+def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray, slats: bool) -> None:
     """Sedm pásů od ploché hrany ke kolu. Jižní hrana má místo pásu výstupek."""
     half = m(BELT_HALF)
-    rail = m(0.09)
-    outer = m(FLAT) + m(0.2)
-    inner = m(RING_OUT) - m(0.18)
-    pitch = m(0.36)
-    slat_w = m(0.07)
+    rail = m(BELT_RAIL)
+    inner, outer = belt_span()
+    pitch = m(BELT_PITCH)
+    slat_w = m(BELT_SLAT)
     dirt = 0.82 + 0.26 * fbm(x, y, m(0.8), 421)
     for k in range(8):
         if k == SOUTH:
@@ -250,15 +261,16 @@ def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray) ->
         belt = span & (np.abs(side) <= half)
         center = span & (np.abs(side) <= half - rail)
         rails = belt & ~center
-        mask.fill(belt, METAL, 0.36 * dirt)
+        mask.fill(belt, METAL, BELT_SHADE * dirt)
         rail_light = 0.62 + 0.3 * smoothstep(0.0, rail * 0.6, half - np.abs(side))
         mask.fill(rails, METAL, rail_light)
-        slats = center & (np.mod(along, pitch) < slat_w)
-        mask.fill(slats, METAL, 0.84 * dirt)
+        if slats:
+            slat = center & (np.mod(along, pitch) < slat_w)
+            mask.fill(slat, METAL, SLAT_SHADE * dirt)
         # Hnací válec u vnějšího konce, oblý: uprostřed světlý.
-        drum_at = m(FLAT) - m(0.62)
-        drum = center & (np.abs(along - drum_at) <= m(0.13))
-        mask.fill(drum, METAL, 0.5 + 0.45 * (1.0 - np.abs(along - drum_at) / m(0.13)))
+        drum_at = m(FLAT) - m(DRUM_IN)
+        drum = center & (np.abs(along - drum_at) <= m(DRUM_HALF))
+        mask.fill(drum, METAL, 0.5 + 0.45 * (1.0 - np.abs(along - drum_at) / m(DRUM_HALF)))
         bolt = span & (np.abs(np.abs(side) - (half - rail * 0.5)) < m(0.04)) & (np.abs(along - drum_at) < m(0.04))
         mask.fill(bolt, METAL, 0.98)
 
@@ -545,21 +557,49 @@ def check(base: Image.Image, ring: Image.Image) -> None:
         raise SystemExit("mezikruží zakrývá většinu skladu")
 
 
+def hex_of(color: tuple[int, int, int]) -> str:
+    return "%02X%02X%02X" % color
+
+
 def write_info(base: Image.Image, ring: Image.Image) -> Path:
+    """Míry jsou v px od středu obrázku, jih (+y) je výstupek. Hra z nich staví
+    neprůchodný půdorys, dráhu kamene po pásu a příčky pásů ve shaderu."""
+    inner, outer = belt_span()
     catalog = {
         "px_per_meter": PX,
         "height_unit": "m",
-        "wired_into_godot": False,
+        "shader": "res://shaders/factory_layer.gdshader",
         "flat_to_flat_m": round(real(FLAT) * 2.0, 3),
         "vertex_to_vertex_m": round(real(FLAT) * 2.0 / math.cos(math.pi / 8), 3),
         "dock_edge": "south",
         "dock_m": round(real(DOCK), 3),
-        "conveyors": {"count": 7, "animated": False},
+        "apothem_px": round(m(FLAT), 2),
+        "dock_px": {"half": round(m(DOCK) / 2.0, 2), "from": round(m(FLAT) - m(0.3), 2), "to": round(m(FLAT) + m(DOCK), 2)},
+        "yard_px": round(m(YARD), 2),
+        "ring_px": {"inner": round(m(RING_IN), 2), "outer": round(m(RING_OUT), 2), "teeth": round(m(RING_OUT + 0.17), 2)},
+        "conveyors": {
+            "count": 7,
+            "angles": [k for k in range(8) if k != SOUTH],
+            "step_deg": 45,
+            "inner_px": round(inner, 2),
+            "outer_px": round(outer, 2),
+            "half_px": round(m(BELT_HALF), 2),
+            "rail_px": round(m(BELT_RAIL), 2),
+            "pitch_px": round(m(BELT_PITCH), 2),
+            "slat_px": round(m(BELT_SLAT), 2),
+            "slat_gain": round(SLAT_SHADE / BELT_SHADE, 4),
+            "drum_px": round(m(FLAT) - m(DRUM_IN), 2),
+            "drum_half_px": round(m(DRUM_HALF), 2),
+        },
+        "shade": list(SHADE),
+        "shade_floor": SHADE_FLOOR,
+        "sheen": list(SHEEN),
         "layers": {
             "base": {
                 "file": "base.png",
                 "height": 0.0,
                 "channels": ["floor", "metal", "yard"],
+                "colors": [hex_of(tint) for tint in TINTS_BASE],
                 "cell": base.width,
                 "center": base.width // 2,
             },
@@ -567,6 +607,7 @@ def write_info(base: Image.Image, ring: Image.Image) -> Path:
                 "file": "ring.png",
                 "height": round(real(RING_H), 3),
                 "channels": ["plate", "brass", "lip"],
+                "colors": [hex_of(tint) for tint in TINTS_RING],
                 "center_clear": True,
                 "cell": ring.width,
                 "center": ring.width // 2,
@@ -581,19 +622,21 @@ def write_info(base: Image.Image, ring: Image.Image) -> Path:
 
 def main() -> None:
     x, y = grids(cell_for())
-    base = crop_square(pack_mask(paint_base(x, y)))
+    base = crop_square(pack_mask(paint_base(x, y, slats=False)))
+    shown = crop_square(pack_mask(paint_base(x, y, slats=True)))
     ring = crop_square(pack_mask(paint_ring(x, y)))
     # Oba snímky musí sdílet střed otáčení. Ořez bere vzdálenost od středu,
     # takže osmiúhelník i díra zůstanou uprostřed i s výstupkem na jihu.
     side = max(base.width, ring.width)
-    if base.size != (side, side):
+
+    def padded(image: Image.Image) -> Image.Image:
+        if image.size == (side, side):
+            return image
         canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-        paste_center(canvas, base)
-        base = canvas
-    if ring.size != (side, side):
-        canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-        paste_center(canvas, ring)
-        ring = canvas
+        paste_center(canvas, image)
+        return canvas
+
+    base, shown, ring = padded(base), padded(shown), padded(ring)
     check(base, ring)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -601,7 +644,7 @@ def main() -> None:
     base.save(base_path)
     ring.save(ring_path)
 
-    painted_base = colorize(base, TINTS_BASE)
+    painted_base = colorize(shown, TINTS_BASE)
     painted_ring = colorize(ring, TINTS_RING)
     turned = colorize(ring.rotate(28, resample=Image.Resampling.BICUBIC), TINTS_RING)
     shift = (round(EDGE[0] * real(RING_H)), round(EDGE[1] * real(RING_H)))

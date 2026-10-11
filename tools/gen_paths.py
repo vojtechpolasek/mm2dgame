@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Vzory cest pro pohled shora. Zatím jen grafika, do Godotu se nezapojí.
+"""Vzory cest pro pohled shora.
 
-Vzor je pás cesty. Šířka obrázku jde napříč cestou, výška po délce.
-Po délce na sebe vzor navazuje, takže se dá klást dokola podél křivky
-libovolně dlouhé cesty. Napříč je uprostřed plná cesta a k oběma krajům
-se třepí do průhledna, tam prosvitne tráva pod ní.
+Vzor je pás cesty. Při kreslení jde šířka obrázku napříč cestou, výška
+po délce. Po délce na sebe vzor navazuje, takže se dá klást dokola podél
+křivky libovolně dlouhé cesty. Napříč je uprostřed plná cesta a k oběma
+krajům se třepí do průhledna, tam prosvitne tráva pod ní.
 
-Ve hře se pás natočí po směru křivky a zapeče do textury chunku.
-Náhled to tak předvádí: cesta přes body A, B, C a D a druhá cesta,
+Do Godotu jde vzor otočený: délka cesty po ose x, šířka po y. Tak ho
+čte Line2D s texturou po dlaždicích (town.gd), který ho klade po křivce.
+Náhled předvádí kladení po křivce: cesta přes body A, B, C a D a druhá cesta,
 která ji kříží, položené na trávu ze hry. V křížení vyhrává cesta,
 ke které má pixel blíž, takže se pásy slijí a obruba nepřejede přes střed.
 
@@ -33,7 +34,7 @@ from PIL import Image, ImageDraw
 from gen_houses import hash01, load_font, smoothstep
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = ROOT / "tools" / "out" / "paths"
+OUT_DIR = ROOT / "godot" / "graphics" / "paths"
 PREVIEW = ROOT / "tools" / "preview"
 GRASS_ATLAS = ROOT / "godot" / "graphics" / "terrain" / "grass" / "atlas.png"
 
@@ -459,16 +460,16 @@ def scene_sheet(images: list[tuple[Image.Image, str]], path: Path) -> None:
 def write_info() -> Path:
     catalog = {
         "px_per_meter": PX,
-        "wired_into_godot": False,
         "across_px": ACROSS,
         "along_px": ALONG,
-        "core_m": CORE,
         "repeat": "along",
+        "along_axis": "x",
         "patterns": {
             pattern.name: {
                 "label": pattern.label,
                 "file": f"{pattern.name}.png",
                 "directional": pattern.directional,
+                "core_m": PESINA_CORE if pattern.name == "pesina" else CORE,
             }
             for pattern in PATTERNS
         },
@@ -485,7 +486,7 @@ def main() -> None:
     for pattern in PATTERNS:
         texture = render(pattern)
         check(pattern, texture)
-        texture.save(OUT_DIR / f"{pattern.name}.png")
+        texture.transpose(Image.Transpose.TRANSPOSE).save(OUT_DIR / f"{pattern.name}.png")
         tiles.append((texture, f"{pattern.label}  {ACROSS}×{ALONG} px"))
         image = scene(texture)
         image.save(PREVIEW / f"cesta_{pattern.name}.png")
