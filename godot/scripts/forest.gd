@@ -6,6 +6,8 @@ const LayeredProps := preload("res://scripts/layered_props.gd")
 const DIRT_TREE_GAP := 0.66
 ## Do této výšky je keř pod postavou. Strom je nad ní.
 const LOW := 1.5
+## Od cesty a staveb drží strom aspoň tuto část koruny, ať je nezakrývá.
+const TOWN_CROWN := 0.5
 
 var _spacing := {}
 var _tree := PackedByteArray()
@@ -13,6 +15,8 @@ var _tree := PackedByteArray()
 var _solid := PackedFloat32Array()
 var _solid_height := PackedFloat32Array()
 var _solid_reach := 0.0
+## Poloměr spodní koruny v pixelech.
+var _crown := PackedFloat32Array()
 var _dirt := -1
 var _rock_pos := PackedVector2Array()
 var _rock_gap := PackedFloat32Array()
@@ -88,6 +92,7 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 	_tree.append(1 if trunk else 0)
 	var radius := float(stump_info.get("radius", footprint)) if trunk else footprint
 	_solid.append(radius)
+	_crown.append(footprint)
 	_solid_height.append(top)
 	_solid_reach = maxf(_solid_reach, radius)
 	return entry
@@ -115,7 +120,7 @@ func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
 	var y := clampi(int(pos.y / tile), 0, map.size - 1)
 	if _crowded(pos, kind, map.terrain[y * map.size + x] == _dirt):
 		return false
-	return not _hits_rock(pos, kind) and not _in_town(pos, _solid[kind])
+	return not _hits_rock(pos, kind) and not _in_town(pos, maxf(_solid[kind], _crown[kind] * TOWN_CROWN))
 
 
 ## Strom drží od skály větší z obou rozestupů.
