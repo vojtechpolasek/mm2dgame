@@ -1,0 +1,25 @@
+{
+  "px_per_meter": 64,
+  "wired_into_godot": false,
+  "across_px": 160,
+  "along_px": 256,
+  "core_m": 1.8,
+  "repeat": "along",
+  "patterns": {
+    "pesina": {
+      "label": "pěšina",
+      "file": "pesina.png",
+      "directional": false
+    },
+    "sterk": {
+      "label": "štěrk",
+      "file": "sterk.png",
+      "directional": false
+    },
+    "dlazba": {
+      "label": "dlažba",
+      "file": "dlazba.png",
+      "directional": true
+    }
+  }
+}
