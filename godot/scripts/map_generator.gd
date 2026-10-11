@@ -10,7 +10,7 @@ const COST_BUCKET := 250
 ## Posun hranice šumem, v násobcích šířky oblasti.
 const WARP := 0.5
 ## Voda nemá počátek blíž ke středu mapy než tohle: podíl strany mapy, nejméně CENTER_DRY_MIN
-## dlaždic. Kotlina stojí u středu a jezero by k ní zatarasilo cestu.
+## dlaždic. Továrna stojí u středu a jezero by k ní zatarasilo cestu.
 const CENTER_DRY_SHARE := 0.2
 const CENTER_DRY_MIN := 12.0
 ## Pojistka: voda, která k středu přesto doroste z dálky, se v tomto poloměru v dlaždicích

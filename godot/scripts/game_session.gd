@@ -15,7 +15,7 @@ const PROGRESS := "user://progress.cfg"
 const MODES: Array[Dictionary] = [
 	{
 		"id": "ponds", "title": "Vybrat jezírka", "goal": "ponds", "timed": false, "bottomless": false,
-		"about": "Každé jezírko má tři kameny. Přines do kotliny všechny. Bez limitu, počítá se nejlepší čas.",
+		"about": "Každé jezírko má tři kameny. Přines do továrny všechny. Bez limitu, počítá se nejlepší čas.",
 	},
 	{
 		"id": "time_points", "title": "Na čas – body", "goal": "points", "timed": true, "bottomless": true,
@@ -23,7 +23,7 @@ const MODES: Array[Dictionary] = [
 	},
 	{
 		"id": "time_ponds", "title": "Na čas – vybrat jezírka", "goal": "ponds", "timed": true, "bottomless": false,
-		"about": "Každé jezírko má tři kameny. Přines do kotliny všechny, než vyprší čas.",
+		"about": "Každé jezírko má tři kameny. Přines do továrny všechny, než vyprší čas.",
 	},
 ]
 ## Typ hry, kterému patří postup z doby před typy hry (progress/unlocked).
@@ -231,8 +231,8 @@ func mode_time(at: int) -> int:
 	return maxi(limit, ceili(needed / float(TIME_STEP)) * TIME_STEP)
 
 
-## Odhad vybrání všech jezírek jedním hráčem. Směr k jezírkům ukazují šipky na kotlině, takže
-## se nehledá: z každého jezírka donese všechny kameny cestou tam a zpět. Jezírko je v průměru
+## Odhad vybrání všech jezírek jedním hráčem. Počítá se, že jezírka nehledá:
+## z každého jezírka donese všechny kameny cestou tam a zpět. Jezírko je v průměru
 ## uprostřed mezikruží svého materiálu.
 static func ponds_seconds(at: int) -> float:
 	var speed := _speed()

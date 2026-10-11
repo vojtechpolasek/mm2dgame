@@ -11,8 +11,11 @@ const ObjectLayers := preload("res://scripts/object_layers.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const PropChunks := preload("res://scripts/prop_chunks.gd")
+const Town := preload("res://scripts/town.gd")
 const _SHADER_PATH := "res://shaders/tree_layer.gdshader"
 
+## Továrna, cesta a domy. Nic se nesází na cestu ani k nim. Nastaví svět před sázením.
+var town: Town
 var _camera: MapCamera
 var _chunks: PropChunks
 var _host: Node2D
@@ -79,6 +82,11 @@ func _special_gap(left: int, right: int) -> float:
 
 func _fits(pos: Vector2, kind: int, _map: MapData) -> bool:
 	return not _crowded(pos, kind, false)
+
+
+## Leží objekt o poloměru radius na cestě, u továrny nebo u domu?
+func _in_town(pos: Vector2, radius: float) -> bool:
+	return town != null and town.blocks(pos, radius)
 
 
 func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionary:

@@ -115,7 +115,7 @@ func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
 	var y := clampi(int(pos.y / tile), 0, map.size - 1)
 	if _crowded(pos, kind, map.terrain[y * map.size + x] == _dirt):
 		return false
-	return not _hits_rock(pos, kind)
+	return not _hits_rock(pos, kind) and not _in_town(pos, _solid[kind])
 
 
 ## Strom drží od skály větší z obou rozestupů.

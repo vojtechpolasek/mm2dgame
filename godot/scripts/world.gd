@@ -5,6 +5,7 @@ const MapGenerator := preload("res://scripts/map_generator.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Forest := preload("res://scripts/forest.gd")
 const Rocks := preload("res://scripts/rocks.gd")
+const Town := preload("res://scripts/town.gd")
 const PropChunks := preload("res://scripts/prop_chunks.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
@@ -64,6 +65,7 @@ var _score := 0
 var _progress := 0
 var _playing := false
 var _rocks: Rocks
+var _town: Town
 var _persons: Array[Person] = []
 var _party: Party
 var _monsters: Monsters
@@ -92,9 +94,16 @@ func _ready() -> void:
 	var forest := Forest.new()
 	forest.name = "Trees"
 	add_child(forest)
+	var town := Town.new()
+	town.name = "Town"
+	add_child(town)
+	_town = town
 	# Textury se načítají tady, generování pak běží ve vlákně a hra mezitím nestojí.
 	rocks.load_catalog(catalog.names, catalog.surfaces)
 	forest.load_catalog(catalog.names, catalog.surfaces)
+	if town.load_assets():
+		rocks.town = town
+		forest.town = town
 	var crystal := Crystal.new()
 	if not crystal.load_catalog():
 		push_error("Chybí materiály krystalu.")
@@ -114,7 +123,7 @@ func _ready() -> void:
 	monsters.name = "Monsters"
 	add_child(monsters)
 	_monsters = monsters
-	_task = WorkerThreadPool.add_task(_generate.bind(size, catalog, rng, rocks, forest, crystal, monsters), true, "Generování mapy")
+	_task = WorkerThreadPool.add_task(_generate.bind(size, catalog, rng, town, rocks, forest, crystal, monsters), true, "Generování mapy")
 	while not WorkerThreadPool.is_task_completed(_task):
 		await get_tree().process_frame
 	WorkerThreadPool.wait_for_task_completion(_task)
@@ -122,11 +131,16 @@ func _ready() -> void:
 
 	var pixels := float(size * TerrainCatalog.TILE_SIZE)
 	catalog.set_map(size, _painted["corners"], _painted["variants"])
+	# Cesta leží na terénu pod všemi objekty.
+	var road := Node2D.new()
+	road.name = "Road"
+	add_child(road)
+	move_child(road, ground.get_index() + 1)
 	var props := Node2D.new()
 	props.name = "Props"
 	props.y_sort_enabled = true
 	add_child(props)
-	move_child(props, ground.get_index() + 1)
+	move_child(props, road.get_index() + 1)
 	camera.setup(Vector2(pixels, pixels))
 	ground.setup(catalog, size, _painted["corners"], camera)
 	_painted.clear()
@@ -134,6 +148,7 @@ func _ready() -> void:
 	chunks.name = "PropChunks"
 	chunks.setup(camera)
 	add_child(chunks)
+	town.spawn(camera, road, props, crystal)
 	rocks.spawn(camera, props, chunks)
 	forest.spawn(camera, props, chunks)
 	chunks.refresh()
@@ -162,7 +177,7 @@ func _spawn_players(rocks: Rocks, forest: Forest, crystal: Crystal, props: Node2
 		var person := Person.new()
 		person.name = "Person%d" % (i + 1)
 		props.add_child(person)
-		person.setup(rocks, forest, camera, map, crystal, i)
+		person.setup(rocks, forest, _town, camera, map, crystal, i)
 		person.walker.crowd = crowd
 		person.crowd_id = crowd.join(person)
 		person.party = _party
@@ -195,7 +210,7 @@ func _start_level(rocks: Rocks) -> void:
 	_hud.next_pressed.connect(_next_level)
 	for person in _persons:
 		person.held_changed.connect(_hud.set_held.bind(person.player_index))
-	rocks.settled.connect(_on_settled)
+	_town.settled.connect(_on_settled)
 	_score = 0
 	_progress = 0
 	_elapsed = 0.0
@@ -213,7 +228,7 @@ func _process(delta: float) -> void:
 		_party.frame()
 	if not _playing:
 		return
-	_point_basin()
+	_point_factory()
 	_update_sound(delta)
 	if not _timed():
 		_elapsed += delta
@@ -229,7 +244,6 @@ func _process(delta: float) -> void:
 		_finish(false)
 
 
-## Šipka v HUD ze středu pohledu ke kotlině, v souřadnicích obrazovky.
 ## Honící příšera na obrazovce přepne hudbu, blízkost vody řídí šumění.
 func _update_sound(delta: float) -> void:
 	var margin := CHASE_MARGIN * float(TerrainCatalog.TILE_SIZE)
@@ -286,16 +300,17 @@ func _build_water_map(grown: MapData) -> void:
 				queue.append(next)
 
 
-func _point_basin() -> void:
-	var basin := _rocks.basin_position()
-	if basin == Vector2.INF:
-		_hud.point_basin(Vector2.ZERO, Vector2.INF)
+## Šipka v HUD ze středu pohledu k továrně, v souřadnicích obrazovky.
+func _point_factory() -> void:
+	var factory := _town.center()
+	if factory == Vector2.INF:
+		_hud.point_factory(Vector2.ZERO, Vector2.INF)
 		return
 	var to_screen := get_viewport().get_canvas_transform()
-	_hud.point_basin(to_screen * camera.get_screen_center_position(), to_screen * basin)
+	_hud.point_factory(to_screen * camera.get_screen_center_position(), to_screen * factory)
 
 
-## Kámen dopadl do kotliny. Podle cíle přidá body, nebo jeden kámen.
+## Kámen dojel v továrně pod mezikruží. Podle cíle přidá body, nebo jeden kámen.
 func _on_settled(mat: int, pos: Vector2) -> void:
 	if not _playing or _crystal == null:
 		return
@@ -394,6 +409,7 @@ func _generate(
 	size: int,
 	catalog: TerrainCatalog,
 	rng: RandomNumberGenerator,
+	town: Town,
 	rocks: Rocks,
 	forest: Forest,
 	crystal: Crystal,
@@ -402,10 +418,11 @@ func _generate(
 	var grown := MapGenerator.grow(size, catalog.names, rng, catalog.max_distance, catalog.max_share)
 	grown.surfaces = catalog.surfaces
 	_painted = MapGenerator.corner_data(grown, rng, catalog.variant_count)
+	town.plan(grown, rng)
 	rocks.plant(grown, rng)
 	forest.plant(grown, rng, rocks)
 	# Mřížky cest, hranice skal a mapa vody by jinak zasekly hru na konci načítání.
-	var walker := Walker.new(rocks, forest, grown)
+	var walker := Walker.new(rocks, forest, town, grown)
 	monsters.prepare(rocks.pond_materials(), crystal, walker, rocks, forest)
 	rocks.prepare_bounds(Person.BODY)
 	_build_water_map(grown)

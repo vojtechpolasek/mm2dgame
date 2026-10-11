@@ -1,12 +1,13 @@
 extends RefCounted
 
-## Pohyb po zemi, společný postavě i příšerám. Překážky jsou paty skal, keře a kmeny, ostatní
-## tvorové z crowd, neschůdný povrch je voda a mimo mapu se nesmí. Tělo je kruh o poloměru
+## Pohyb po zemi, společný postavě i příšerám. Překážky jsou paty skal, keře a kmeny, továrna
+## a domy, ostatní tvorové z crowd, neschůdný povrch je voda a mimo mapu se nesmí. Tělo je kruh o poloměru
 ## body v pixelech. who je číslo tvora v crowd, -1 ostatní tvory nebere v úvahu.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const Rocks := preload("res://scripts/rocks.gd")
 const Forest := preload("res://scripts/forest.gd")
+const Town := preload("res://scripts/town.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Crowd := preload("res://scripts/crowd.gd")
 
@@ -18,6 +19,8 @@ const PROBES: Array[Vector2] = [
 
 var _rocks: Rocks
 var _forest: Forest
+## Továrna, cesta a domy. Mřížka cest příšer z ní bere půdorysy.
+var town: Town
 var _map_size := Vector2.ZERO
 var _tiles := 0
 var _walkable := PackedByteArray()
@@ -27,9 +30,10 @@ var _names := PackedStringArray()
 var crowd: Crowd
 
 
-func _init(rocks: Rocks, forest: Forest, map: MapData) -> void:
+func _init(rocks: Rocks, forest: Forest, town_at: Town, map: MapData) -> void:
 	_rocks = rocks
 	_forest = forest
+	town = town_at
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	_tiles = map.size
 	_map_size = Vector2(tile, tile) * float(map.size)
@@ -64,6 +68,12 @@ func world() -> Vector2:
 	return _map_size
 
 
+## Odkud se začíná: před výstupkem továrny. Bez továrny střed mapy.
+func home() -> Vector2:
+	var spot := town.home() if town != null else Vector2.INF
+	return _map_size * 0.5 if spot == Vector2.INF else spot
+
+
 ## Krok z from do desired. Když cíl nejde, zkusí klouzat jen po ose x, pak jen po ose y.
 ## Když nejde nic, zůstane na místě.
 func allowed(from: Vector2, desired: Vector2, body: float, clearance: float, who: int = -1) -> Vector2:
@@ -85,6 +95,8 @@ func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) ->
 	for _pass in 2:
 		pos = _rocks.avoid(pos, body, clearance)
 		pos = _forest.avoid(pos, body, clearance)
+		if town != null:
+			pos = town.avoid(pos, body)
 		if crowd != null and who >= 0:
 			pos = crowd.avoid(pos, body, who, clearance >= 0.0)
 	var limit := _map_size - Vector2(0.001, 0.001)

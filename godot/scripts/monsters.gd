@@ -170,7 +170,7 @@ func _spawn_point(walker: Walker, nav: NavGrid, body: float, flying: bool, rng: 
 		spot = center + Vector2.from_angle(rng.randf() * TAU) * radius
 		if flying:
 			return spot
-		if not walker.blocked(spot, body) and (nav == null or nav.reaches(spot, world * 0.5)):
+		if not walker.blocked(spot, body) and (nav == null or nav.reaches(spot, walker.home())):
 			return spot
 	var free := walker.free_spot(spot, body, far, tile)
 	return spot if free == Vector2.INF else free

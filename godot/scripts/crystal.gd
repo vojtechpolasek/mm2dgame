@@ -93,6 +93,15 @@ func color_of(index: int) -> Color:
 	return _color[index]
 
 
+func glint_of(index: int) -> Color:
+	return _glint[index]
+
+
+## Třpytivost materiálu, 0 je matný. Nejtřpytivější mají přes 1.
+func sparkle_of(index: int) -> float:
+	return _sparkle[index]
+
+
 ## Jméno materiálu z katalogu (piskovec, diamant, ...).
 func name_of(index: int) -> String:
 	return _names[index]

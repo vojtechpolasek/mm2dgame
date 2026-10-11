@@ -9,6 +9,7 @@ const ObjectLayers := preload("res://scripts/object_layers.gd")
 const Rocks := preload("res://scripts/rocks.gd")
 const Crystal := preload("res://scripts/crystal.gd")
 const Forest := preload("res://scripts/forest.gd")
+const Town := preload("res://scripts/town.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Walker := preload("res://scripts/walker.gd")
@@ -21,6 +22,8 @@ const CATALOG := "res://graphics/characters/person/person.json"
 const TINTS: PackedStringArray = ["skin", "hair", "eye", "shirt", "pants", "shoe", "lace"]
 ## Běh, v metrech za sekundu. Dlaždice je jeden metr.
 const RUN_METERS := 4.5
+## Na vyšlapaném středu cesty běží postava o tolik rychleji. Příšer se to netýká.
+const ROAD_BOOST := 1.2
 ## Skok je o něco pomalejší než běh a přehraje jen první polovinu snímků.
 const JUMP_METERS := RUN_METERS * 0.9
 const JUMP_TIME := 0.7
@@ -56,6 +59,7 @@ const THROW_ARC := 36.0
 
 var _rocks: Rocks
 var _forest: Forest
+var _town: Town
 var _camera: MapCamera
 var _jumping := false
 var _jump_time := 0.0
@@ -105,15 +109,16 @@ var _fly_height := 0.0
 var _fly_mat := -1
 
 
-func setup(rocks: Rocks, forest: Forest, camera: MapCamera, map: MapData, crystal: Crystal, player: int = 0) -> void:
+func setup(rocks: Rocks, forest: Forest, town: Town, camera: MapCamera, map: MapData, crystal: Crystal, player: int = 0) -> void:
 	player_index = player
 	_device = int(GameSession.player_colors(player).get("device", 0))
 	_rocks = rocks
 	_forest = forest
+	_town = town
 	_camera = camera
 	_crystal = crystal
 	_rng.randomize()
-	walker = Walker.new(rocks, forest, map)
+	walker = Walker.new(rocks, forest, town, map)
 	if not _build():
 		return
 	_attach_hand()
@@ -174,6 +179,8 @@ func _step_jump(delta: float) -> void:
 
 func _step_run(delta: float, direction: Vector2) -> void:
 	var max_speed := RUN_METERS * float(TerrainCatalog.TILE_SIZE)
+	if _town != null and _town.on_road(position):
+		max_speed *= ROAD_BOOST
 	if direction != Vector2.ZERO:
 		_velocity += direction * ACCELERATION * delta
 		if _velocity.length() > max_speed:
@@ -249,21 +256,23 @@ func _free_spot(from: Vector2) -> Vector2:
 	return _spawn_at() if spot == Vector2.INF else spot
 
 
-## Nejbližší suché místo ke středu mapy, které není ve skále ani ve vodě.
+## Nejbližší suché místo k začátku (před továrnou), které není v překážce ani ve vodě.
 func _spawn_at() -> Vector2:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var tiles := int(walker.world().x / tile)
-	var half := tiles / 2
+	var home := walker.home()
+	var hx := clampi(int(home.x / tile), 0, tiles - 1)
+	var hy := clampi(int(home.y / tile), 0, tiles - 1)
 	for radius in tiles:
-		var y0 := maxi(half - radius, 0)
-		var y1 := mini(half + radius, tiles - 1)
-		var x0 := maxi(half - radius, 0)
-		var x1 := mini(half + radius, tiles - 1)
+		var y0 := maxi(hy - radius, 0)
+		var y1 := mini(hy + radius, tiles - 1)
+		var x0 := maxi(hx - radius, 0)
+		var x1 := mini(hx + radius, tiles - 1)
 		for y in range(y0, y1 + 1):
 			for x in range(x0, x1 + 1):
 				if radius > 0 and y != y0 and y != y1 and x != x0 and x != x1:
 					continue
-				var pos := Vector2((float(x) + 0.5) * tile, (float(y) + 0.5) * tile)
+				var pos := home if radius == 0 else Vector2((float(x) + 0.5) * tile, (float(y) + 0.5) * tile)
 				var landed := walker.place(pos, BODY)
 				if walker.stands(landed, BODY):
 					return landed
@@ -385,13 +394,13 @@ func _attach_hand() -> void:
 	add_child(_held)
 
 
-## Kotlina vezme nesený kámen. Jezírko ho vymění za svůj nejdražší kámen, prázdné jezírko si ho
+## Továrna vezme nesený kámen. Jezírko ho vymění za svůj nejdražší kámen, prázdné jezírko si ho
 ## nechá a ruka zůstane prázdná. Hned při doteku a potom každých SWAP_REPEAT sekund, dokud
 ## postava u jezírka stojí, takže u prázdného jezírka se kámen střídavě odloží a vezme.
 func _carry(delta: float) -> void:
 	if _flyer != null or _crystal == null or _crystal.count() == 0 or _held == null:
 		return
-	if _held_mat >= 0 and _rocks.touches_basin(position, BODY):
+	if _held_mat >= 0 and _town != null and _town.touches_factory(position, BODY):
 		_throw()
 		_touch_slot = -1
 		return
@@ -533,7 +542,7 @@ func _throw() -> void:
 	var sign := -1.0 if _rng.randf() < 0.5 else 1.0
 	_flyer = flyer
 	_fly_from = flyer.position
-	_fly_to = _rocks.basin_spot(_crystal.radius(), _rng)
+	_fly_to = _town.drop_spot(position, _rng)
 	_fly_rot = flyer.rotation
 	_fly_spin = sign * TAU * _rng.randf_range(0.75, 1.6)
 	_fly_age = 0.0
@@ -563,7 +572,7 @@ func _advance_throw(delta: float) -> void:
 	_flyer.visible = false
 	_flyer.queue_free()
 	_flyer = null
-	_rocks.settle(mat, landed, rot)
+	_town.receive(mat, landed, rot)
 
 
 func _set_hold(on: bool) -> void:

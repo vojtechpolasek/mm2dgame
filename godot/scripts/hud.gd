@@ -8,7 +8,7 @@ extends Control
 const Crystal := preload("res://scripts/crystal.gd")
 const THEME := preload("res://themes/menu.tres")
 
-## Šipka ke kotlině drží od kraje obrazovky tolik pixelů. Nahoře víc, jsou tam panely.
+## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře víc, jsou tam panely.
 const ARROW_EDGE := 44.0
 const ARROW_TOP := 120.0
 ## Pod tolik sekund zčervená čas.
@@ -45,7 +45,7 @@ var _record: Label
 var _timed := true
 var _target := 1
 var _shown_seconds := -1
-var _arrow: BasinArrow
+var _arrow: FactoryArrow
 var _notice: PanelContainer
 var _notice_text: Label
 var _notice_left := 0.0
@@ -62,7 +62,7 @@ func _ready() -> void:
 	_build_held()
 	_build_time()
 	_build_score()
-	_arrow = BasinArrow.new()
+	_arrow = FactoryArrow.new()
 	_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_arrow.visible = false
 	add_child(_arrow)
@@ -127,9 +127,9 @@ func set_time(seconds: float) -> void:
 		_pop(_time)
 
 
-## Šipka na kraji obrazovky na spojnici postava (from) – kotlina (to), obojí v souřadnicích
-## obrazovky. Když je střed kotliny vidět, šipka zmizí.
-func point_basin(from: Vector2, to: Vector2) -> void:
+## Šipka na kraji obrazovky na spojnici postava (from) – továrna (to), obojí v souřadnicích
+## obrazovky. Když je střed továrny vidět, šipka zmizí.
+func point_factory(from: Vector2, to: Vector2) -> void:
 	var view := Rect2(Vector2.ZERO, size)
 	if to == Vector2.INF or view.has_point(to) or from.distance_squared_to(to) < 1.0:
 		_arrow.visible = false
@@ -417,8 +417,8 @@ func _pop(control: Control) -> void:
 	tween.tween_property(control, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-## Šipka ke kotlině. Hrot míří po ose x, uzel natáčí HUD. Jemně pulzuje ve směru hrotu.
-class BasinArrow:
+## Šipka k továrně. Hrot míří po ose x, uzel natáčí HUD. Jemně pulzuje ve směru hrotu.
+class FactoryArrow:
 	extends Control
 
 	const LENGTH := 30.0
