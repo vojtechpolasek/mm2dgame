@@ -11,7 +11,7 @@ Náhled to tak předvádí: cesta přes body A, B, C a D a druhá cesta,
 která ji kříží, položené na trávu ze hry. V křížení vyhrává cesta,
 ke které má pixel blíž, takže se pásy slijí a obruba nepřejede přes střed.
 
-  pesina  ušlapaná hlína, bez směru
+  pesina  úzká vyšlapaná hlína, tlumená, tráva prosvítá, bez směru
   sterk   drobné kamení, bez směru, kraj se rozsype do trávy
   dlazba  kameny v řadách napříč, obruba podél, jede se zatáčkou
 
@@ -45,6 +45,8 @@ SS = 4
 ACROSS = 160
 ALONG = 256
 CORE = 1.8
+# Pěšina je užší a nikde úplně nekryje, tráva prosvitá i uprostřed.
+PESINA_CORE = 1.1
 
 
 @dataclass(frozen=True)
@@ -148,28 +150,31 @@ def mix(*pairs: tuple[np.ndarray, tuple[int, int, int]]) -> np.ndarray:
 
 
 def paint_pesina(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Ušlapaná hlína. Uprostřed světlejší a hladší, ke kraji tmavší a hrubší."""
-    rel = off_center(u) / (CORE * PX / 2.0)
-    worn = 1.0 - smoothstep(0.15, 0.95, rel)
+    """Vyšlapaná pěšina. Úzká, hlína je tlumená a tráva do ní prorůstá ze stran i uprostřed."""
+    half = PESINA_CORE * PX / 2.0
+    # Osa se pomalu vlní, pěšina nejde jako po pravítku.
+    sway = (wrap_fbm(np.full_like(u, 7.0), v, 128.0, 113, 2) - 0.5) * 12.0
+    side = np.abs(u - ACROSS / 2.0 - sway)
+    edge = half + 9.0 * side_wave(u, v, 109)
+    worn = 1.0 - smoothstep(edge - 22.0, edge + 14.0, side)
     blotch = wrap_fbm(u, v, 32.0, 101)
     crumb = wrap_fbm(u, v, 8.0, 103, 2)
     rgb = mix(
-        (0.6 + 0.8 * worn, (150, 118, 80)),
-        (0.7 + 0.6 * (1.0 - worn), (110, 82, 54)),
-        (0.4 * blotch, (124, 96, 62)),
+        (0.6 + 0.6 * worn, (132, 112, 80)),
+        (0.8 + 0.4 * (1.0 - worn), (112, 100, 66)),
+        (0.4 * blotch, (120, 104, 72)),
     )
-    rgb *= (0.86 + 0.18 * blotch + 0.08 * crumb)[..., None]
-    # Pár kamínků a vyschlé praskliny, aby hlína nebyla jedna barva.
+    rgb *= (0.92 + 0.1 * blotch + 0.05 * crumb)[..., None]
     gap, tone, ident = wrap_voronoi(u, v, 8.0, 105)
-    pebble = (ident > 0.95) & (gap > 0.34)
-    pebble_rgb = (0.42 + 0.2 * tone)[..., None] * np.array((1.0, 0.95, 0.88)) * (0.8 + 0.3 * smoothstep(0.34, 0.6, gap))[..., None]
+    pebble = (ident > 0.975) & (gap > 0.4) & (worn > 0.6)
+    pebble_rgb = (0.46 + 0.14 * tone)[..., None] * np.array((1.0, 0.95, 0.88))
     rgb = np.where(pebble[..., None], pebble_rgb, rgb)
-    # Vyschlé praskliny jen sem tam, ne síť přes celou cestu.
-    crack_gap, _t, crack_id = wrap_voronoi(u, v, 32.0, 107)
-    crack = (crack_gap < 0.022) & (crack_id > 0.72) & (worn > 0.45)
-    rgb = np.where(crack[..., None], rgb * 0.8, rgb)
-    alpha = frayed_edge(u, v, 109, 11.0, 5.0)
-    return rgb, alpha
+    # Tráva prorůstá v trsech: krytí místy klesne i uprostřed.
+    tufts = smoothstep(0.42, 0.72, wrap_fbm(u, v, 16.0, 115, 3))
+    grain = hash01(np.floor(u * 2.0), np.floor(v * 2.0), 117)
+    alpha = worn * (0.82 - 0.5 * tufts * (0.4 + 0.6 * (1.0 - worn)))
+    alpha = np.clip(alpha * (1.1 - 0.2 * grain), 0.0, 0.85)
+    return rgb, alpha.astype(np.float32)
 
 
 def paint_sterk(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -278,7 +283,13 @@ def check(pattern: Pattern, image: Image.Image) -> None:
     if image.size != (ACROSS, ALONG):
         raise SystemExit(f"{pattern.name}: má {image.size}, čekám {(ACROSS, ALONG)}")
     middle = data[:, ACROSS // 2 - 20 : ACROSS // 2 + 20, 3]
-    if int((middle < 250).sum()) > middle.size // 50:
+    if pattern.name == "pesina":
+        if not 110 <= middle.mean() <= 225:
+            raise SystemExit(f"{pattern.name}: střed má krytí {middle.mean():.0f}, má prosvítat, ale být vidět")
+        visible = int((data[..., 3].mean(axis=0) > 64).sum())
+        if visible > PX * 1.6:
+            raise SystemExit(f"{pattern.name}: viditelná šíře {visible} px, má být užší")
+    elif int((middle < 250).sum()) > middle.size // 50:
         raise SystemExit(f"{pattern.name}: střed cesty není plný")
     if int(data[:, :3, 3].max()) > 8 or int(data[:, -3:, 3].max()) > 8:
         raise SystemExit(f"{pattern.name}: kraj obrázku není průhledný")
