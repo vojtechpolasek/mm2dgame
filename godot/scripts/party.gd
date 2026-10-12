@@ -11,7 +11,7 @@ const MapCamera := preload("res://scripts/map_camera.gd")
 const ZOOM_MIN := 0.5
 ## Pruh u kraje obrazovky v pixelech obrazovky, kam postava nevstoupí. Nahoře je širší,
 ## jsou tam panely HUD.
-const EDGE_PX := 60.0
+const EDGE_PX := 180.0
 const TOP_PX := 140.0
 
 var members: Array[Node2D] = []
