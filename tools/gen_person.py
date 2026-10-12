@@ -30,6 +30,10 @@ Druhý set je jen tělo, layer_2_hold.png. Pravá ruka je po celou dobu
 natažená dopředu, dlaň je prázdná. Levá kývá jako při běhu, s menším
 rozkmitem. Nohy a hlava zůstávají ze základního běhu.
 
+Třetí set je chůze vesničanů, layer_N_walk.png: kratší krok, chodidla skoro
+u země, ruce jen lehce pokrčené, menší natáčení ramen a hlava rovně nad tělem.
+Snímek stání je stejný jako u běhu, jen hlava je rovně.
+
   py tools/gen_person.py
 """
 
@@ -161,6 +165,29 @@ HAIR_SHIFT = 5.0
 HAIR_RY = 9.0
 EYE_SPOT = ((4.2, -5.0), (2.2, 1.7))
 
+
+@dataclass(frozen=True)
+class Gait:
+    step_ahead: float
+    step_back: float
+    # Jak vysoko je zadní chodidlo, 1 je špička dolů jako v běhu.
+    lift: float
+    arm_forward: float
+    arm_back: float
+    elbow_bend: float
+    twist: float
+    head_sway: float
+    head_y: float
+
+
+RUN = Gait(STEP_AHEAD, STEP_BACK, 1.0, ARM_FORWARD, ARM_BACK, ELBOW_BEND, TWIST, HEAD_SWAY, HEAD[1])
+WALK = Gait(16.0, 11.0, 0.35, 16.0, 20.0, 30.0, 5.0, 0.4, -1.5)
+# Chůze v Godotu: kolik metrů ujde vesničan za jeden cyklus (dva kroky).
+WALK_CYCLE_M = 1.6
+WALK_FILES = {layer: f"layer_{layer}_walk.png" for layer in LAYERS}
+# Vesničan jde 2,25 m/s, cyklus trvá asi 0,7 s.
+WALK_PREVIEW_MS = 44
+
 _AXIS = (np.arange(CELL * SS, dtype=np.float32) + 0.5) / SS - CELL / 2
 GX, GY = np.meshgrid(_AXIS, _AXIS)
 
@@ -206,27 +233,28 @@ class Pose:
     Úhel roste po směru hodin na obrazovce.
     """
 
-    def __init__(self, frame: int, hold: bool = False) -> None:
+    def __init__(self, frame: int, hold: bool = False, gait: Gait = RUN) -> None:
         self.idle = frame >= FRAMES
+        self.gait = gait
         phase = 0.0 if self.idle else frame / FRAMES * math.tau
         # Při swing 1 je levá noha vpředu a levá ruka vzadu.
         swing = math.sin(phase)
         # Záporný úhel posune levé rameno dozadu.
-        self.twist = -math.radians(TWIST) * swing
+        self.twist = -math.radians(gait.twist) * swing
         self.hips = -self.twist * HIP_TWIST
         self.legs = [self._leg(side, -side * swing) for side in (-1.0, 1.0)]
         self.arms = [self._arm(side, -side * swing, hold) for side in (-1.0, 1.0)]
-        self.head = (HEAD_SWAY * swing, HEAD[1])
+        self.head = (gait.head_sway * swing, gait.head_y)
 
     def _leg(self, side: float, ahead: float) -> Leg:
         hip = turn((side * HIP[0], HIP[1]), (0.0, HIP[1]), self.hips)
         if self.idle:
             ankle = (side * IDLE_FOOT[0], IDLE_FOOT[1])
             return Leg(hip, lerp(hip, ankle, 0.5), ankle, 0.0)
-        reach = ahead * (STEP_AHEAD if ahead >= 0.0 else STEP_BACK)
+        reach = ahead * (self.gait.step_ahead if ahead >= 0.0 else self.gait.step_back)
         ankle = (side * FOOT_X, HIP[1] + 2.0 - reach)
         knee = lerp(hip, ankle, 0.45)
-        return Leg(hip, (knee[0] + side * 1.5, knee[1]), ankle, max(0.0, -ahead))
+        return Leg(hip, (knee[0] + side * 1.5, knee[1]), ankle, max(0.0, -ahead) * self.gait.lift)
 
     def _arm(self, side: float, back: float, hold: bool) -> Arm:
         shoulder = turn((side * SHOULDER[0], SHOULDER[1]), TORSO, self.twist)
@@ -238,8 +266,10 @@ class Pose:
             theta, bend, inward = 0.0, math.radians(IDLE_ELBOW), 1.0
         else:
             back *= ARM_FREE if hold else 1.0
-            theta = -math.radians(ARM_BACK if back > 0.0 else ARM_FORWARD) * back
-            bend, inward = math.radians(ELBOW_BEND), ARM_INWARD
+            gait = self.gait
+            theta = -math.radians(gait.arm_back if back > 0.0 else gait.arm_forward) * back
+            bend = math.radians(gait.elbow_bend)
+            inward = ARM_INWARD * gait.elbow_bend / ELBOW_BEND
         # Shora je vidět jen průmět: svislé nadloktí se zkrátí na nulu.
         elbow = (shoulder[0] + side * 1.5, shoulder[1] - UPPER_ARM * math.sin(theta))
         wrist = (elbow[0] - side * inward * math.sin(bend), elbow[1] - FOREARM * math.sin(theta + bend))
@@ -285,8 +315,8 @@ class Weights:
             self.shade[inside] = edge + (1.0 - edge) * (1.0 - shape[inside]) ** 0.4
 
 
-def render_weights(frame: int, hold: bool = False) -> dict[int, Weights]:
-    pose = Pose(frame, hold)
+def render_weights(frame: int, hold: bool = False, gait: Gait = RUN) -> dict[int, Weights]:
+    pose = Pose(frame, hold, gait)
     legs, body, head = Weights(), Weights(), Weights()
 
     # Zadní noha první, přední ji překryje. Bota je pod nohavicí, lem zakryje kotník.
@@ -385,8 +415,8 @@ def compose(layers: dict[int, Image.Image], shift: Point = (0.0, 0.0)) -> Image.
     return image
 
 
-def colored_layers(frame: int, hold: bool = False) -> dict[int, Image.Image]:
-    weights = render_weights(frame, hold)
+def colored_layers(frame: int, hold: bool = False, gait: Gait = RUN) -> dict[int, Image.Image]:
+    weights = render_weights(frame, hold, gait)
     return {layer: colorize(pack_mask(weights[layer]), LAYER_TINT[layer]) for layer in LAYERS}
 
 
@@ -408,6 +438,10 @@ def write_previews() -> None:
         save_gif(frames[:FRAMES], PREVIEW / f"{name}.gif", 4, PREVIEW_MS)
         labels = [f"{word} {index}" for index in shown[:-1]] + ["stání"]
         contact_sheet([frames[index] for index in shown], labels, PREVIEW / f"{sheet}.png", 3)
+    walk = [compose(colored_layers(frame, gait=WALK)) for frame in range(ATLAS_FRAMES)]
+    save_gif(walk[:FRAMES], PREVIEW / "person_walk.gif", 4, WALK_PREVIEW_MS)
+    labels = [f"chůze {index}" for index in shown[:-1]] + ["stání"]
+    contact_sheet([walk[index] for index in shown], labels, PREVIEW / "person_vesnican.png", 3)
 
     layers = colored_layers(FRAMES // 4)
     panels = [layers[1], layers[2], layers[3], compose(layers), compose(layers, EDGE)]
@@ -418,7 +452,7 @@ def write_previews() -> None:
         stale.unlink()
 
 
-def write_info(cells: dict[int, int], hold_cell: int) -> Path:
+def write_info(cells: dict[int, int], hold_cell: int, walk_cells: dict[int, int]) -> Path:
     path = OUT_DIR / "person.json"
     cell = max(cells.values())
     catalog = {
@@ -453,6 +487,13 @@ def write_info(cells: dict[int, int], hold_cell: int) -> Path:
             "cell": hold_cell,
             "center": hold_cell // 2,
         },
+        "walk": {
+            "cycle_m": WALK_CYCLE_M,
+            "layers": {
+                str(layer): {"file": WALK_FILES[layer], "cell": walk_cells[layer], "center": walk_cells[layer] // 2}
+                for layer in LAYERS
+            },
+        },
         "colors": {
             "skin": "F6CDB0",
             "hair": "5C3A28",
@@ -470,27 +511,36 @@ def write_info(cells: dict[int, int], hold_cell: int) -> Path:
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     atlases: dict[int, list[Image.Image]] = {layer: [] for layer in LAYERS}
+    walks: dict[int, list[Image.Image]] = {layer: [] for layer in LAYERS}
     held: list[Image.Image] = []
     for frame in range(ATLAS_FRAMES):
         weights = render_weights(frame)
+        walking = render_weights(frame, gait=WALK)
         for layer in LAYERS:
             atlases[layer].append(pack_mask(weights[layer]))
+            walks[layer].append(pack_mask(walking[layer]))
         held.append(pack_mask(render_weights(frame, True)[2]))
     cells: dict[int, int] = {}
+    walk_cells: dict[int, int] = {}
     for layer, info in LAYERS.items():
         atlases[layer] = crop_square(atlases[layer])
         cells[layer] = atlases[layer][0].width
         pack_atlas(atlases[layer], COLUMNS).save(OUT_DIR / info["file"])
+        walks[layer] = crop_square(walks[layer])
+        walk_cells[layer] = walks[layer][0].width
+        pack_atlas(walks[layer], COLUMNS).save(OUT_DIR / WALK_FILES[layer])
     held = crop_square(held)
     hold_cell = held[0].width
     pack_atlas(held, COLUMNS).save(OUT_DIR / HOLD_FILE)
 
     write_previews()
-    info = write_info(cells, hold_cell)
+    info = write_info(cells, hold_cell, walk_cells)
     span = "–".join(str(cells[layer]) for layer in LAYERS)
-    print(f"atlasy buňky {span}, úchop {hold_cell} -> {OUT_DIR}")
+    walk_span = "–".join(str(walk_cells[layer]) for layer in LAYERS)
+    print(f"atlasy buňky {span}, úchop {hold_cell}, chůze {walk_span} -> {OUT_DIR}")
     print(PREVIEW / "person.gif")
     print(PREVIEW / "person_hold.gif")
+    print(PREVIEW / "person_walk.gif")
     print(info)
 
 

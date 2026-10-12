@@ -62,6 +62,26 @@
     "cell": 46,
     "center": 23
   },
+  "walk": {
+    "cycle_m": 1.6,
+    "layers": {
+      "1": {
+        "file": "layer_1_walk.png",
+        "cell": 58,
+        "center": 29
+      },
+      "2": {
+        "file": "layer_2_walk.png",
+        "cell": 46,
+        "center": 23
+      },
+      "3": {
+        "file": "layer_3_walk.png",
+        "cell": 32,
+        "center": 16
+      }
+    }
+  },
   "colors": {
     "skin": "F6CDB0",
     "hair": "5C3A28",
