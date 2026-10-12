@@ -14,12 +14,11 @@ const MapCamera := preload("res://scripts/map_camera.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Walker := preload("res://scripts/walker.gd")
 const Party := preload("res://scripts/party.gd")
+const Figure := preload("res://scripts/figure.gd")
 
 ## Co postava drží. -1 je prázdná ruka.
 signal held_changed(mat: int)
 
-const CATALOG := "res://graphics/characters/person/person.json"
-const TINTS: PackedStringArray = ["skin", "hair", "eye", "shirt", "pants", "shoe", "lace"]
 ## Běh, v metrech za sekundu. Dlaždice je jeden metr.
 const RUN_METERS := 4.5
 ## Na vyšlapaném středu cesty běží postava o tolik rychleji. Příšer se to netýká.
@@ -78,19 +77,11 @@ var _escaping := false
 var _escape_to := Vector2.ZERO
 var _travel := 0.0
 var _step_travel := 0.0
-var _frames := 16
-var _atlas_frames := 16
-var _idle_frame := 0
-var _cycle_px := 64.0
+var _figure := Figure.new()
 var _active := false
 var _fitted := Vector2.ZERO
-var _sprites: Array[Sprite2D] = []
-var _heights := PackedFloat32Array()
 var _crystal: Crystal
 var _rng := RandomNumberGenerator.new()
-var _body: Sprite2D
-var _walk_texture: Texture2D
-var _hold_texture: Texture2D
 var _hand_height := 1.2
 var _held: Sprite2D
 var _held_mat := -1
@@ -163,8 +154,8 @@ func _begin_jump(direction: Vector2) -> void:
 func _step_jump(delta: float) -> void:
 	_jump_time += delta
 	var phase := clampf(_jump_time / JUMP_TIME, 0.0, 1.0)
-	var half := maxi(_frames / 2, 1)
-	_set_frame(mini(int(phase * float(half)), half - 1))
+	var half := maxi(_figure.frames / 2, 1)
+	_figure.set_frame(mini(int(phase * float(half)), half - 1))
 	var speed := JUMP_METERS * float(TerrainCatalog.TILE_SIZE)
 	var next := _leashed(walker.allowed(position, position + _jump_dir * speed * delta, BODY, JUMP_CLEAR, crowd_id))
 	position = next
@@ -196,19 +187,19 @@ func _step_run(delta: float, direction: Vector2) -> void:
 		rotation = facing.angle() + PI * 0.5
 	if direction == Vector2.ZERO and _velocity.length_squared() < 1.0:
 		_travel = 0.0
-		_set_frame(_idle_frame)
+		_figure.set_frame(_figure.idle_frame)
 	else:
 		_travel += step.length()
-		_set_frame(int(fposmod(_travel / _cycle_px, 1.0) * float(_frames)))
+		_figure.set_travel(_travel)
 		_footstep(step.length())
 
 
 ## Krok podle povrchu pod postavou, dvakrát za cyklus chůze.
 func _footstep(moved: float) -> void:
 	_step_travel += moved
-	if _step_travel < _cycle_px * 0.5:
+	if _step_travel < _figure.cycle_px * 0.5:
 		return
-	_step_travel = fmod(_step_travel, _cycle_px * 0.5)
+	_step_travel = fmod(_step_travel, _figure.cycle_px * 0.5)
 	var ground := walker.surface(position)
 	if STEP_SURFACES.has(ground):
 		Sound.at_variant("steps/" + ground, STEP_VARIANTS, global_position, STEP_DB)
@@ -280,88 +271,12 @@ func _spawn_at() -> Vector2:
 
 
 func _build() -> bool:
-	if not FileAccess.file_exists(CATALOG):
-		push_error("Chybí postava.")
+	if not _figure.build(self, false, CYCLE_METERS):
 		return false
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(CATALOG))
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("Nelze přečíst postavu.")
-		return false
-	var info: Dictionary = parsed
-	var shader := load(str(info.get("shader", ""))) as Shader
-	if shader == null:
-		push_error("Chybí shader postavy.")
-		return false
-	_frames = maxi(int(info.get("frames", 8)), 1)
-	_atlas_frames = maxi(int(info.get("atlas_frames", _frames)), _frames)
-	_idle_frame = clampi(int(info.get("idle_frame", 0)), 0, _atlas_frames - 1)
-	_cycle_px = CYCLE_METERS * float(TerrainCatalog.TILE_SIZE)
-	var columns := maxi(int(info.get("atlas_columns", _frames)), 1)
-	var shade: Array = info.get("shade", [0.42, 1.1])
-	var sheen: Array = info.get("sheen", [0.16, 0.7])
-	var root := CATALOG.get_base_dir()
-	var listed: Dictionary = info.get("layers", {})
-	var keys: Array = listed.keys()
-	keys.sort_custom(func(a: Variant, b: Variant) -> bool: return int(a) < int(b))
-	for key: Variant in keys:
-		var layer: Dictionary = listed[key]
-		var texture := load("%s/%s" % [root, str(layer.get("file", ""))]) as Texture2D
-		if texture == null:
-			push_error("Chybí vrstva postavy %s." % str(layer.get("file", "")))
-			return false
-		var height := float(layer.get("height", 0.0))
-		var sprite := Sprite2D.new()
-		sprite.texture = texture
-		sprite.hframes = columns
-		sprite.vframes = maxi(ceili(float(_atlas_frames) / float(columns)), 1)
-		sprite.centered = true
-		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		var material := ShaderMaterial.new()
-		material.shader = shader
-		material.set_shader_parameter("height_m", height)
-		material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
-		material.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
-		material.set_shader_parameter("shade_floor", float(info.get("shade_floor", 0.2)))
-		material.set_shader_parameter("sheen", Vector2(float(sheen[0]), float(sheen[1])))
-		sprite.material = material
-		sprite.set_instance_shader_parameter("slot", float(layer.get("slot", 0.0)))
-		if is_equal_approx(float(layer.get("slot", -1.0)), 1.0):
-			_body = sprite
-			_walk_texture = texture
-			_hand_height = height
-		add_child(sprite)
-		_sprites.append(sprite)
-		_heights.append(height)
-	if _sprites.is_empty():
-		push_error("Postava nemá vrstvy.")
-		return false
-	_tint(info.get("colors", {}))
+	_hand_height = _figure.hand_height
 	# Kalhoty, triko a vlasy z menu. Ostatní barvy zůstanou z katalogu.
-	_tint(GameSession.player_colors(player_index))
-	var hold_info: Dictionary = info.get("hold", {})
-	_hold_texture = load("%s/%s" % [root, str(hold_info.get("file", ""))]) as Texture2D
-	if _hold_texture == null:
-		push_error("Chybí úchop postavy.")
+	_figure.tint(GameSession.player_colors(player_index))
 	return true
-
-
-func _tint(colors: Variant) -> void:
-	if typeof(colors) != TYPE_DICTIONARY:
-		return
-	var listed: Dictionary = colors
-	for tint_name: String in TINTS:
-		var hex := str(listed.get(tint_name, ""))
-		if hex.is_empty():
-			continue
-		var color := Color.html(hex)
-		for sprite: Sprite2D in _sprites:
-			sprite.set_instance_shader_parameter("%s_color" % tint_name, color)
-
-
-func _set_frame(index: int) -> void:
-	var frame := clampi(index, 0, _atlas_frames - 1)
-	for sprite: Sprite2D in _sprites:
-		sprite.frame = frame
 
 
 func _on_view_changed() -> void:
@@ -373,12 +288,7 @@ func _on_view_changed() -> void:
 
 func _fit(view: Vector2) -> void:
 	_fitted = view
-	# Nohy jsou ve výšce 0 a shader potřebují kvůli barvě. fit_sprite by jim ho sebral.
-	for i in _sprites.size():
-		if _heights[i] <= 0.0:
-			continue
-		var sprite := _sprites[i]
-		ObjectLayers.fit_sprite(sprite, sprite.material as ShaderMaterial, _heights[i], view, true)
+	_figure.fit(view)
 	if _held != null and _held.visible:
 		_pad_gem(_held, _hand_height)
 	if _flyer != null:
@@ -576,9 +486,7 @@ func _advance_throw(delta: float) -> void:
 
 
 func _set_hold(on: bool) -> void:
-	if _body == null or _hold_texture == null or _walk_texture == null:
-		return
-	_body.texture = _hold_texture if on else _walk_texture
+	_figure.set_hold(on)
 	_fit(_fitted)
 
 
