@@ -3,7 +3,7 @@ extends Node2D
 ## Jedna příšera. Pomalu se toulá po mapě, a když některá postava nese materiál příšery, honí
 ## odkudkoli rychlostí honičky tu nejbližší. Dotek kámen sebere a příšera se vrátí k toulání.
 ## Chodící obchází překážky stejně jako postava a nechodí přes jiné tvory. Létající letí nad vším
-## a z mapy nevyletí. Druh s jump_meters přeskočí nízké překážky a malé tvory jako postava.
+## a z mapy nevyletí. Druh s jump_meters přeskočí překážky a tvory do té výšky jako postava.
 ## Atlas je nakreslený směrem na sever, ostatní směry otáčí tenhle uzel.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
@@ -43,17 +43,21 @@ const DETOUR_ANGLES: Array[float] = [1.2, 1.7, 2.3]
 const FLY_MARGIN := 4.0
 ## Natáčení za směrem pohybu v radiánech za sekundu.
 const TURN_SPEED := 7.0
-## Skok jako u postavy: aspoň JUMP_TIME sekund, první polovina snímků chůze, uprostřed skoku
-## zvětšení o JUMP_GROW. Než skočí, najde místo přistání za překážkou, nejdál JUMP_REACH metrů.
-## Delší skok trvá déle, letí rychlostí JUMP_METERS.
+## Skok jako u postavy: první polovina snímků chůze, uprostřed skoku zvětšení o JUMP_GROW.
+## Ve skoku je příšera JUMP_BOOST krát rychlejší než právě běží. Než skočí, najde místo přistání
+## za překážkou, nejdál JUMP_REACH metrů. Když je za ním volno, doskočí dál, ať skok trvá aspoň
+## JUMP_TIME sekund. Kratší skok trvá kratší dobu, rychlost zůstane.
 const JUMP_TIME := 0.7
-const JUMP_METERS := 5.0
+const JUMP_BOOST := 1.1
 const JUMP_GROW := 0.15
 const JUMP_REACH := 10.0
 const JUMP_STEP := 0.25
 ## Hlasitost kroků podle druhu v dB. Chodící dupne dvakrát za cyklus, létající mávne jednou.
-const STEP_DB := {"pavouk": -10.0, "vlk": -6.0, "tyranosaurus": 0.0, "ptakojester": -5.0}
+const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "tyranosaurus": 0.0, "ptakojester": -5.0}
 const STEP_VARIANTS := 3
+## Hudba při honičce začne se zařváním, až je honící příšera na obrazovce. Pak hraje, dokud je
+## příšera vidět nebo nejdál CHASE_KEEP metrů za okrajem, ať hudba u okraje nepřeskakuje.
+const CHASE_KEEP := 3.0
 ## Vysunutí z překážky jako u postavy, v metrech a pixelech.
 const ESCAPE_METERS := 4.0
 const ESCAPE_REACH := 10.0
@@ -101,26 +105,28 @@ var _escaping := false
 var _escape_to := Vector2.ZERO
 var _fitted := Vector2.ZERO
 var _active := false
-var _small := false
+var _height := 1.0
 var _jump_clear := 0.0
 var _jumping := false
 var _jump_from := Vector2.ZERO
 var _jump_to := Vector2.ZERO
 var _jump_t := 0.0
 var _jump_dur := 0.0
-var _base_scale := 1.0
 var _step_travel := 0.0
 ## Zařvala už v téhle honičce? Zařve, až je honící příšera poprvé na obrazovce.
 var _roared := false
+## Patří honička k hudbě? Zapne se se zařváním, vypne, když příšera přestane honit nebo odejde z obrazovky.
+var _in_view := false
 
 
 ## info je druh z monsters.json, textures vrstvy podle pořadí klíčů, colors klíče body, accent, eye.
+## speed násobí rychlost honičky druhu, dražší materiál má rychlejší příšeru.
 func setup(
 	info: Dictionary,
 	textures: Array[Texture2D],
 	shared: ShaderMaterial,
 	colors: Dictionary,
-	size_scale: float,
+	speed: float,
 	shadow_alpha: float,
 	walker: Walker,
 	nav: NavGrid,
@@ -137,14 +143,12 @@ func setup(
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	_flying = bool(info.get("flying", false))
 	_wander_px = float(info.get("wander_meters", 1.0)) * tile
-	_chase_px = float(info.get("chase_meters", 5.0)) * tile
-	_body = float(info.get("body_meters", 0.4)) * tile * size_scale
+	_chase_px = float(info.get("chase_meters", 5.0)) * tile * speed
+	_body = float(info.get("body_meters", 0.4)) * tile
 	_touch = _body + Person.BODY + BITE * tile
-	_cycle_px = maxf(float(info.get("cycle_meters", 1.0)) * tile * size_scale, 1.0)
+	_cycle_px = maxf(float(info.get("cycle_meters", 1.0)) * tile, 1.0)
 	_frames = maxi(int(info.get("frames", 8)), 1)
-	scale = Vector2(size_scale, size_scale)
-	_base_scale = size_scale
-	_small = bool(info.get("small", false))
+	_height = float(info.get("height_meters", 1.0))
 	_jump_clear = float(info.get("jump_meters", 0.0))
 	# Chodící mezi postavou a vysokými skalami, létající nad vším.
 	z_index = 4 if _flying else 1
@@ -192,6 +196,8 @@ func _process(delta: float) -> void:
 	elif not _roared and _on_screen():
 		_roared = true
 		Sound.at("monsters/%s_roar" % kind_name, global_position, 2.0)
+	var keep := CHASE_KEEP * float(TerrainCatalog.TILE_SIZE) if _in_view else 0.0
+	_in_view = _roared and _on_screen(keep)
 	if _jumping:
 		_step_jump(delta)
 		if _prey != null:
@@ -373,29 +379,42 @@ func _try_jump(dir: Vector2) -> bool:
 		if _walker.place(spot, _body, _jump_clear, crowd_id).distance_squared_to(spot) > 0.25:
 			return false
 		if along >= _body and not _walker.blocked(spot, _body, crowd_id):
+			var speed := (_chase_px if _prey != null else _wander_px) * JUMP_BOOST
+			var landing := along
+			while landing + step <= speed * JUMP_TIME and _landing_free(position + dir * (landing + step)):
+				landing += step
 			_jumping = true
 			_jump_from = position
-			_jump_to = spot
+			_jump_to = position + dir * landing
 			_jump_t = 0.0
-			_jump_dur = maxf(JUMP_TIME, along / (JUMP_METERS * tile))
+			_jump_dur = landing / speed
 			rotation = dir.angle() + PI * 0.5
 			return true
 		along += step
 	return false
 
 
+## Dá se na spot doskočit? Stojí na zemi, nic vyššího než skok ani nikdo tam není.
+func _landing_free(spot: Vector2) -> bool:
+	return (
+		_walker.stands(spot, _body)
+		and _walker.place(spot, _body, _jump_clear, crowd_id).distance_squared_to(spot) <= 0.25
+		and not _walker.blocked(spot, _body, crowd_id)
+	)
+
+
 func _step_jump(delta: float) -> void:
 	_jump_t += delta
 	var phase := clampf(_jump_t / _jump_dur, 0.0, 1.0)
 	position = _jump_from.lerp(_jump_to, phase)
-	scale = Vector2.ONE * _base_scale * (1.0 + JUMP_GROW * sin(phase * PI))
+	scale = Vector2.ONE * (1.0 + JUMP_GROW * sin(phase * PI))
 	var half := maxi(_frames / 2, 1)
 	var frame := mini(int(phase * float(half)), half - 1)
 	for sprite: Sprite2D in _sprites:
 		sprite.frame = clampi(frame, 0, sprite.hframes * sprite.vframes - 1)
 	if phase >= 1.0:
 		_jumping = false
-		scale = Vector2.ONE * _base_scale
+		scale = Vector2.ONE
 		Sound.at_variant("monsters/%s_step" % kind_name, STEP_VARIANTS, global_position, 3.0)
 		# Po dopadu je příšera jinde, cesta se přepočítá odsud.
 		_replan_left = 0.0
@@ -436,17 +455,18 @@ func _pick_target() -> void:
 	_rest()
 
 
-## Pro crowd: kruh o poloměru těla. Malý tvor jde přeskočit, létající se nepočítá.
+## Pro crowd: kruh o poloměru těla a výšce height_meters. Ve skoku přeskočí tvory do
+## jump_meters, létající se nepočítá.
 func crowd_body() -> float:
 	return _body
 
 
-func crowd_small() -> bool:
-	return _small
+func crowd_height() -> float:
+	return _height
 
 
-func crowd_airborne() -> bool:
-	return _jumping
+func crowd_clearance() -> float:
+	return _jump_clear if _jumping else -1.0
 
 
 func crowd_flying() -> bool:
@@ -486,9 +506,19 @@ func is_chasing() -> bool:
 	return _prey != null
 
 
-## Honí a je vidět, nebo je těsně za okrajem obrazovky (do margin pixelů světa).
-func is_chasing_in_view(margin: float) -> bool:
-	return _prey != null and _on_screen(margin)
+## Postava, kterou příšera honí, jinak null.
+func prey() -> Person:
+	return _prey
+
+
+## Létá nad vším? Vesničan jí do cesty nevleze.
+func is_flying() -> bool:
+	return _flying
+
+
+## Honí a hraje k tomu hudba: zařvala na obrazovce a od té doby nezmizela dál než CHASE_KEEP za okraj.
+func is_chasing_in_view() -> bool:
+	return _in_view
 
 
 ## Je příšera vidět na obrazovce? margin obrazovku zvětší o tolik pixelů světa na každou stranu.

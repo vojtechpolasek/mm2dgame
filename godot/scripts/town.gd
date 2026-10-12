@@ -50,12 +50,17 @@ const ROAD_CLEAR_M := 0.35
 const SOLID_CLEAR_M := 1.2
 ## Domů je HOUSES_MIN až HOUSES_MAX. Stěna je HOUSE_GAP_M metrů od kraje cesty, dveřmi k cestě,
 ## natočená od kolmice nejvýš o HOUSE_TILT radiánů. Domy mezi sebou drží HOUSE_APART_M.
+## Kresba v katalogu je velká, ve hře je dům o třetinu menší. Půdorys se zmenší stejně.
+## Výška střechy zůstane: posun ve shaderu se násobí měřítkem uzlu.
 const HOUSES_MIN := 4
 const HOUSES_MAX := 8
 const HOUSE_GAP_M := Vector2(1.0, 4.0)
 const HOUSE_TILT := 0.14
 const HOUSE_APART_M := 1.6
 const HOUSE_TRIES := 30
+const HOUSE_SCALE := 2.0 / 3.0
+## Kdo vejde dveřmi, dojde kolmo tolik metrů za stěnu, tam už je celý pod střechou.
+const INSIDE_M := 0.6
 ## Barva vesnice se vylosuje z palet v houses.json a trochu pohne. Každý dům se od ní odchýlí
 ## v odstínu, sytosti a jasu nejvýš o tolik.
 const HOUSE_HUE := 0.03
@@ -99,6 +104,8 @@ var _camera: MapCamera
 var _crystal: Crystal
 var _factory: Factory
 var _roofs: Array[Sprite2D] = []
+## Uzly domů v pořadí _houses. První dítě jsou stěny, druhé střecha.
+var _house_nodes: Array[Node2D] = []
 
 
 # --- Načtení ---
@@ -167,8 +174,8 @@ func _load_houses() -> void:
 			"roof": roof,
 			"wall_height": float(wall_info.get("height", 0.0)),
 			"roof_height": float(roof_info.get("height", 4.0)),
-			"width": float(info.get("width_m", 5.0)) * tile,
-			"depth": float(info.get("depth_m", 4.0)) * tile,
+			"width": float(info.get("width_m", 5.0)) * tile * HOUSE_SCALE,
+			"depth": float(info.get("depth_m", 4.0)) * tile * HOUSE_SCALE,
 			"round": str(info.get("kind", "")) == "jurta",
 		})
 
@@ -546,6 +553,18 @@ func door_facing(house: int) -> float:
 	return float(_houses[house]["turn"]) + PI
 
 
+## Kam dojde tělo o poloměru body, když vejde dveřmi: kolmo za stěnu, pod střechu.
+func inside(house: int, body: float) -> Vector2:
+	var info := _house_kinds[int(_houses[house]["kind"])]
+	var depth := float(info["width"]) * 0.5 - body - INSIDE_M * float(TerrainCatalog.TILE_SIZE)
+	return Vector2(_houses[house]["pos"]) + Vector2(-maxf(depth, 0.0), 0.0).rotated(float(_houses[house]["turn"]))
+
+
+## Uzel domu. Kdo jde dveřmi, vloží se mezi stěny a střechu, null když domy nejsou nakreslené.
+func house_node(house: int) -> Node2D:
+	return _house_nodes[house] if house < _house_nodes.size() else null
+
+
 ## Náhodné místo na vyšlapaném středu cesty, mimo zprůhledněné konce.
 func road_point(rng: RandomNumberGenerator) -> Vector2:
 	var lines: Array[PackedVector2Array] = []
@@ -721,9 +740,11 @@ func _spawn_houses(props: Node2D) -> void:
 		node.name = "House%d" % props.get_child_count()
 		node.position = house["pos"]
 		node.rotation = house["turn"]
+		node.scale = Vector2.ONE * HOUSE_SCALE
 		# Dům je nad postavou jako koruna stromu.
 		node.z_index = 2
 		props.add_child(node)
+		_house_nodes.append(node)
 		_house_sprite(node, info["wall"], material, 1.0, float(info["wall_height"]), house["colors"])
 		_roofs.append(_house_sprite(node, info["roof"], material, 0.0, float(info["roof_height"]), house["colors"]))
 

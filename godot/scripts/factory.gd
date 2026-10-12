@@ -2,8 +2,9 @@ extends Node2D
 
 ## Továrna uprostřed mapy. Spodek leží na zemi, mezikruží nad ním se celou hru pomalu otáčí.
 ## Hozený kámen dopadne na vnější konec nejbližšího pásu, pás ho odveze pod mezikruží a tam se
-## kámen započítá a zmizí. Uprostřed se pak zvíří prach v barvě materiálu, třpytivý materiál
-## k tomu jiskří. Míry z tovarna.json jsou v px od středu obrázku, jih (+y) je výstupek.
+## kámen započítá a zmizí. Uprostřed zůstane létat prach v barvě materiálu. Každý materiál
+## má své řídké mračno, třpytivý k tomu pár jisker. Míry z tovarna.json jsou v px od středu
+## obrázku, jih (+y) je výstupek.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -20,12 +21,12 @@ const BELT_METERS := 0.42
 const BELT_DELAY := 0.2
 ## Kámen dopadne kousek za hnací válec, ne přes okraj.
 const DROP_PAST_DRUM := 8.0
-## Prach: zrnek na jedno zvíření, jak dlouho létají a kolikrát za sekundu oběhnou střed.
+## Prach zůstane v dvoře. Na materiál je DUST_AMOUNT zrnek, oběhnou střed tolikrát za sekundu.
 ## Jiskry přibývají s třpytivostí materiálu, nejvýš SPARKS_MAX.
-const DUST_AMOUNT := 36
-const DUST_LIFE := 3.4
+const DUST_AMOUNT := 8
+const DUST_LIFE := 6.0
 const DUST_ORBIT := Vector2(0.16, 0.42)
-const SPARKS_MAX := 14
+const SPARKS_MAX := 3
 const SPEC_PX := 16
 
 var _crystal: Crystal
@@ -47,6 +48,8 @@ var _shift := PackedFloat32Array()
 ## Kameny na pásech: [sprite, pás, vzdálenost od středu, zbývající čekání, materiál].
 var _rides: Array = []
 var _speck: Texture2D
+## Materiály, jejichž prach už ve dvoře létá.
+var _dust_mats := {}
 
 
 func setup(info: Dictionary, base: Texture2D, ring: Texture2D, shader: Shader, crystal: Crystal, camera: MapCamera) -> void:
@@ -163,52 +166,56 @@ func _nearest_belt(local: Vector2) -> int:
 	return best
 
 
-## Prach v barvě materiálu krouží uprostřed. Třpytivý materiál přidá jiskry, které blikají.
-## Jedno zvíření je pár desítek zrnek na procesoru, ať to stačí i starému stroji.
+## Prach v barvě materiálu zůstane kroužit uprostřed. Další hod téhož materiálu už mračno
+## nepřidá. Třpytivý materiál k tomu má pár jisker, které blikají.
 func _swirl(mat: int) -> void:
+	if _dust_mats.has(mat):
+		return
+	_dust_mats[mat] = true
 	var color := _crystal.color_of(mat)
-	var cloud := _particles(DUST_AMOUNT, Vector2(0.3, 0.8))
+	var cloud := _particles(DUST_AMOUNT, Vector2(0.35, 0.85))
 	# Tmavší i světlejší zrnka, ať je prach vidět i na skladu podobné barvy.
 	var shades := Gradient.new()
 	shades.set_color(0, color.darkened(0.5))
 	shades.set_color(1, color.lightened(0.4))
 	cloud.color_initial_ramp = shades
-	cloud.color_ramp = _fade([0.0, 0.85, 0.7, 0.0])
+	cloud.color_ramp = _fade([0.7, 0.95, 0.8, 0.9])
 	var sparkle := _crystal.sparkle_of(mat)
-	var sparks := mini(roundi(sparkle * 10.0), SPARKS_MAX)
-	if sparks <= 0:
+	if sparkle <= 0.001:
 		return
+	var sparks := mini(maxi(roundi(sparkle * 6.0), 1), SPARKS_MAX)
 	var glints := _particles(sparks, Vector2(0.18, 0.4))
 	glints.color = _crystal.glint_of(mat).lightened(0.3)
-	glints.color_ramp = _fade([0.0, 1.0, 0.15, 1.0, 0.1, 0.9, 0.15, 0.8, 0.0])
+	glints.color_ramp = _fade([0.0, 1.0, 0.1, 0.85, 0.0, 0.7, 0.15, 0.9])
 
 
+## Zrnek je málo a létají pořád. Oběh drží uvnitř dvora, tlumení je nechá v pohybu.
 func _particles(amount: int, size: Vector2) -> CPUParticles2D:
 	var cloud := CPUParticles2D.new()
 	cloud.texture = _speck
 	cloud.amount = amount
 	cloud.lifetime = DUST_LIFE
-	cloud.one_shot = true
-	cloud.explosiveness = 0.7
-	cloud.randomness = 0.5
+	cloud.one_shot = false
+	cloud.preprocess = DUST_LIFE
+	cloud.explosiveness = 0.15
+	cloud.randomness = 0.6
 	cloud.local_coords = true
 	cloud.emission_shape = CPUParticles2D.EMISSION_SHAPE_SPHERE
 	cloud.emission_sphere_radius = _yard * 0.72
 	cloud.spread = 180.0
 	cloud.gravity = Vector2.ZERO
-	cloud.initial_velocity_min = 4.0
-	cloud.initial_velocity_max = 16.0
+	cloud.initial_velocity_min = 6.0
+	cloud.initial_velocity_max = 18.0
 	cloud.orbit_velocity_min = DUST_ORBIT.x
 	cloud.orbit_velocity_max = DUST_ORBIT.y
-	cloud.radial_accel_min = -3.0
-	cloud.radial_accel_max = 1.0
-	cloud.damping_min = 2.0
-	cloud.damping_max = 5.0
+	cloud.radial_accel_min = -4.0
+	cloud.radial_accel_max = -0.5
+	cloud.damping_min = 0.4
+	cloud.damping_max = 1.4
 	cloud.scale_amount_min = size.x
 	cloud.scale_amount_max = size.y
 	cloud.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_dust.add_child(cloud)
-	cloud.finished.connect(cloud.queue_free)
 	cloud.emitting = true
 	return cloud
 

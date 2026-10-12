@@ -62,10 +62,6 @@ const THEFT := 0.15
 const HANDLE_SECONDS := 1.5
 ## Na kolik metrů hráč jezírko zahlédne. Obrazovka při zoomu 1 je asi 20 × 11 m.
 const VIEW_METERS := 7.0
-## Kolik materiálů s nejmenším počtem bodů má jezírka v prvním levelu. Další přibude
-## každých MATERIAL_EVERY levelů.
-const FIRST_MATERIALS := 2
-const MATERIAL_EVERY := 1.5
 ## Hráči hrají spolu, body se sčítají. Každý další hráč zvedne cíl o tolik.
 const PLAYER_TARGET := 0.5
 ## Nejvíc hráčů. Ovladačů je tolik: šipky, WASD a čtyři gamepady.
@@ -239,12 +235,21 @@ static func ponds_seconds(at: int) -> float:
 	var size := level_size(at)
 	var materials := material_points().size()
 	var count := mini(level_materials(at), materials)
-	var ponds := Rocks.capped_ponds(count, materials)
+	var layout := Rocks.pond_layout(count)
+	var present := 0
+	for ponds in layout:
+		if ponds > 0:
+			present += 1
 	var total := 0.0
+	var band := 0
 	for order in count:
-		var ring := Rocks.pond_annulus(order, count, size)
+		var ponds := layout[order]
+		if ponds <= 0:
+			continue
+		var ring := Rocks.pond_annulus(band, present, size)
 		var trip := (ring.x + ring.y) / speed + HANDLE_SECONDS
-		total += float(ponds[order] * Rocks.pond_gems(order)) * trip
+		total += float(ponds * Rocks.GEMS_IN_POND) * trip
+		band += 1
 	return total
 
 
@@ -260,8 +265,8 @@ static func level_target(at: int, player_count: int = 1) -> int:
 ## dorovná levnějším materiálem, na který se cesta ještě vejde.
 ## Hledání: hráč tuší, že vzácnější materiál je dál, tak doběhne k mezikruží materiálu
 ## a prochází ho pruhem širokým dvakrát VIEW_METERS. Průměrný čas je plocha mezikruží lomeno
-## prohledanou plochou za sekundu krát počet jezírek. Vzdálenost nejbližšího jezírka je odhad
-## z Rocks.pond_distance.
+## prohledanou plochou za sekundu krát počet jezírek. Vzdálenost nejbližšího jezírka je
+## kousek za vnitřní hranou jeho pásu.
 static func level_best(at: int) -> int:
 	var points := material_points()
 	if points.is_empty():
@@ -293,17 +298,27 @@ static func _plan(at: int) -> Array[PackedFloat32Array]:
 	var size := level_size(at)
 	var materials := points.size()
 	var count := mini(level_materials(at), materials)
+	var layout := Rocks.pond_layout(count)
+	var present := 0
+	for ponds in layout:
+		if ponds > 0:
+			present += 1
 	var sweep := 2.0 * VIEW_METERS * speed
 	var trips := PackedFloat32Array()
 	var finds := PackedFloat32Array()
+	var band := 0
 	for order in count:
-		var rarity := Rocks.material_rarity(order, materials)
-		var away := Rocks.pond_distance(order, count, materials, size)
-		var ponds := float(Rocks.pond_count(rarity, size))
-		var ring := Rocks.pond_annulus(order, count, size)
+		var ponds := layout[order]
+		if ponds <= 0:
+			trips.append(1.0e9)
+			finds.append(1.0e9)
+			continue
+		var ring := Rocks.pond_annulus(band, present, size)
+		var away := Rocks.pond_distance(ring, ponds)
 		var area := PI * (ring.y * ring.y - ring.x * ring.x)
 		trips.append(2.0 * away / speed + HANDLE_SECONDS)
-		finds.append(ring.x / speed + area / (ponds * sweep) + away / speed + HANDLE_SECONDS)
+		finds.append(ring.x / speed + area / (float(ponds) * sweep) + away / speed + HANDLE_SECONDS)
+		band += 1
 	return [trips, finds]
 
 
@@ -335,9 +350,10 @@ static func material_points() -> PackedInt32Array:
 	return _material_points
 
 
-## Počet dostupných materiálů, od nejlevnějšího. Víc, než kolik jich je v katalogu, znamená všechny.
+## Počet dostupných materiálů, od nejlevnějšího. Každý level přidá jeden.
+## Víc, než kolik jich je v katalogu, znamená všechny.
 static func level_materials(at: int) -> int:
-	return FIRST_MATERIALS + floori(float(at - 1) / MATERIAL_EVERY)
+	return maxi(at, 1)
 
 
 ## První level s mapou této velikosti. Velikost, na kterou level nikdy nepřijde, vrátí -1.

@@ -33,14 +33,10 @@ const RIM_TOUCH := 0.78
 const FOOT_MARGIN := 1.4
 ## Do této výšky je skála pod postavou a jde přeskočit. Vyšší je nad ní.
 const LOW := 1.5
-## Jezírko má počet podle vzácnosti materiálu, ne šanci v povrchu.
+## Jezírko má počet podle levelu, ne šanci v povrchu.
 const POND := "jezirko"
-## Na mapě 64 má nejběžnější materiál POND_COMMON jezírek a nejvzácnější POND_RARE.
-const POND_BASE := 64
-const POND_COMMON := 3
-const POND_RARE := 2
-## Počet roste se stranou mapy na tuto mocninu. Jedna je lineárně, dvě by byla plocha.
-const POND_GROWTH := 1.0
+## Studánek na mapě je nejvýš tolik. Další materiál vznikne na úkor nejlevnějšího.
+const POND_MAX := 11
 ## Volný kruh kolem továrny v metrech. Hráč se objeví u továrny a má kudy projít.
 const POND_CLEAR := 10.0
 ## Nejmenší vzdálenost středů dvou jezírek v metrech. Jezírko má průměr asi 2 m.
@@ -58,14 +54,6 @@ const GEM_SPOTS := 7
 const GEM_STACK := Vector2(2.0, -3.0)
 ## Víc kamenů než GEMS_IN_POND se do jezírka vejde menších, nejvýš na GEM_SHRINK původní velikosti.
 const GEM_SHRINK := 0.6
-## Jezírka, která nejsou bezedná, se vybírají celá, proto jich je méně: CAPPED_FIRST při
-## FIRST_MATERIALS materiálech, CAPPED_LAST při všech, mezi tím rovnoměrně.
-const CAPPED_FIRST := 6
-const CAPPED_LAST := 15
-const CAPPED_FROM := 2
-## Kamenů v jezírku, které není bezedné, podle pořadí materiálu od nejběžnějšího: od
-## FEWER_GEMS[0]. materiálu o jeden méně, od FEWER_GEMS[1]. ještě o jeden.
-const FEWER_GEMS: Array[int] = [6, 10]
 const RIM_WEIGHTS := {
 	"skala15": 0.2,
 	"skala2": 0.22,
@@ -154,22 +142,68 @@ func set_available(count: int) -> void:
 
 
 ## Materiály, které mají na mapě jezírka, od nejlevnějšího. Každý dostane svou příšeru.
+## Levný materiál bez jezírka tu není.
 func pond_materials() -> PackedInt32Array:
 	var count := _by_points.size() if _available < 0 else mini(_available, _by_points.size())
-	return _by_points.slice(0, count)
+	var out := PackedInt32Array()
+	var have := {}
+	for mat in _pond_mat:
+		if mat >= 0:
+			have[mat] = true
+	if have.is_empty():
+		return _by_points.slice(0, count)
+	for order in count:
+		var mat := _by_points[order]
+		if have.has(mat):
+			out.append(mat)
+	return out
 
 
-## Jezírka jednoho materiálu. Nejběžnější (vzácnost 0) má na mapě 64 POND_COMMON, nejvzácnější (1)
-## POND_RARE, mezi tím klesá druhá mocnina obyčejnosti. Větší mapa počet násobí podle POND_GROWTH.
-static func pond_count(rarity: float, size: int) -> int:
-	var common := clampf(1.0 - rarity, 0.0, 1.0)
-	var on_base := float(POND_RARE) + float(POND_COMMON - POND_RARE) * common * common
-	var grow := pow(float(size) / float(POND_BASE), POND_GROWTH)
-	return maxi(roundi(on_base * grow), 1)
+## Počty jezírek od nejlevnějšího, když je na mapě count materiálů. Level s tolika materiály
+## je ten, ve kterém poslední z nich přibyl. V levelu příchodu má materiál jedno jezírko,
+## v dalším dvě, dokud jich není POND_MAX. Pak se nejdřív srazí nejlevnější dvojice na jednu
+## a teprve když už žádná dvojice není, nejlevnější materiál zmizí.
+static func pond_layout(count: int) -> PackedInt32Array:
+	var ponds := PackedInt32Array()
+	ponds.resize(maxi(count, 0))
+	for level in count:
+		ponds[level] = 1
+		_fit_pond_cap(ponds, level + 1)
+		if level > 0 and _sum_ponds(ponds, level + 1) < POND_MAX and ponds[level - 1] == 1:
+			ponds[level - 1] = 2
+	return ponds
 
 
-## Každý materiál na mapě má jezírka ve svém mezikruží kolem továrny, vzácnější dál.
-## Pásy se roztáhnou na materiály, které level pustil, a sousedé se jen dotýkají.
+static func _sum_ponds(ponds: PackedInt32Array, used: int) -> int:
+	var total := 0
+	for i in used:
+		total += ponds[i]
+	return total
+
+
+## Uvolní jezírka nad POND_MAX. Nejdřív nejlevnější materiál se dvěma, až pak někdo zmizí.
+static func _fit_pond_cap(ponds: PackedInt32Array, used: int) -> void:
+	while _sum_ponds(ponds, used) > POND_MAX:
+		var twin := -1
+		for i in used:
+			if ponds[i] >= 2:
+				twin = i
+				break
+		if twin >= 0:
+			ponds[twin] -= 1
+			continue
+		var lone := -1
+		for i in used:
+			if ponds[i] > 0:
+				lone = i
+				break
+		if lone < 0:
+			return
+		ponds[lone] = 0
+
+
+## Každý materiál, který má jezírka, dostane pás kolem továrny. Vzácnější je dál.
+## Pásy se roztáhnou jen na materiály, které na mapě jsou, a sousedé se jen dotýkají.
 ## Jezírka drží rozestup POND_GAP, takže mezi nimi vždycky jde projít.
 func _place_ponds(map: MapData, rng: RandomNumberGenerator) -> void:
 	if _pond_kind < 0 or _by_points.is_empty():
@@ -180,54 +214,25 @@ func _place_ponds(map: MapData, rng: RandomNumberGenerator) -> void:
 		origin = town.center()
 	var materials := _by_points.size()
 	var count := materials if _available < 0 else mini(_available, materials)
-	var capped := capped_ponds(count, materials)
+	var layout := pond_layout(count)
+	var present := 0
+	for ponds in layout:
+		if ponds > 0:
+			present += 1
+	var band := 0
 	for order in count:
+		var want := layout[order]
+		if want <= 0:
+			continue
 		var mat := _by_points[order]
-		var want := pond_count(material_rarity(order, materials), map.size) if bottomless else capped[order]
-		var ring := pond_annulus(order, count, map.size) * tile
+		var ring := pond_annulus(band, present, map.size) * tile
 		_place_ring(map, rng, mat, want, origin, ring.x, ring.y)
+		band += 1
 
 
-## Počty jezírek materiálů od nejběžnějšího, když jezírka nejsou bezedná. Celkem jich je mezi
-## CAPPED_FIRST a CAPPED_LAST podle počtu materiálů na mapě. Každý materiál má aspoň jedno,
-## zbytek se rozdělí podle běžnosti jako v pond_count.
-static func capped_ponds(count: int, materials: int) -> PackedInt32Array:
-	var out := PackedInt32Array()
-	if count <= 0:
-		return out
-	var share := clampf(float(count - CAPPED_FROM) / float(maxi(materials - CAPPED_FROM, 1)), 0.0, 1.0)
-	var total := maxi(roundi(lerpf(CAPPED_FIRST, CAPPED_LAST, share)), count)
-	var weights := PackedFloat32Array()
-	var sum := 0.0
-	for order in count:
-		var common := 1.0 - material_rarity(order, materials)
-		weights.append(float(POND_RARE) + float(POND_COMMON - POND_RARE) * common * common)
-		sum += weights[order]
-	# Každý materiál jedno, zbytek po celých dílech a zbylá jezírka těm s největším zbytkem.
-	var extra := total - count
-	var rests := PackedFloat32Array()
-	var given := 0
-	for order in count:
-		var part := float(extra) * weights[order] / sum
-		out.append(1 + floori(part))
-		rests.append(part - floorf(part))
-		given += floori(part)
-	var order_by_rest: Array[int] = []
-	for order in count:
-		order_by_rest.append(order)
-	order_by_rest.sort_custom(func(a: int, b: int) -> bool: return rests[a] > rests[b])
-	for i in extra - given:
-		out[order_by_rest[i]] += 1
-	return out
-
-
-## Kamenů v plném jezírku, které není bezedné, podle pořadí materiálu od nejběžnějšího.
-static func pond_gems(order: int) -> int:
-	var gems := GEMS_IN_POND
-	for from in FEWER_GEMS:
-		if order + 1 >= from:
-			gems -= 1
-	return maxi(gems, 1)
+## Kamenů v plném jezírku, které není bezedné. V každém jsou tři, i u drahého materiálu.
+static func pond_gems(_order: int) -> int:
+	return GEMS_IN_POND
 
 
 func _pond_cell(x: int, y: int, size: int) -> bool:
@@ -277,15 +282,10 @@ func _near_object(pos: Vector2, gap: float) -> bool:
 	return false
 
 
-## Vzácnost podle pořadí od nejlevnějšího, 0 až 1. Na bodech nezávisí, takže úprava bodů
-## nehne s rozmístěním jezírek. Pořadí se bere ze všech materiálů, ne jen z dostupných.
-static func material_rarity(order: int, count: int) -> float:
-	return clampf(float(order) / float(maxi(count - 1, 1)), 0.0, 1.0)
-
-
 ## Mezikruží jezírek daného pořadí: vnitřní a vnější vzdálenost od továrny v metrech.
-## count je počet materiálů, které na mapě mají jezírka. Pásy jsou stejně široké a sousedé
-## se jen dotýkají. Nejběžnější začíná za volným kruhem, nejdražší z nich končí u pásu skal.
+## count je počet materiálů, které na mapě opravdu mají jezírka. Pásy jsou stejně široké
+## a sousedé se jen dotýkají. Nejběžnější z nich začíná za volným kruhem, nejdražší končí
+## u pásu skal.
 static func pond_annulus(order: int, count: int, size: int) -> Vector2:
 	var reach := maxf(float(size) * 0.5 - _rim_guard(size), POND_CLEAR)
 	var bands := maxi(count, 1)
@@ -294,14 +294,10 @@ static func pond_annulus(order: int, count: int, size: int) -> Vector2:
 	return Vector2(inner, inner + width)
 
 
-## Odhad vzdálenosti nejbližšího jezírka daného pořadí od továrny v metrech. Jezírka jsou
-## rozložená po mezikruží, nejbližší je v průměru kousek za vnitřní hranou.
-## bands je počet materiálů na mapě, materials počet všech v katalogu. Počet jezírek se
-## bere z celého katalogu, ať vzácnost neposkočí jen proto, že dražší materiály chybí.
-static func pond_distance(order: int, bands: int, materials: int, size: int) -> float:
-	var ring := pond_annulus(order, bands, size)
-	var rarity := material_rarity(order, materials)
-	return ring.x + (ring.y - ring.x) / float(pond_count(rarity, size) + 1)
+## Odhad vzdálenosti nejbližšího jezírka od továrny v metrech. Jezírka jsou rozložená
+## po mezikruží, nejbližší je v průměru kousek za vnitřní hranou.
+static func pond_distance(ring: Vector2, ponds: int) -> float:
+	return ring.x + (ring.y - ring.x) / float(maxi(ponds, 1) + 1)
 
 
 static func _rim_guard(size: int) -> float:
@@ -924,6 +920,15 @@ func ponds_holding(mat: int) -> PackedInt32Array:
 		if _pond_mat[slot] < 0:
 			continue
 		if (bottomless and _pond_mat[slot] == mat) or _pond_gems[slot].has(mat):
+			out.append(slot)
+	return out
+
+
+## Jezírka, ve kterých leží aspoň jeden kámen. Bezedné má kámen vždycky.
+func ponds_with_gems() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for slot in _pond_rock.size():
+		if _pond_mat[slot] >= 0 and pond_left(slot) > 0:
 			out.append(slot)
 	return out
 

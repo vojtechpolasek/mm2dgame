@@ -32,11 +32,10 @@ const POINTS_RISE := 70.0
 const POINTS_TIME := 1.1
 ## Posledních tolik sekund limitu tiká.
 const TICK_FROM := 10
-## Hudba při honičce hraje, když je honící příšera vidět nebo do CHASE_MARGIN metrů za okrajem
-## obrazovky. Když zmizí, normální hudba se vrátí až po CHASE_HOLD sekundách. Je to déle než
+## Hudba při honičce začne se zařváním honící příšery na obrazovce (Monster.CHASE_KEEP).
+## Když příšera zmizí, normální hudba se vrátí až po CHASE_HOLD sekundách. Je to déle než
 ## klid příšery po krádeži (Monster.CALM_SECONDS), jinak by hudba přeskočila na normální
 ## a hned zpátky, když příšera honí dalšího hráče se stejným kamenem.
-const CHASE_MARGIN := 3.0
 const CHASE_HOLD := 6.0
 
 ## Terén po chuncích předpečených z corner_map katalogu, voda se vlní nad nimi.
@@ -162,7 +161,7 @@ func _ready() -> void:
 	monsters.spawn(rocks.pond_materials(), crystal, _persons[0].walker, rocks, forest, _persons, camera, props, monster_rng)
 	var villager_rng := RandomNumberGenerator.new()
 	villager_rng.randomize()
-	villagers.spawn(town, rocks, crystal, _persons[0].walker, _persons, camera, props, villager_rng)
+	villagers.spawn(town, rocks, crystal, _persons[0].walker, _persons, camera, props, monsters, villager_rng)
 	var labels := PondLabels.new()
 	labels.name = "PondLabels"
 	add_child(labels)
@@ -253,8 +252,7 @@ func _process(delta: float) -> void:
 
 ## Honící příšera na obrazovce přepne hudbu, blízkost vody řídí šumění.
 func _update_sound(delta: float) -> void:
-	var margin := CHASE_MARGIN * float(TerrainCatalog.TILE_SIZE)
-	if _monsters != null and _monsters.any_chasing_in_view(margin):
+	if _monsters != null and _monsters.any_chasing_in_view():
 		_chase_hold = CHASE_HOLD
 	else:
 		_chase_hold = maxf(_chase_hold - delta, 0.0)

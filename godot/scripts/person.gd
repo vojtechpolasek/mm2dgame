@@ -28,6 +28,8 @@ const JUMP_METERS := RUN_METERS * 0.9
 const JUMP_TIME := 0.7
 ## Přes tohle se ve skoku přenese. Balvan má 1,1 m, keř 1,2 m. Skály od 6 m a stromy ne.
 const JUMP_CLEAR := 1.5
+## Výška postavy v metrech. Skákající tvor ji přeskočí, když skočí aspoň takhle vysoko.
+const HEIGHT := 1.8
 ## Ve skoku se postava zvětší až o tolik, uprostřed skoku nejvíc. Vypadá to, že se odlepí od země.
 const JUMP_GROW := 0.15
 ## Jak daleko postava uběhne za jeden cyklus běhu.
@@ -342,17 +344,17 @@ func _put_down() -> void:
 	Sound.at("sfx/pickup", global_position, -3.0)
 
 
-## Pro crowd: postava je kruh o poloměru trupu, není malá a ve skoku přeskočí malé tvory.
+## Pro crowd: postava je kruh o poloměru trupu, ve skoku přeskočí tvory do JUMP_CLEAR metrů.
 func crowd_body() -> float:
 	return BODY
 
 
-func crowd_small() -> bool:
-	return false
+func crowd_height() -> float:
+	return HEIGHT
 
 
-func crowd_airborne() -> bool:
-	return _jumping
+func crowd_clearance() -> float:
+	return JUMP_CLEAR if _jumping else -1.0
 
 
 func crowd_flying() -> bool:

@@ -17,14 +17,41 @@
   ],
   "shadow_alpha": 0.35,
   "species": {
+    "had": {
+      "cycle_meters": 0.7812,
+      "frames": 16,
+      "atlas_columns": 8,
+      "wander_meters": 0.8,
+      "chase_meters": 3.7,
+      "body_meters": 0.4,
+      "height_meters": 0.3,
+      "jump_meters": 0.0,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "had/layer_1.png",
+          "cell": 80,
+          "center": 40
+        },
+        "2": {
+          "height": 0.35,
+          "file": "had/layer_2.png",
+          "cell": 106,
+          "center": 53
+        }
+      },
+      "colors": {
+        "eye": "FF5A3C"
+      }
+    },
     "pavouk": {
       "cycle_meters": 0.5,
       "frames": 8,
       "atlas_columns": 8,
       "wander_meters": 0.8,
-      "chase_meters": 4.0,
+      "chase_meters": 4.1,
       "body_meters": 0.45,
-      "small": true,
+      "height_meters": 0.5,
       "jump_meters": 0.0,
       "layers": {
         "1": {
@@ -45,26 +72,26 @@
       }
     },
     "vlk": {
-      "cycle_meters": 1.25,
+      "cycle_meters": 1.0625,
       "frames": 8,
       "atlas_columns": 8,
       "wander_meters": 1.0,
       "chase_meters": 4.5,
-      "body_meters": 0.45,
-      "small": true,
-      "jump_meters": 0.0,
+      "body_meters": 0.383,
+      "height_meters": 0.7,
+      "jump_meters": 2.1,
       "layers": {
         "1": {
           "height": 0.0,
           "file": "vlk/layer_1.png",
-          "cell": 92,
-          "center": 46
+          "cell": 78,
+          "center": 39
         },
         "2": {
-          "height": 0.75,
+          "height": 0.637,
           "file": "vlk/layer_2.png",
-          "cell": 148,
-          "center": 74
+          "cell": 128,
+          "center": 64
         }
       },
       "colors": {
@@ -78,7 +105,7 @@
       "wander_meters": 1.5,
       "chase_meters": 5.0,
       "body_meters": 0.8,
-      "small": false,
+      "height_meters": 1.0,
       "jump_meters": 0.0,
       "flying": true,
       "glide_frame": 6,
@@ -106,10 +133,10 @@
       "frames": 16,
       "atlas_columns": 8,
       "wander_meters": 0.8,
-      "chase_meters": 5.5,
+      "chase_meters": 5.3,
       "body_meters": 0.55,
-      "small": false,
-      "jump_meters": 2.5,
+      "height_meters": 3.0,
+      "jump_meters": 4.1,
       "layers": {
         "1": {
           "height": 0.0,

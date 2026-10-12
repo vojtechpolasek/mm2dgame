@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Příšery z pohledu shora: pavouk, vlk, ptakoještěr a tyranosaurus.
+"""Příšery z pohledu shora: had, pavouk, vlk, ptakoještěr a tyranosaurus.
 
 64 px je 1 m, stejně jako u postavy, skal a stromů. Kreslí se ve čtyřnásobném
 rozlišení do plátna druhu (canvas). Uložená buňka vrstvy je ořezaná na obsah,
 střed zůstává.
 
 Atlas má osm sloupců, příšera jde na sever. Ostatní směry otáčí uzel v Godotu.
-Počet snímků cyklu (frames) má každý druh v katalogu: pavouk a vlk 8, tyranosaurus
-16, ptakoještěr 24. Delší animace se zalomí do dalších řádků (atlas_columns).
+Počet snímků cyklu (frames) má každý druh v katalogu: pavouk a vlk 8, had a
+tyranosaurus 16, ptakoještěr 24. Delší animace se zalomí do dalších řádků (atlas_columns).
 Jeden atlas slouží všem materiálům druhu, barvy dodá shader.
 
 Vrstva nese masky, ne hotovou barvu: R světlost, G podíl akcentu (kresba,
@@ -21,6 +21,12 @@ barvu druhu.
 
 Chodidlo na zemi jede vůči tělu rovnoměrně dozadu. Za cyklus příšera urazí
 cycle_meters z katalogu a chodidla přitom neklouzají.
+
+Had: vrstva 1 (tělo na zemi, 0 m), vrstva 2 (zvednutá hlava a krk, 0,35 m). Tělo
+ve vrstvě 1 začíná už pod hlavou, aby se vrstvy při posunu kamery neroztrhly. Plazí se
+vlněním do stran: vlna stojí vůči zemi a had po ní klouže, za cyklus urazí jednu vlnovou
+délku. Hlava a krk se nevlní, jen natáčejí, výchylka roste k ocasu. Na hřbetě jsou
+kosočtverce v akcentu s tmavým lemem, jazyk má barvu očí a vyjede dvakrát za cyklus.
 
 Pavouk: vrstva 1 (nohy a makadla, 0 m), vrstva 2 (hlavohruď a zadeček, 0,5 m).
 Kořeny nohou zajíždějí pod hlavohruď, aby se vrstvy při posunu kamery neroztrhly.
@@ -51,6 +57,7 @@ Atlasy jdou do godot/graphics/characters/monsters, náhledy do tools/preview.
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import math
 from pathlib import Path
@@ -147,6 +154,8 @@ CHEVRONS = (0.50, 0.68, 0.84)
 
 # Vlk, asi 2 m od čenichu po špičku ocasu. Střed plátna je uprostřed trupu.
 WOLF_CANVAS = 176
+# Vlk se kreslí v rozměrech výše a do atlasu se zmenší tímhle poměrem.
+WOLF_ZOOM = 0.85
 # Trup od šíje po záď: Y a poloviční šířka v px. Nejširší je hříva na plecích.
 WOLF_BODY = (
     (-32.0, 10.0),
@@ -318,15 +327,80 @@ REX_EYE = ((12.0, -74.0), 2.2)
 REX_HORN = ((10.0, -78.0), (11.8, -82.0))
 REX_NOSTRIL = ((3.6, -100.0), 1.1)
 
+# Had, asi 1,6 m od čenichu po špičku ocasu. Délka s se měří po páteři od čenichu, v px.
+SNAKE_CANVAS = 128
+SNAKE_SNOUT = -42.0
+# Poloviční šířka podle s: klínovitá hlava, užší krk, nejširší třetina těla, tenký ocas.
+SNAKE_WIDTH = (
+    (0.0, 1.8),
+    (2.0, 3.0),
+    (5.0, 4.1),
+    (8.5, 4.8),
+    (11.0, 4.1),
+    (14.0, 2.9),
+    (18.0, 2.9),
+    (28.0, 3.6),
+    (45.0, 4.3),
+    (64.0, 4.0),
+    (79.0, 3.1),
+    (91.0, 1.8),
+    (101.0, 0.5),
+)
+SNAKE_LENGTH = SNAKE_WIDTH[-1][0]
+# Hlava a krk až po SNAKE_NECK jdou rovně a jen se natáčejí. Do SNAKE_RAISE je had zvednutý
+# (vrstva 2), tělo ve vrstvě 1 začíná už u SNAKE_TUCK pod hlavou, aby se vrstvy neroztrhly.
+SNAKE_NECK = 16.0
+SNAKE_RAISE = 22.0
+SNAKE_TUCK = 9.0
+SNAKE_HEIGHT = 0.35
+SNAKE_HEAD_YAW = 3.0
+# Vlna stojí na zemi, had po ní klouže: za cyklus urazí SNAKE_WAVE px. Výchylka za krkem
+# naběhne na délce SNAKE_RAMP a k ocasu ještě trochu roste.
+SNAKE_WAVE = 50.0
+SNAKE_AMPLITUDE = 15.0
+SNAKE_RAMP = 30.0
+# Kosočtverce na hřbetě: první a poslední střed (s), rozestup, poloviční délka a poloviční
+# šířka jako díl šířky těla. Tmavý lem má tenhle poloměr.
+SNAKE_DIAMONDS = (24.0, 88.0, 8.0, 3.3, 0.74)
+SNAKE_RIM = 0.45
+# Užší tělo než tohle má menší kosočtverce.
+SNAKE_WIDE = 3.6
+SNAKE_CROWN = 11.0
+# Skvrny na bocích mezi kosočtverci: díl šířky těla od páteře, poloměr, síla akcentu.
+SNAKE_SPOTS = (0.82, 0.85, 0.55)
+# Oko a nozdra pravé strany: s, díl šířky těla od páteře a poloměr.
+SNAKE_EYE = (6.0, 0.7, 1.15)
+SNAKE_NOSTRIL = (1.6, 0.5, 0.45)
+# Jazyk: délka před rozeklání, délka a rozevření hrotů ve stupních. Vymrští se dvakrát za cyklus.
+SNAKE_TONGUE = (6.0, 2.6, 24.0)
+
 # Druhy. Materiály druhu a jejich barvy jsou v gen_crystal.MATERIALS.
 # preview_shadow je obdélník elipsy stínu jen v náhledech, ve hře se nekreslí.
 # Vrstva se shadow je skutečný stín v atlasu. info se zkopíruje do katalogu.
+# zoom zmenší tvora při ukládání do atlasu, cycle_meters a body_meters už počítají se zmenšením.
 # frames je počet snímků jednoho cyklu. preview_cycle_ms je délka cyklu v náhledových GIFech.
 # Pohyb ve hře: wander_meters je volné toulání, chase_meters honička za postavou, která nese
-# materiál druhu (postava běží 4,5 m/s). body_meters je poloměr těla pro překážky a dotek.
-# small jde přeskočit (postava a tyranosaurus přes něj skočí). jump_meters je výška překážky,
-# přes kterou druh skočí, 0 neskáče.
+# materiál druhu (postava běží 4,5 m/s), násobí ji monster_speed materiálu z gen_crystal.
+# body_meters je poloměr těla pro překážky a dotek. height_meters je výška tvora: skákající ho
+# přeskočí, když skočí aspoň tak vysoko (postava a vesničan měří 1,8 m). jump_meters je výška
+# překážky nebo tvora, přes kterou druh skočí, 0 neskáče.
 MONSTERS = {
+    "had": {
+        "canvas": SNAKE_CANVAS,
+        "preview_shadow": ((-16.0, -44.0), (16.0, 40.0)),
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": SNAKE_HEIGHT, "file": "layer_2.png"},
+        },
+        "cycle_meters": SNAKE_WAVE / PX_PER_METER,
+        "frames": 16,
+        "preview_cycle_ms": 900,
+        "wander_meters": 0.8,
+        "chase_meters": 3.7,
+        "body_meters": 0.4,
+        "height_meters": 0.3,
+        "eye": "FF5A3C",
+    },
     "pavouk": {
         "canvas": SPIDER_CANVAS,
         "preview_shadow": ((-15.0, -12.0), (15.0, 40.0)),
@@ -337,9 +411,9 @@ MONSTERS = {
         "cycle_meters": 2.0 * STRIDE / PX_PER_METER,
         "frames": 8,
         "wander_meters": 0.8,
-        "chase_meters": 4.0,
+        "chase_meters": 4.1,
         "body_meters": 0.45,
-        "small": True,
+        "height_meters": 0.5,
         "eye": "F04A2C",
     },
     "vlk": {
@@ -347,14 +421,16 @@ MONSTERS = {
         "preview_shadow": ((-17.0, -46.0), (17.0, 30.0)),
         "layers": {
             1: {"height": 0.0, "file": "layer_1.png"},
-            2: {"height": 0.75, "file": "layer_2.png"},
+            2: {"height": round(0.75 * WOLF_ZOOM, 3), "file": "layer_2.png"},
         },
-        "cycle_meters": 2.0 * WOLF_STRIDE / PX_PER_METER,
+        "zoom": WOLF_ZOOM,
+        "cycle_meters": 2.0 * WOLF_STRIDE * WOLF_ZOOM / PX_PER_METER,
         "frames": 8,
         "wander_meters": 1.0,
         "chase_meters": 4.5,
-        "body_meters": 0.45,
-        "small": True,
+        "body_meters": round(0.45 * WOLF_ZOOM, 3),
+        "height_meters": 0.7,
+        "jump_meters": 2.1,
         "eye": "FFD23A",
     },
     "ptakojester": {
@@ -371,6 +447,7 @@ MONSTERS = {
         "wander_meters": 1.5,
         "chase_meters": 5.0,
         "body_meters": 0.8,
+        "height_meters": 1.0,
         "eye": "7DF2FF",
     },
     "tyranosaurus": {
@@ -383,9 +460,10 @@ MONSTERS = {
         "cycle_meters": 2.0 * REX_STRIDE / PX_PER_METER,
         "frames": 16,
         "wander_meters": 0.8,
-        "chase_meters": 5.5,
+        "chase_meters": 5.3,
         "body_meters": 0.55,
-        "jump_meters": 2.5,
+        "height_meters": 3.0,
+        "jump_meters": 4.1,
         "eye": "FFC21A",
     },
 }
@@ -1071,8 +1149,111 @@ def rex_layers(t: float) -> dict[int, Layer]:
     return {1: legs, 2: body}
 
 
+def snake_wave_x(y: float, t: float) -> float:
+    """Vybočení páteře za krkem. Vlna je pevná vůči zemi, ve hře se nehýbe, had po ní klouže."""
+    behind = y - (SNAKE_SNOUT + SNAKE_NECK)
+    if behind <= 0.0:
+        return 0.0
+    u = min(1.0, behind / SNAKE_RAMP)
+    grow = 0.7 + 0.3 * min(1.0, behind / 70.0)
+    return SNAKE_AMPLITUDE * u * u * (3.0 - 2.0 * u) * grow * math.sin(math.tau * (y / SNAKE_WAVE - t))
+
+
+def snake_spine(t: float) -> tuple[list[Point], list[float], list[float]]:
+    """Páteř od čenichu po špičku ocasu, šířky a délka s každého bodu.
+
+    Tělo za krkem leží na vlně a má pořád stejnou délku, takže se kresba nesmýká.
+    """
+    dense = profile(SNAKE_WIDTH, 0.5)
+    neck_y = SNAKE_SNOUT + SNAKE_NECK
+    step = 0.25
+    trail = [(snake_wave_x(neck_y + k * step, t), neck_y + k * step) for k in range(round(2.0 * SNAKE_LENGTH / step))]
+    lengths = [0.0]
+    for a, b in zip(trail, trail[1:]):
+        lengths.append(lengths[-1] + math.dist(a, b))
+    yaw = math.radians(SNAKE_HEAD_YAW) * math.sin(math.tau * t)
+    spine = []
+    for s, _w in dense:
+        if s <= SNAKE_NECK:
+            turned = rotate((0.0, s - SNAKE_NECK), yaw)
+            spine.append((trail[0][0] + turned[0], trail[0][1] + turned[1]))
+            continue
+        target = s - SNAKE_NECK
+        index = min(bisect.bisect_left(lengths, target), len(lengths) - 1)
+        span = (lengths[index] - lengths[index - 1]) or 1.0
+        spine.append(lerp(trail[index - 1], trail[index], (target - lengths[index - 1]) / span))
+    return spine, [w for _s, w in dense], [s for s, _w in dense]
+
+
+def snake_layers(t: float) -> dict[int, Layer]:
+    spine, widths, lengths = snake_spine(t)
+    normals = spine_normals(spine)
+
+    def index_of(s: float) -> int:
+        return min(bisect.bisect_left(lengths, s), len(lengths) - 1)
+
+    def at(s: float, across: float) -> Point:
+        """Bod na hřbetě: across je díl poloviční šířky od páteře, kladný vpravo."""
+        index = index_of(s)
+        (px, py), (nx, ny), width = spine[index], normals[index], widths[index]
+        return (px - nx * width * across, py - ny * width * across)
+
+    body, head = Layer(SNAKE_CANVAS), Layer(SNAKE_CANVAS)
+    tuck, raise_ = index_of(SNAKE_TUCK), index_of(SNAKE_RAISE)
+    body.tube(spine[tuck:], widths[tuck:], 0.2, 1.0)
+    first, last, gap, half_length, half_width = SNAKE_DIAMONDS
+    spot_across, spot_radius, spot_accent = SNAKE_SPOTS
+
+    def diamond(layer: Layer, center: float, shrink: float, across: float) -> None:
+        corners = [
+            at(center - half_length * shrink, 0.0),
+            at(center, across),
+            at(center + half_length * shrink, 0.0),
+            at(center, -across),
+        ]
+        for a, b in zip(corners, corners[1:] + corners[:1]):
+            layer.capsule(a, b, SNAKE_RIM, SNAKE_RIM, 0.16)
+        middle = at(center, 0.0)
+        layer.polygon([lerp(middle, corner, 0.82) for corner in corners], None, 0.9)
+
+    center = first
+    while center <= last + 0.01:
+        shrink = min(1.0, widths[index_of(center)] / SNAKE_WIDE)
+        diamond(body, center, shrink, half_width)
+        for side in (-1.0, 1.0):
+            body.disk(at(center + gap / 2, side * spot_across), spot_radius * shrink, None, spot_accent)
+        center += gap
+
+    # Jazyk je pod hlavou, vyjede z tlamy a zase zajede.
+    out = max(0.0, math.sin(math.tau * 2.0 * t)) ** 0.6
+    if out > 0.05:
+        reach, fork, spread = SNAKE_TONGUE
+        tip = spine[0]
+        dx, dy = tip[0] - spine[4][0], tip[1] - spine[4][1]
+        norm = math.hypot(dx, dy) or 1.0
+        forward = (dx / norm, dy / norm)
+        split = (tip[0] + forward[0] * reach * out, tip[1] + forward[1] * reach * out)
+        head.capsule(spine[2], split, 0.45, 0.4, 0.3, 0.0, 1.0)
+        for side in (-1.0, 1.0):
+            prong = rotate(forward, math.radians(side * spread))
+            end = (split[0] + prong[0] * fork * out, split[1] + prong[1] * fork * out)
+            head.capsule(split, end, 0.4, 0.25, 0.3, 0.0, 1.0)
+    head.tube(spine[: raise_ + 1], widths[: raise_ + 1], 0.24, 1.0)
+    # Na temeni je menší kosočtverec, kresba těla tak začíná už na hlavě.
+    diamond(head, SNAKE_CROWN, 0.75, 0.42)
+    for side in (-1.0, 1.0):
+        s, across, radius = SNAKE_EYE
+        eye = at(s, side * across)
+        head.disk(eye, radius + 0.45, 0.1)
+        head.disk(eye, radius, None, 0.0, 1.0)
+        s, across, radius = SNAKE_NOSTRIL
+        head.disk(at(s, side * across), radius, 0.08)
+    return {1: body, 2: head}
+
+
 # Kreslení druhu dostane fázi cyklu 0 až 1, ne číslo snímku.
 RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
+    "had": snake_layers,
     "pavouk": spider_layers,
     "vlk": wolf_layers,
     "ptakojester": ptero_layers,
@@ -1080,10 +1261,13 @@ RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
 }
 
 
-def pack(layer: Layer) -> Image.Image:
-    """Zmenší masky. Světlost, akcent a oči jsou průměr zakrytých vzorků, alfa je krytí."""
+def pack(layer: Layer, zoom: float = 1.0) -> Image.Image:
+    """Zmenší masky. Světlost, akcent a oči jsou průměr zakrytých vzorků, alfa je krytí.
+
+    zoom zmenší celý tvor, buňka zůstane sudá, aby střed zůstal ve středu plátna.
+    """
     shade, accent, eye, alpha = layer.channels
-    cell = layer.canvas
+    cell = 2 * round(layer.canvas * zoom / 2)
     size = (cell, cell)
     cover = alpha.convert("F").resize(size, Image.Resampling.BOX).load()
     sums = [
@@ -1225,7 +1409,7 @@ def generate(name: str, preset: dict) -> dict:
     for index in range(count):
         rendered = render(index / count)
         for key in layers:
-            frames[key].append(pack(rendered[key]))
+            frames[key].append(pack(rendered[key], preset.get("zoom", 1.0)))
     folder = OUT_DIR / name
     folder.mkdir(parents=True, exist_ok=True)
     entry = {}
@@ -1249,7 +1433,7 @@ def generate(name: str, preset: dict) -> dict:
         "wander_meters": preset["wander_meters"],
         "chase_meters": preset["chase_meters"],
         "body_meters": preset["body_meters"],
-        "small": preset.get("small", False),
+        "height_meters": preset["height_meters"],
         "jump_meters": preset.get("jump_meters", 0.0),
         **preset.get("info", {}),
         "layers": entry,
@@ -1267,7 +1451,11 @@ def write_previews(name: str, preset: dict, frames: dict[int, list[Image.Image]]
     # Plátno pojme i vrstvu posunutou „u kraje“.
     drift = math.ceil(max(abs(EDGE[0]), abs(EDGE[1])) * max(heights.values()))
     size = max(preset["canvas"], max(frames[key][0].width for key in frames) + 2 * drift + 4)
-    under = preview_shadow(size + size % 2, preset["preview_shadow"])
+    box = preset["preview_shadow"]
+    zoom = preset.get("zoom", 1.0)
+    if box is not None:
+        box = tuple((x * zoom, y * zoom) for x, y in box)
+    under = preview_shadow(size + size % 2, box)
 
     def tint(key: int, mask: Image.Image, colors: tuple[tuple[int, int, int], ...]) -> Image.Image:
         return darken(mask) if layers[key].get("shadow") else colorize(mask, *colors)

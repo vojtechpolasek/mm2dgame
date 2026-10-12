@@ -6,7 +6,7 @@ steps/    kroky postavy podle povrchu (grass, dirt, desert, snow), čtyři varia
 ambient/  šumění vody: tlumený šum s pomalými vlnami a bublinkami, smyčka bez švu.
 basin/    dopad kamene do kotliny podle materiálu (jména z gen_crystal.MATERIALS). Levný
           tupě žuchne, s cenou přibývá výšky a zvonění, nejdražší cinkne.
-monsters/ kroky příšer (pavouk cupitá, vlk tlapky, tyranosaurus duní, ptakoještěr mává
+monsters/ kroky příšer (had šustí, pavouk cupitá, vlk tlapky, tyranosaurus duní, ptakoještěr mává
           křídly) a zařvání každého druhu, když začne honit.
 sfx/      sebrání kamene, krádež příšerou, skok a dopad.
 ui/       menu: posun, potvrzení, zpět, připojení a odpojení hráče, start, výhra, prohra,
@@ -281,9 +281,16 @@ def basin_bounce(rng: np.random.Generator, pitch: float, ring: float, length: in
 # --- Příšery ---
 
 def monster_step(kind: str, seed: int) -> np.ndarray:
-    """Krok příšery. Pavouk cupitá několika drobnými ťuknutími, vlk dosedne tlapkou,
-    tyranosaurus zaduní, ptakoještěr mávne křídly."""
+    """Krok příšery. Had šustí břichem po zemi, pavouk cupitá několika drobnými ťuknutími,
+    vlk dosedne tlapkou, tyranosaurus zaduní, ptakoještěr mávne křídly."""
     rng = np.random.default_rng(seed)
+    if kind == "had":
+        length = seconds(0.32)
+        t = np.arange(length) / RATE
+        swell = np.interp(t, [0.0, 0.1, 0.2, 0.32], [0.0, 1.0, 0.6, 0.0])
+        rustle = band(noise(rng, length), 1800, 7000) * swell
+        rustle *= 0.7 + 0.3 * np.sin(2 * math.pi * rng.uniform(55, 75) * t)
+        return fade(normalize(rustle, 0.25), 0.005, 0.04)
     if kind == "pavouk":
         length = seconds(0.12)
         out = np.zeros(length)
@@ -328,9 +335,16 @@ def growl_voice(rng: np.random.Generator, dur: float, points: list[float], value
 
 
 def roar(kind: str) -> np.ndarray:
-    """Zařvání, když příšera začne honit. Pavouk zasyčí a zacvaká, vlk zavrčí a štěkne,
+    """Zařvání, když příšera začne honit. Had dlouze zasyčí, pavouk zasyčí a zacvaká, vlk zavrčí a štěkne,
     tyranosaurus zařve, ptakoještěr zaskřehotá."""
-    rng = np.random.default_rng({"pavouk": 1, "vlk": 2, "tyranosaurus": 3, "ptakojester": 4}[kind])
+    rng = np.random.default_rng({"pavouk": 1, "vlk": 2, "tyranosaurus": 3, "ptakojester": 4, "had": 5}[kind])
+    if kind == "had":
+        dur = 1.3
+        length = seconds(dur)
+        t = np.arange(length) / RATE
+        hiss = band(noise(rng, length), 3000, 11000) + band(noise(rng, length), 1200, 3000) * 0.3
+        shape = np.interp(t, [0.0, 0.04, 0.25, 1.0, 1.3], [0.0, 1.0, 0.75, 0.55, 0.0])
+        return fade(normalize(reverb(hiss * shape, 0.5, 0.12), 0.65), 0.003, 0.15)
     if kind == "pavouk":
         dur = 1.0
         length = seconds(dur)
@@ -827,7 +841,7 @@ def main() -> None:
     names = sorted(MATERIALS, key=lambda name: MATERIALS[name]["points"])
     for order, name in enumerate(names):
         written.append(write(f"basin/{name}", basin_hit(order / max(len(names) - 1, 1), 5 + order)))
-    for kind in ("pavouk", "vlk", "tyranosaurus", "ptakojester"):
+    for kind in ("had", "pavouk", "vlk", "tyranosaurus", "ptakojester"):
         for variant in range(3):
             written.append(write(f"monsters/{kind}_step_{variant + 1}", monster_step(kind, 40 + variant * 11 + len(kind))))
         written.append(write(f"monsters/{kind}_roar", roar(kind)))

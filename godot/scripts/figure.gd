@@ -1,7 +1,7 @@
 extends RefCounted
 
 ## Postava ze tří vrstev person.json (nohy, tělo, hlava) na uzlu host. Hráč běží atlasem běhu,
-## vesničan chodí atlasem chůze s kratším krokem. Atlas je nakreslený směrem na sever, ostatní
+## vesničan chodí atlasem chůze s kratším krokem a když pomáhá, přepne na běh (set_run). Atlas je nakreslený směrem na sever, ostatní
 ## směry otáčí host. Barvy jsou instance parametry, materiály vrstev sdílí všechny postavy.
 
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -24,7 +24,13 @@ var _sprites: Array[Sprite2D] = []
 var _heights := PackedFloat32Array()
 var _layer_materials: Array[ShaderMaterial] = []
 var _body: Sprite2D
-var _walk_texture: Texture2D
+## Atlasy vrstev podle pořadí _sprites. Atlasy chůze jsou jen u postavy postavené s walk.
+var _run_textures: Array[Texture2D] = []
+var _walk_textures: Array[Texture2D] = []
+var _run_cycle_px := 192.0
+var _walk_cycle_px := 192.0
+var _running := true
+var _holding := false
 var _hold_texture: Texture2D
 var _fitted := Vector2.ZERO
 
@@ -39,9 +45,10 @@ func build(host: Node2D, walk: bool, cycle_m: float) -> bool:
 	idle_frame = clampi(int(info.get("idle_frame", 0)), 0, atlas_frames - 1)
 	var walking: Dictionary = info.get("walk", {})
 	var walk_layers: Dictionary = walking.get("layers", {}) if walk else {}
-	if walk:
-		cycle_m = float(walking.get("cycle_m", cycle_m))
-	cycle_px = cycle_m * float(TerrainCatalog.TILE_SIZE)
+	_run_cycle_px = cycle_m * float(TerrainCatalog.TILE_SIZE)
+	_walk_cycle_px = float(walking.get("cycle_m", cycle_m)) * float(TerrainCatalog.TILE_SIZE)
+	_running = not walk
+	cycle_px = _run_cycle_px if _running else _walk_cycle_px
 	var columns := maxi(int(info.get("atlas_columns", frames)), 1)
 	var root := CATALOG.get_base_dir()
 	var listed: Dictionary = info.get("layers", {})
@@ -49,11 +56,16 @@ func build(host: Node2D, walk: bool, cycle_m: float) -> bool:
 	keys.sort_custom(func(a: Variant, b: Variant) -> bool: return int(a) < int(b))
 	for key: Variant in keys:
 		var layer: Dictionary = listed[key]
-		var file := str((walk_layers.get(key, layer) as Dictionary).get("file", layer.get("file", "")))
-		var texture := load("%s/%s" % [root, file]) as Texture2D
-		if texture == null:
-			push_error("Chybí vrstva postavy %s." % file)
+		var run_texture := _load_layer(root, str(layer.get("file", "")))
+		if run_texture == null:
 			return false
+		var texture := run_texture
+		if walk:
+			texture = _load_layer(root, str((walk_layers.get(key, layer) as Dictionary).get("file", layer.get("file", ""))))
+			if texture == null:
+				return false
+			_walk_textures.append(texture)
+		_run_textures.append(run_texture)
 		var height := float(layer.get("height", 0.0))
 		var sprite := Sprite2D.new()
 		sprite.texture = texture
@@ -67,7 +79,6 @@ func build(host: Node2D, walk: bool, cycle_m: float) -> bool:
 		sprite.set_instance_shader_parameter("slot", float(layer.get("slot", 0.0)))
 		if is_equal_approx(float(layer.get("slot", -1.0)), 1.0):
 			_body = sprite
-			_walk_texture = texture
 			hand_height = height
 		host.add_child(sprite)
 		_sprites.append(sprite)
@@ -81,6 +92,13 @@ func build(host: Node2D, walk: bool, cycle_m: float) -> bool:
 	if _hold_texture == null:
 		push_error("Chybí úchop postavy.")
 	return true
+
+
+static func _load_layer(root: String, file: String) -> Texture2D:
+	var texture := load("%s/%s" % [root, file]) as Texture2D
+	if texture == null:
+		push_error("Chybí vrstva postavy %s." % file)
+	return texture
 
 
 static func _catalog() -> Dictionary:
@@ -144,13 +162,33 @@ func set_travel(travel: float) -> void:
 
 ## Pravá ruka natažená dopředu.
 func set_hold(on: bool) -> void:
-	if _body == null or _hold_texture == null or _walk_texture == null:
+	if _body == null or _hold_texture == null:
 		return
-	var texture := _hold_texture if on else _walk_texture
-	if _body.texture == texture:
+	_holding = on
+	_apply_textures()
+
+
+## Běh, nebo chůze. Jen u postavy postavené s walk, ostatní běží pořád.
+func set_run(on: bool) -> void:
+	if _walk_textures.is_empty() or _running == on:
 		return
-	_body.texture = texture
-	fit(_fitted)
+	_running = on
+	cycle_px = _run_cycle_px if on else _walk_cycle_px
+	_apply_textures()
+
+
+func _apply_textures() -> void:
+	var listed := _run_textures if _running or _walk_textures.is_empty() else _walk_textures
+	var changed := false
+	for i in _sprites.size():
+		var texture := listed[i]
+		if _sprites[i] == _body and _holding and _hold_texture != null:
+			texture = _hold_texture
+		if _sprites[i].texture != texture:
+			_sprites[i].texture = texture
+			changed = true
+	if changed:
+		fit(_fitted)
 
 
 func fit(view: Vector2) -> void:

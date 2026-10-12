@@ -90,7 +90,7 @@ func allowed(from: Vector2, desired: Vector2, body: float, clearance: float, who
 
 
 ## Vytlačí bod z překážek a ořízne na mapu. clearance < 0 drží všechno, jinak je tělo ve skoku:
-## nízké překážky a malé tvory přeskočí.
+## překážky a tvory do výšky clearance metrů přeskočí.
 func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) -> Vector2:
 	for _pass in 2:
 		pos = _rocks.avoid(pos, body, clearance)
@@ -98,7 +98,7 @@ func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) ->
 		if town != null:
 			pos = town.avoid(pos, body)
 		if crowd != null and who >= 0:
-			pos = crowd.avoid(pos, body, who, clearance >= 0.0)
+			pos = crowd.avoid(pos, body, who, clearance)
 	var limit := _map_size - Vector2(0.001, 0.001)
 	pos.x = clampf(pos.x, 0.0, limit.x)
 	pos.y = clampf(pos.y, 0.0, limit.y)

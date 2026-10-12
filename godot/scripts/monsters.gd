@@ -47,7 +47,7 @@ func prepare(materials: PackedInt32Array, crystal: Crystal, walker: Walker, rock
 		var info: Dictionary = species.get(crystal.monster_of(mat), {})
 		if info.is_empty() or bool(info.get("flying", false)):
 			continue
-		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE) * crystal.monster_scale(mat)
+		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE)
 		_nav_for(body, float(info.get("jump_meters", 0.0)), walker, rocks, forest)
 		rocks.prepare_bounds(body)
 
@@ -110,9 +110,9 @@ func spawn(
 			"accent": crystal.monster_accent(mat),
 			"eye": Color.html(str(eye.get("eye", "FFFFFF"))),
 		}
-		var size_scale := crystal.monster_scale(mat)
+		var speed := crystal.monster_speed(mat)
 		var flying := bool(info.get("flying", false))
-		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE) * size_scale
+		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE)
 		var monster := Monster.new()
 		monster.name = "Monster_%s_%d" % [kind, mat]
 		monster.material_index = mat
@@ -121,7 +121,7 @@ func spawn(
 		var jump := float(info.get("jump_meters", 0.0))
 		var nav: NavGrid = null if flying else _nav_for(body, jump, walker, rocks, forest)
 		var at := _spawn_point(walker, nav, body, flying, rng)
-		monster.setup(info, textures, shared, colors, size_scale, shadow_alpha, walker, nav, persons, camera, rng, at)
+		monster.setup(info, textures, shared, colors, speed, shadow_alpha, walker, nav, persons, camera, rng, at)
 		members.append(monster)
 		if not flying and walker.crowd != null:
 			monster.crowd_id = walker.crowd.join(monster)
@@ -135,11 +135,11 @@ func any_chasing() -> bool:
 	return false
 
 
-## Honí nějaká příšera, kterou je vidět, nebo je těsně za okrajem obrazovky? Podle toho hraje
-## hudba při honičce. margin je v pixelech světa.
-func any_chasing_in_view(margin: float) -> bool:
+## Honí nějaká příšera, která už na obrazovce zařvala a je pořád vidět? Podle toho hraje
+## hudba při honičce.
+func any_chasing_in_view() -> bool:
 	for monster in members:
-		if monster.is_chasing_in_view(margin):
+		if monster.is_chasing_in_view():
 			return true
 	return false
 
