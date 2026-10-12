@@ -128,18 +128,25 @@ func make_sprite() -> Sprite2D:
 	sprite.texture = _textures[0]
 	sprite.centered = true
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	sprite.material = _material
+	# Vlastní materiál: instanční uniformy stačí v renderu Compatibility jen na pár stovek objektů.
+	sprite.material = _material.duplicate()
 	return sprite
 
 
 ## phase rozhoduje, kdy kámen blikne, ať neblikají všechny naráz.
 func paint(sprite: Sprite2D, index: int, height: float, phase: float) -> void:
 	sprite.texture = _textures[_shape[index]]
-	sprite.set_instance_shader_parameter("gem_color", _color[index])
-	sprite.set_instance_shader_parameter("glint_color", _glint[index])
-	sprite.set_instance_shader_parameter("sparkle", _sparkle[index])
-	sprite.set_instance_shader_parameter("height_m", height)
-	sprite.set_instance_shader_parameter("phase", phase)
+	var material := sprite.material as ShaderMaterial
+	material.set_shader_parameter("gem_color", _color[index])
+	material.set_shader_parameter("glint_color", _glint[index])
+	material.set_shader_parameter("sparkle", _sparkle[index])
+	material.set_shader_parameter("height_m", height)
+	material.set_shader_parameter("phase", phase)
+
+
+## Jeden parametr kamene z make_sprite.
+static func tune(sprite: Sprite2D, param: StringName, value: Variant) -> void:
+	(sprite.material as ShaderMaterial).set_shader_parameter(param, value)
 
 
 func _texture_from(path: String) -> Texture2D:

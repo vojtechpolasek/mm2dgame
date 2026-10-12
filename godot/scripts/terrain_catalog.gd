@@ -85,6 +85,21 @@ func set_map(size: int, corners: PackedByteArray, variants: PackedByteArray) -> 
 	_set_param("variant_map", ImageTexture.create_from_image(variant_image))
 
 
+## Vlastní materiály jedné mapy. Sdílené materiály katalogu zůstanou volné pro další čtverec.
+func fork_map(size: int, corners: PackedByteArray, variants: PackedByteArray) -> Dictionary:
+	var bake := bake_material.duplicate() as ShaderMaterial
+	var water := water_material.duplicate() as ShaderMaterial
+	var corner_image := Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, corners)
+	var variant_image := Image.create_from_data(size, size, false, Image.FORMAT_R8, variants)
+	var corner_tex := ImageTexture.create_from_image(corner_image)
+	var variant_tex := ImageTexture.create_from_image(variant_image)
+	for mat in [bake, water]:
+		mat.set_shader_parameter("map_size", float(size))
+		mat.set_shader_parameter("corner_map", corner_tex)
+		mat.set_shader_parameter("variant_map", variant_tex)
+	return {"bake": bake, "water": water}
+
+
 func _set_param(param: StringName, value: Variant) -> void:
 	bake_material.set_shader_parameter(param, value)
 	water_material.set_shader_parameter(param, value)

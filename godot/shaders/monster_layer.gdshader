@@ -1,9 +1,12 @@
 shader_type canvas_item;
 render_mode unshaded;
 
+// Každá vrstva tvora má svůj materiál. Instanční uniformy by v renderu Compatibility
+// stačily jen na pár stovek objektů a další by dostaly cizí barvy.
+
 // Stejný posun výšky jako person_layer.gdshader. Všechny příšery sdílejí jeden materiál,
 // výška a barvy jsou instanční. Výška 0 drží nohy na zemi.
-instance uniform float height_m = 0.0;
+uniform float height_m = 0.0;
 global uniform vec2 camera_position;
 uniform float parallax = 0.016;
 uniform float scale_per_meter = 0.01;
@@ -13,11 +16,11 @@ global uniform float camera_zoom;
 // tělo = barva * mix(shade), kresba = akcent * mix(accent_shade), oči přes obojí.
 uniform vec2 shade = vec2(0.35, 1.15);
 uniform vec2 accent_shade = vec2(0.6, 1.1);
-instance uniform vec3 body_color : source_color = vec3(0.5);
-instance uniform vec3 accent_color : source_color = vec3(0.8);
-instance uniform vec3 eye_color : source_color = vec3(1.0, 0.3, 0.2);
+uniform vec3 body_color : source_color = vec3(0.5);
+uniform vec3 accent_color : source_color = vec3(0.8);
+uniform vec3 eye_color : source_color = vec3(1.0, 0.3, 0.2);
 // Stínová vrstva létající příšery: černá s tímto krytím. 0 je běžná vrstva.
-instance uniform float shadow_alpha = 0.0;
+uniform float shadow_alpha = 0.0;
 
 void vertex() {
 	if (height_m > 0.0) {

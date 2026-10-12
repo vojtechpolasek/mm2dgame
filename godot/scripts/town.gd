@@ -184,7 +184,10 @@ func _load_houses() -> void:
 
 ## Továrna u středu mapy s náhodným natočením, cesta, domy. Střed je souš, tu tam drží
 ## generátor mapy (MapGenerator.CENTER_CLEAR). Kdyby přesto byla voda, bere nejbližší souš.
-func plan(map: MapData, rng: RandomNumberGenerator) -> void:
+func plan(map: MapData, rng: RandomNumberGenerator, layout: String = "") -> void:
+	if layout != "":
+		_plan_layout(map, rng, layout)
+		return
 	_center = Vector2.INF
 	_stem = PackedVector2Array()
 	_bar = PackedVector2Array()
@@ -224,19 +227,154 @@ func plan(map: MapData, rng: RandomNumberGenerator) -> void:
 	_measure()
 
 
-func _lay_road(map: MapData, turn: float, rng: RandomNumberGenerator) -> Array:
+## Vesnice světa. none je jen továrna, small a medium jedna cesta, large dnešní T,
+## huge kříž za výdejnou. empty nechá mapu bez továrny.
+func _plan_layout(map: MapData, rng: RandomNumberGenerator, layout: String) -> void:
+	_center = Vector2.INF
+	_stem = PackedVector2Array()
+	_bar = PackedVector2Array()
+	_houses.clear()
+	_solids.clear()
+	_seg_a = PackedVector2Array()
+	_seg_b = PackedVector2Array()
+	_seg_cells.clear()
+	_factory_parts = 0
+	if layout == "empty" or _factory_info.is_empty():
+		return
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var center := Vector2(map.size, map.size) * tile * 0.5
+	if not _land(map, center):
+		center = _nearest_land(map, center)
+		if center == Vector2.INF:
+			return
+	_center = center
+	if not _patterns.is_empty():
+		_pattern = rng.randi() % _patterns.size()
+		_core_half = float(_patterns[_pattern]["core"]) * 0.5
+		_clear_half = _core_half + ROAD_CLEAR_M * tile
+	if layout == "none":
+		_turn = rng.randf() * TAU
+		_add_factory_solids()
+		_index_road()
+		_measure()
+		return
+	var stem_m := 20.0
+	var arm_m := 0.0
+	var houses_lo := 4
+	var houses_hi := 8
+	var cross := false
+	match layout:
+		"small":
+			stem_m = 10.0
+			houses_lo = 2
+			houses_hi = 3
+		"medium":
+			stem_m = 20.0
+			houses_lo = 3
+			houses_hi = 5
+		"huge":
+			cross = true
+			houses_lo = 8
+			houses_hi = 12
+		_:
+			stem_m = STEM_M
+			arm_m = ARM_M
+			houses_lo = HOUSES_MIN
+			houses_hi = HOUSES_MAX
+	var full := (25.0 if cross else stem_m + arm_m * 2.0) * tile
+	var best := -1.0
+	for _try in TURN_TRIES:
+		var turn := rng.randf() * TAU
+		var road := _lay_cross(map, turn, rng) if cross else _lay_road(map, turn, rng, stem_m, arm_m)
+		if float(road[2]) > best:
+			best = float(road[2])
+			_turn = turn
+			_stem = road[0]
+			_bar = road[1]
+		if best >= full * 0.97:
+			break
+	_add_factory_solids()
+	_index_road()
+	_place_houses(map, rng, houses_lo, houses_hi)
+	_measure()
+
+
+## Kříž 25 m, křižovatka v polovině osy za výdejnou, příčka taky 25 m.
+func _lay_cross(map: MapData, turn: float, rng: RandomNumberGenerator) -> Array:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var dock: Dictionary = _factory_info.get("dock_px", {})
 	var down := Vector2.DOWN.rotated(turn)
 	var start := _center + down * (float(dock.get("to", 290.0)) - DOCK_TUCK_M * tile)
-	var stem := _arm(map, start, down, STEM_M * tile, rng, false)
+	var axis := _arm(map, start, down, 25.0 * tile, rng, false)
+	if axis.size() < 2:
+		return [PackedVector2Array(), PackedVector2Array(), 0.0]
+	var mid: Dictionary = _along(axis, _length(axis) * 0.5)
+	var across := (mid["dir"] as Vector2).orthogonal()
+	var left := _arm(map, mid["pos"], -across, 12.5 * tile, rng, true)
+	var right := _arm(map, mid["pos"], across, 12.5 * tile, rng, true)
+	var bar := PackedVector2Array()
+	for i in range(left.size() - 1, -1, -1):
+		bar.append(left[i])
+	for i in range(1, right.size()):
+		bar.append(right[i])
+	if bar.size() < 2:
+		bar = PackedVector2Array()
+	return [axis, bar, _length(axis) + _length(bar)]
+
+
+func _along(line: PackedVector2Array, distance: float) -> Dictionary:
+	var walked := 0.0
+	for i in range(1, line.size()):
+		var step := line[i - 1].distance_to(line[i])
+		if walked + step >= distance or i == line.size() - 1:
+			var t := 0.0 if step <= 0.001 else clampf((distance - walked) / step, 0.0, 1.0)
+			var dir := (line[i] - line[i - 1]).normalized()
+			if dir == Vector2.ZERO:
+				dir = Vector2.DOWN
+			return {"pos": line[i - 1].lerp(line[i], t), "dir": dir}
+		walked += step
+	return {"pos": line[line.size() - 1], "dir": Vector2.DOWN}
+
+
+## Posune továrnu, cestu a domy do světových souřadnic. Volá se jednou, po plánu.
+func relocate(delta: Vector2) -> void:
+	if delta == Vector2.ZERO or _center == Vector2.INF:
+		return
+	_center += delta
+	for i in _stem.size():
+		_stem[i] += delta
+	for i in _bar.size():
+		_bar[i] += delta
+	for house in _houses:
+		house["pos"] = (house["pos"] as Vector2) + delta
+	for solid in _solids:
+		solid.shift(delta)
+	_seg_a = PackedVector2Array()
+	_seg_b = PackedVector2Array()
+	_seg_cells.clear()
+	_index_road()
+	_measure()
+
+
+func _lay_road(map: MapData, turn: float, rng: RandomNumberGenerator, stem_m: float = -1.0, arm_m: float = -1.0) -> Array:
+	if stem_m < 0.0:
+		stem_m = STEM_M
+	if arm_m < 0.0:
+		arm_m = ARM_M
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var dock: Dictionary = _factory_info.get("dock_px", {})
+	var down := Vector2.DOWN.rotated(turn)
+	var start := _center + down * (float(dock.get("to", 290.0)) - DOCK_TUCK_M * tile)
+	var stem := _arm(map, start, down, stem_m * tile, rng, false) if stem_m > 0.0 else PackedVector2Array()
 	if stem.size() < 2:
 		return [PackedVector2Array(), PackedVector2Array(), 0.0]
+	if arm_m <= 0.0:
+		return [stem, PackedVector2Array(), _length(stem)]
 	var junction := stem[stem.size() - 1]
 	var back := stem[maxi(stem.size() - 1 - int(KNOT_M * tile / SAMPLE_PX), 0)]
 	var across := (junction - back).normalized().orthogonal()
-	var left := _arm(map, junction, -across, ARM_M * tile, rng, true)
-	var right := _arm(map, junction, across, ARM_M * tile, rng, true)
+	var left := _arm(map, junction, -across, arm_m * tile, rng, true)
+	var right := _arm(map, junction, across, arm_m * tile, rng, true)
 	var bar := PackedVector2Array()
 	for i in range(left.size() - 1, -1, -1):
 		bar.append(left[i])
@@ -363,7 +501,7 @@ func _index_road() -> void:
 
 
 ## Domy u cesty z obou stran. Dveře (záporné x obrázku) míří ke cestě.
-func _place_houses(map: MapData, rng: RandomNumberGenerator) -> void:
+func _place_houses(map: MapData, rng: RandomNumberGenerator, houses_min: int = -1, houses_max: int = -1) -> void:
 	if _house_kinds.is_empty() or _palettes.is_empty():
 		return
 	var lines: Array[PackedVector2Array] = []
@@ -378,7 +516,11 @@ func _place_houses(map: MapData, rng: RandomNumberGenerator) -> void:
 	var village := _palettes[rng.randi() % _palettes.size()].duplicate()
 	for part: String in ["roof", "wall", "wood"]:
 		village[part] = _vary(village[part], rng, HOUSE_HUE, HOUSE_SAT, HOUSE_VAL)
-	var want := rng.randi_range(HOUSES_MIN, HOUSES_MAX)
+	var lo := HOUSES_MIN if houses_min < 0 else houses_min
+	var hi := HOUSES_MAX if houses_max < 0 else houses_max
+	if hi <= 0:
+		return
+	var want := rng.randi_range(lo, hi)
 	var guard := want * HOUSE_TRIES
 	while _houses.size() < want and guard > 0:
 		guard -= 1
@@ -731,9 +873,6 @@ func _road_line(points: PackedVector2Array, fade_start: float, fade_end: float) 
 func _spawn_houses(props: Node2D) -> void:
 	if _house_shader == null:
 		return
-	var material := ShaderMaterial.new()
-	material.shader = _house_shader
-	material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
 	for house in _houses:
 		var info := _house_kinds[int(house["kind"])]
 		var node := Node2D.new()
@@ -745,21 +884,25 @@ func _spawn_houses(props: Node2D) -> void:
 		node.z_index = 2
 		props.add_child(node)
 		_house_nodes.append(node)
-		_house_sprite(node, info["wall"], material, 1.0, float(info["wall_height"]), house["colors"])
-		_roofs.append(_house_sprite(node, info["roof"], material, 0.0, float(info["roof_height"]), house["colors"]))
+		_house_sprite(node, info["wall"], 1.0, float(info["wall_height"]), house["colors"])
+		_roofs.append(_house_sprite(node, info["roof"], 0.0, float(info["roof_height"]), house["colors"]))
 
 
-func _house_sprite(node: Node2D, texture: Texture2D, material: ShaderMaterial, slot: float, height: float, colors: Dictionary) -> Sprite2D:
+## Vlastní materiál místo instančních uniforem: těch je na celou hru jen pár tisíc.
+func _house_sprite(node: Node2D, texture: Texture2D, slot: float, height: float, colors: Dictionary) -> Sprite2D:
+	var material := ShaderMaterial.new()
+	material.shader = _house_shader
+	material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
+	material.set_shader_parameter("slot", slot)
+	material.set_shader_parameter("height_m", height)
+	for part: String in ["roof", "wall", "wood", "glass", "opening"]:
+		material.set_shader_parameter(part + "_color", colors[part])
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
 	sprite.centered = true
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	sprite.material = material
 	node.add_child(sprite)
-	sprite.set_instance_shader_parameter("slot", slot)
-	sprite.set_instance_shader_parameter("height_m", height)
-	for part: String in ["roof", "wall", "wood", "glass", "opening"]:
-		sprite.set_instance_shader_parameter(part + "_color", colors[part])
 	return sprite
 
 
@@ -769,7 +912,7 @@ func _fit_roofs() -> void:
 		return
 	var view := _camera.get_viewport_rect().size
 	for roof in _roofs:
-		var height := float(roof.get_instance_shader_parameter("height_m"))
+		var height := float((roof.material as ShaderMaterial).get_shader_parameter("height_m"))
 		RenderingServer.canvas_item_set_custom_rect(roof.get_canvas_item(), true, roof.get_rect().grow(ObjectLayers.vertex_pad(view, height)))
 
 
@@ -852,6 +995,11 @@ class Solid:
 		if dist < 0.001:
 			return near + normals[worst_i] * body
 		return near + delta * (body / dist)
+
+	func shift(delta: Vector2) -> void:
+		for i in points.size():
+			points[i] += delta
+		center += delta
 
 	func rect() -> Rect2:
 		var box := Rect2(points[0], Vector2.ZERO)

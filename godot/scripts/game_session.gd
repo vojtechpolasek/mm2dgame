@@ -25,6 +25,10 @@ const MODES: Array[Dictionary] = [
 		"id": "time_ponds", "title": "Na čas – vybrat jezírka", "goal": "ponds", "timed": true, "bottomless": false,
 		"about": "Každé jezírko má tři kameny. Přines do továrny všechny, než vyprší čas.",
 	},
+	{
+		"id": "world", "title": "Svět", "goal": "ponds", "timed": false, "bottomless": false,
+		"about": "Otevřený svět ze čtverců 96 × 96 m. V každém s továrnou vyber jezírka. U kraje se otevře další krajina.",
+	},
 ]
 ## Typ hry, kterému patří postup z doby před typy hry (progress/unlocked).
 const FIRST_MODE_ID := "time_points"

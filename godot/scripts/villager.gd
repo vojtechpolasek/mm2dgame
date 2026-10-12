@@ -167,7 +167,7 @@ func setup(
 		_gem.scale = Vector2.ONE * GEM_SCALE
 		host.add_child(_gem)
 		_gem_phase = rng.randf() * TAU
-		_gem.set_instance_shader_parameter("alpha", GEM_ALPHA)
+		Crystal.tune(_gem, &"alpha", GEM_ALPHA)
 	_bob = rng.randf() * TAU
 	camera.view_changed.connect(_on_view_changed)
 	_fit(camera.get_viewport_rect().size)
@@ -188,6 +188,13 @@ static func outfit(rng: RandomNumberGenerator, taken: PackedStringArray) -> Dict
 			free = listed
 		colors[part] = str(free[rng.randi() % free.size()])
 	return colors
+
+
+## Kámen nad hlavou visí v hostiteli, ne ve vesničanovi. Zmizí s ním, jinak by ve světě
+## s mnoha čtverci zabral instanční uniformy, kterých je na celou hru jen pár tisíc.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and is_instance_valid(_gem):
+		_gem.queue_free()
 
 
 func _process(delta: float) -> void:
@@ -613,7 +620,7 @@ func _pad_gem() -> void:
 	if _gem == null or _fitted == Vector2.ZERO:
 		return
 	var on := ObjectLayers.shader_needed(_fitted, _camera.zoom.x, GEM_HEIGHT)
-	_gem.set_instance_shader_parameter("height_m", GEM_HEIGHT if on else 0.0)
+	Crystal.tune(_gem, &"height_m", GEM_HEIGHT if on else 0.0)
 	if on:
 		RenderingServer.canvas_item_set_custom_rect(_gem.get_canvas_item(), true, _gem.get_rect().grow(ObjectLayers.vertex_pad(_fitted, GEM_HEIGHT)))
 	else:

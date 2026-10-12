@@ -1,6 +1,9 @@
 shader_type canvas_item;
 render_mode unshaded;
 
+// Každá vrstva postavy má svůj materiál. Instanční uniformy by v renderu Compatibility
+// stačily jen na pár stovek objektů a další by dostaly cizí barvy.
+
 // Stejný posun výšky jako tree_layer.gdshader. Výška 0 drží nohy na zemi.
 uniform float height_m = 0.0;
 global uniform vec2 camera_position;
@@ -12,19 +15,19 @@ global uniform float camera_zoom;
 // Alfa textury je krytí, ne další materiál. Váhy jsou z tools/gen_person.py vynásobené
 // krytím a světlostí: součet vah / krytí = shade_floor + (1 - shade_floor) * světlost.
 // Import proto nesmí mít fix_alpha_border, ten by průhledným okrajům přidal barvu.
-instance uniform float slot = 0.0;
+uniform float slot = 0.0;
 uniform vec2 shade = vec2(0.42, 1.1);
 uniform float shade_floor = 0.2;
 // Lesk ve světlé části objemu: síla a odkud začíná. Působí hlavně na tmavé barvy,
 // černé triko by jinak bylo bez tvaru.
 uniform vec2 sheen = vec2(0.16, 0.7);
-instance uniform vec3 skin_color : source_color = vec3(0.965, 0.804, 0.690);
-instance uniform vec3 hair_color : source_color = vec3(0.361, 0.227, 0.157);
-instance uniform vec3 eye_color : source_color = vec3(0.141, 0.110, 0.102);
-instance uniform vec3 shirt_color : source_color = vec3(0.125, 0.102, 0.094);
-instance uniform vec3 pants_color : source_color = vec3(0.784, 0.294, 0.471);
-instance uniform vec3 shoe_color : source_color = vec3(0.125, 0.110, 0.118);
-instance uniform vec3 lace_color : source_color = vec3(0.690, 0.675, 0.682);
+uniform vec3 skin_color : source_color = vec3(0.965, 0.804, 0.690);
+uniform vec3 hair_color : source_color = vec3(0.361, 0.227, 0.157);
+uniform vec3 eye_color : source_color = vec3(0.141, 0.110, 0.102);
+uniform vec3 shirt_color : source_color = vec3(0.125, 0.102, 0.094);
+uniform vec3 pants_color : source_color = vec3(0.784, 0.294, 0.471);
+uniform vec3 shoe_color : source_color = vec3(0.125, 0.110, 0.118);
+uniform vec3 lace_color : source_color = vec3(0.690, 0.675, 0.682);
 
 void vertex() {
 	if (height_m > 0.0) {

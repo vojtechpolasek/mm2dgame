@@ -34,6 +34,11 @@ var _help_left := 0.0
 
 
 ## Mřížka cest pro tělo postavy. Nesahá na scénu, smí běžet ve vlákně s generováním mapy.
+func set_space(origin: Vector2) -> void:
+	if _nav != null:
+		_nav.set_space(origin)
+
+
 func prepare(walker: Walker, rocks: Rocks, forest: Forest) -> void:
 	if walker.town == null or walker.town.house_count() == 0:
 		return

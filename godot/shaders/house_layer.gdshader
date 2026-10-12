@@ -3,8 +3,9 @@ render_mode unshaded;
 
 // Stejný posun výšky jako tree_layer.gdshader, bez zvětšení. Střecha má zůstat
 // stejně velká jako ve středu záběru, jinak by přerostla stěnu. Stěna má výšku 0.
-// Výška je instanční, ať jeden materiál obslouží všechny velikosti domů.
-instance uniform float height_m = 0.0;
+// Každý dům má své materiály. Instanční uniformy by se ve světě s mnoha čtverci
+// nevešly do bufferu a domy by dostaly cizí barvy.
+uniform float height_m = 0.0;
 global uniform vec2 camera_position;
 uniform float parallax = 0.016;
 global uniform float camera_zoom;
@@ -13,15 +14,15 @@ global uniform float camera_zoom;
 // Alfa je krytí. Váhy jsou z tools/gen_houses.py vynásobené krytím a světlostí:
 // součet vah / krytí = shade_floor + (1 - shade_floor) * světlost.
 // Import proto nesmí mít fix_alpha_border.
-instance uniform float slot = 0.0;
+uniform float slot = 0.0;
 uniform vec2 shade = vec2(0.42, 1.1);
 uniform float shade_floor = 0.2;
 uniform vec2 sheen = vec2(0.16, 0.7);
-instance uniform vec3 roof_color : source_color = vec3(0.769, 0.580, 0.282);
-instance uniform vec3 wall_color : source_color = vec3(0.769, 0.722, 0.635);
-instance uniform vec3 wood_color : source_color = vec3(0.424, 0.282, 0.157);
-instance uniform vec3 glass_color : source_color = vec3(0.588, 0.769, 0.808);
-instance uniform vec3 opening_color : source_color = vec3(0.141, 0.118, 0.102);
+uniform vec3 roof_color : source_color = vec3(0.769, 0.580, 0.282);
+uniform vec3 wall_color : source_color = vec3(0.769, 0.722, 0.635);
+uniform vec3 wood_color : source_color = vec3(0.424, 0.282, 0.157);
+uniform vec3 glass_color : source_color = vec3(0.588, 0.769, 0.808);
+uniform vec3 opening_color : source_color = vec3(0.141, 0.118, 0.102);
 
 void vertex() {
 	if (height_m > 0.0) {

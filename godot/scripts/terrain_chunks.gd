@@ -44,13 +44,20 @@ var _bake_frame := -1
 
 ## corners jsou čtyři bajty rohů na dlaždici z MapGenerator.corner_data. Katalog už má mapu
 ## nastavenou (set_map).
-func setup(catalog: TerrainCatalog, size: int, corners: PackedByteArray, camera: MapCamera) -> void:
+func setup(
+	catalog: TerrainCatalog,
+	size: int,
+	corners: PackedByteArray,
+	camera: MapCamera,
+	bake: ShaderMaterial = null,
+	water: ShaderMaterial = null,
+) -> void:
 	_camera = camera
 	_map_px = size * TerrainCatalog.TILE_SIZE
 	_count = ceili(float(size) / float(TILES))
-	_bake_template = catalog.bake_material
+	_bake_template = catalog.bake_material if bake == null else bake
 	_bake_template.set_shader_parameter("chunk_px", float(_chunk_px))
-	_water = catalog.water_material
+	_water = catalog.water_material if water == null else water
 	_water.set_shader_parameter("chunk_px", float(_chunk_px))
 	_find_water(size, corners, catalog.water_index)
 	_prefill()
@@ -84,7 +91,8 @@ func _find_water(size: int, corners: PackedByteArray, water: int) -> void:
 
 func _refresh() -> void:
 	var size := _camera.get_viewport_rect().size / _camera.zoom
-	var view := Rect2(_camera.get_screen_center_position() - size * 0.5, size)
+	var center := _camera.get_screen_center_position() - global_position
+	var view := Rect2(center - size * 0.5, size)
 	var keep := view.grow(KEEP)
 	for key: Vector2i in _live.keys():
 		if not keep.intersects(_chunk_rect(key)):
@@ -109,7 +117,6 @@ func _refresh() -> void:
 			if not (_live[key] as Sprite2D).visible:
 				_bake(key)
 	if added:
-		var center := view.get_center()
 		_queue.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 			return _chunk_rect(a).get_center().distance_squared_to(center) < _chunk_rect(b).get_center().distance_squared_to(center))
 

@@ -8,6 +8,8 @@ render_mode unshaded;
 
 // Strana textury chunku v pixelech. Posun vlny ve světě se jí přepočte na UV.
 uniform float chunk_px = 512.0;
+// Levý horní roh mapy ve světě. Rohová mapa je v dlaždicích od něj, vlny jedou dál ve světě.
+uniform vec2 map_origin = vec2(0.0);
 
 varying vec2 world_pos;
 
@@ -37,8 +39,8 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 tile = floor(world_pos / tile_size);
-	vec2 local_uv = (world_pos - tile * tile_size) / tile_size;
+	vec2 tile = floor((world_pos - map_origin) / tile_size);
+	vec2 local_uv = (world_pos - map_origin - tile * tile_size) / tile_size;
 	vec4 packed_ids = texture(corner_map, (tile + 0.5) / map_size);
 	float share = share_at(local_uv, packed_ids);
 	vec3 surface = texture(TEXTURE, UV).rgb;

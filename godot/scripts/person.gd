@@ -100,6 +100,11 @@ var _fly_spin := 0.0
 var _fly_age := 0.0
 var _fly_height := 0.0
 var _fly_mat := -1
+## Továrna, do které kámen letí. Přechod na jiný čtverec ji nezmění.
+var _fly_town: Town
+## Čtverec, ve kterém postava bere a odkládá kameny. Nula znamená jednu mapu bez světa.
+var _square_origin := Vector2.ZERO
+var _square_span := 0.0
 
 
 func setup(rocks: Rocks, forest: Forest, town: Town, camera: MapCamera, map: MapData, crystal: Crystal, player: int = 0) -> void:
@@ -312,6 +317,8 @@ func _attach_hand() -> void:
 func _carry(delta: float) -> void:
 	if _flyer != null or _crystal == null or _crystal.count() == 0 or _held == null:
 		return
+	if not _inside_square():
+		return
 	if _held_mat >= 0 and _town != null and _town.touches_factory(position, BODY):
 		_throw()
 		_touch_slot = -1
@@ -433,9 +440,38 @@ func _take(slot: int, mat: int) -> void:
 	Sound.at("sfx/pickup", global_position, -3.0)
 
 
+func leave_square() -> void:
+	if _held_mat >= 0 and _rocks != null:
+		_rocks.return_gem(_held_slot, _held_mat)
+	if _held_mat >= 0:
+		if _held != null:
+			_held.visible = false
+		_held_mat = -1
+		_held_slot = -1
+		_set_hold(false)
+		held_changed.emit(-1)
+	_touch_slot = -1
+	_touch_left = 0.0
+
+
+## Jezírka a továrna čtverce, na který postava právě přišla.
+func use_square(rocks: Rocks, town: Town, origin: Vector2, span: float) -> void:
+	_rocks = rocks
+	_town = town
+	_square_origin = origin
+	_square_span = span
+
+
+func _inside_square() -> bool:
+	if _square_span <= 0.0:
+		return true
+	var local := position - _square_origin
+	return local.x >= 0.0 and local.y >= 0.0 and local.x < _square_span and local.y < _square_span
+
+
 func _throw() -> void:
 	var host := get_parent() as Node2D
-	if host == null or _held == null or _held_mat < 0:
+	if host == null or _held == null or _held_mat < 0 or _town == null or _town.center() == Vector2.INF:
 		return
 	var mat := _held_mat
 	var start := _held.global_position
@@ -454,7 +490,8 @@ func _throw() -> void:
 	var sign := -1.0 if _rng.randf() < 0.5 else 1.0
 	_flyer = flyer
 	_fly_from = flyer.position
-	_fly_to = _town.drop_spot(position, _rng)
+	_fly_town = _town
+	_fly_to = _fly_town.drop_spot(position, _rng)
 	_fly_rot = flyer.rotation
 	_fly_spin = sign * TAU * _rng.randf_range(0.75, 1.6)
 	_fly_age = 0.0
@@ -484,7 +521,9 @@ func _advance_throw(delta: float) -> void:
 	_flyer.visible = false
 	_flyer.queue_free()
 	_flyer = null
-	_town.receive(mat, landed, rot)
+	var town := _fly_town if _fly_town != null else _town
+	if town != null:
+		town.receive(mat, landed, rot)
 
 
 func _set_hold(on: bool) -> void:
@@ -494,7 +533,7 @@ func _set_hold(on: bool) -> void:
 
 func _pad_gem(sprite: Sprite2D, height: float) -> void:
 	var on := height > 0.0 and _fitted != Vector2.ZERO and ObjectLayers.shader_needed(_fitted, _camera.zoom.x, height)
-	sprite.set_instance_shader_parameter("height_m", height if on else 0.0)
+	Crystal.tune(sprite, &"height_m", height if on else 0.0)
 	if on:
 		var rect := sprite.get_rect()
 		RenderingServer.canvas_item_set_custom_rect(sprite.get_canvas_item(), true, rect.grow(ObjectLayers.vertex_pad(_fitted, height)))

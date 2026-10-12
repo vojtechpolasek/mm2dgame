@@ -23,6 +23,10 @@ var _forest: Forest
 var town: Town
 var _map_size := Vector2.ZERO
 var _tiles := 0
+## Světové souřadnice levého horního rohu mapy. Nula je jedna mapa od počátku.
+var space_origin := Vector2.ZERO
+## Když je nastavená, chůze sahá přes víc čtverců. Jinak platí tahle jedna mapa.
+var world_board = null
 var _walkable := PackedByteArray()
 var _terrain := PackedByteArray()
 var _names := PackedStringArray()
@@ -54,10 +58,17 @@ func block_water(grid: AStarGrid2D) -> void:
 
 
 ## Jméno povrchu pod bodem (grass, dirt, ...). Mimo mapu prázdné.
+func set_space(origin: Vector2) -> void:
+	space_origin = origin
+
+
 func surface(pos: Vector2) -> String:
+	if world_board != null:
+		return world_board.surface_at(pos)
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	var x := int(pos.x / tile)
-	var y := int(pos.y / tile)
+	var local := pos - space_origin
+	var x := floori(local.x / tile)
+	var y := floori(local.y / tile)
 	if x < 0 or y < 0 or x >= _tiles or y >= _tiles:
 		return ""
 	return _names[_terrain[y * _tiles + x]]
@@ -71,7 +82,7 @@ func world() -> Vector2:
 ## Odkud se začíná: před výstupkem továrny. Bez továrny střed mapy.
 func home() -> Vector2:
 	var spot := town.home() if town != null else Vector2.INF
-	return _map_size * 0.5 if spot == Vector2.INF else spot
+	return space_origin + _map_size * 0.5 if spot == Vector2.INF else spot
 
 
 ## Krok z from do desired. Když cíl nejde, zkusí klouzat jen po ose x, pak jen po ose y.
@@ -92,6 +103,11 @@ func allowed(from: Vector2, desired: Vector2, body: float, clearance: float, who
 ## Vytlačí bod z překážek a ořízne na mapu. clearance < 0 drží všechno, jinak je tělo ve skoku:
 ## překážky a tvory do výšky clearance metrů přeskočí.
 func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) -> Vector2:
+	if world_board != null:
+		pos = world_board.move_body(pos, body, clearance)
+		if crowd != null and who >= 0:
+			pos = crowd.avoid(pos, body, who, clearance)
+		return pos
 	for _pass in 2:
 		pos = _rocks.avoid(pos, body, clearance)
 		pos = _forest.avoid(pos, body, clearance)
@@ -99,10 +115,22 @@ func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) ->
 			pos = town.avoid(pos, body)
 		if crowd != null and who >= 0:
 			pos = crowd.avoid(pos, body, who, clearance)
-	var limit := _map_size - Vector2(0.001, 0.001)
-	pos.x = clampf(pos.x, 0.0, limit.x)
-	pos.y = clampf(pos.y, 0.0, limit.y)
-	return pos
+	return fit(pos, 0.0)
+
+
+## Drží bod uvnitř mapy. margin je odstup od kraje v pixelech.
+func fit(pos: Vector2, margin: float) -> Vector2:
+	var limit := space_origin + _map_size - Vector2(margin, margin)
+	return Vector2(
+		clampf(pos.x, space_origin.x + margin, limit.x - 0.001),
+		clampf(pos.y, space_origin.y + margin, limit.y - 0.001)
+	)
+
+
+## Leží bod na téhle mapě?
+func contains(pos: Vector2) -> bool:
+	var local := pos - space_origin
+	return local.x >= 0.0 and local.y >= 0.0 and local.x < _map_size.x and local.y < _map_size.y
 
 
 ## Střed i obvod těla musí být na schůdném povrchu. Voda má walkable false.
@@ -116,9 +144,12 @@ func stands(pos: Vector2, body: float) -> bool:
 
 
 func dry(pos: Vector2) -> bool:
+	if world_board != null:
+		return world_board.is_dry(pos)
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	var x := int(pos.x / tile)
-	var y := int(pos.y / tile)
+	var local := pos - space_origin
+	var x := floori(local.x / tile)
+	var y := floori(local.y / tile)
 	if x < 0 or y < 0 or x >= _tiles or y >= _tiles:
 		return false
 	return _walkable[y * _tiles + x] == 1

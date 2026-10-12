@@ -18,6 +18,7 @@ const Party := preload("res://scripts/party.gd")
 const Walker := preload("res://scripts/walker.gd")
 const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
 const PondLabels := preload("res://scripts/pond_labels.gd")
+const WorldBoard := preload("res://scripts/world_board.gd")
 
 ## Další hráči se objeví v kruhu kolem prvního, tak daleko v metrech.
 const SPAWN_RING := 1.5
@@ -76,12 +77,20 @@ var _ticked := -1
 var _chase_hold := 0.0
 ## Kolik sekund ještě druhý stisk Esc nebo Startu opustí hru. 0 je bez prvního stisku.
 var _leave_left := 0.0
+## Otevřený svět. Klasické levely ho nemají a jejich smyčka běží dál sama.
+var _board: WorldBoard
 
 
 func _ready() -> void:
 	# Kamera na skupinu hráčů až po tom, co se postavy v tomhle snímku pohnuly.
 	process_priority = 10
 	await get_tree().process_frame
+	if str(GameSession.rules().get("id", "")) == "world":
+		_board = WorldBoard.new()
+		_board.name = "Board"
+		add_child(_board)
+		_board.start(self)
+		return
 	var catalog := TerrainCatalog.new()
 	catalog.load_assets()
 	if catalog.names.is_empty():
@@ -230,6 +239,11 @@ func _timed() -> bool:
 func _process(delta: float) -> void:
 	fps.text = "%d FPS" % Engine.get_frames_per_second()
 	_leave_left = maxf(_leave_left - delta, 0.0)
+	if _board != null:
+		if _party != null:
+			_party.frame()
+		_board.tick(delta)
+		return
 	if _party != null:
 		_party.frame()
 	if not _playing:
@@ -439,6 +453,8 @@ func _generate(
 func _exit_tree() -> void:
 	get_tree().paused = false
 	Sound.stop_ambient()
+	if _board != null:
+		_board.shutdown()
 	if _task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_task)
 		_task = -1

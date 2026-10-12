@@ -164,14 +164,16 @@ func setup(
 		sprite.vframes = maxi(ceili(float(_frames) / float(columns)), 1)
 		sprite.centered = true
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		sprite.material = shared
+		# Vlastní materiál: instanční uniformy stačí v renderu Compatibility jen na pár stovek objektů.
+		var material := shared.duplicate() as ShaderMaterial
+		sprite.material = material
 		var height := float(layer.get("height", 0.0))
-		sprite.set_instance_shader_parameter("height_m", height)
-		sprite.set_instance_shader_parameter("body_color", colors["body"])
-		sprite.set_instance_shader_parameter("accent_color", colors["accent"])
-		sprite.set_instance_shader_parameter("eye_color", colors["eye"])
+		material.set_shader_parameter("height_m", height)
+		material.set_shader_parameter("body_color", colors["body"])
+		material.set_shader_parameter("accent_color", colors["accent"])
+		material.set_shader_parameter("eye_color", colors["eye"])
 		if bool(layer.get("shadow", false)):
-			sprite.set_instance_shader_parameter("shadow_alpha", shadow_alpha)
+			material.set_shader_parameter("shadow_alpha", shadow_alpha)
 			# Stín leží na zemi pod postavou, i když tvor letí nad vším.
 			sprite.z_as_relative = false
 			sprite.z_index = 0
@@ -250,6 +252,8 @@ func _carrier() -> Person:
 	for person in _persons:
 		if person.carried() != material_index:
 			continue
+		if _walker != null and not _walker.contains(person.position):
+			continue
 		var dist := position.distance_squared_to(person.position)
 		if dist < best_dist:
 			best_dist = dist
@@ -258,6 +262,8 @@ func _carrier() -> Person:
 
 
 func _bite() -> void:
+	if _walker != null and not _walker.contains(_prey.position):
+		return
 	if position.distance_to(_prey.position) <= _touch:
 		_prey.drop_held()
 		_calm_left = CALM_SECONDS
@@ -347,10 +353,8 @@ func _wander(delta: float) -> void:
 func _move(offset: Vector2) -> float:
 	var before := position
 	if _flying:
-		var world := _walker.world()
 		var margin := FLY_MARGIN * float(TerrainCatalog.TILE_SIZE)
-		var next := position + offset
-		position = Vector2(clampf(next.x, margin, world.x - margin), clampf(next.y, margin, world.y - margin))
+		position = _walker.fit(position + offset, margin)
 	elif _escaping or _walker.blocked(position, _body, crowd_id):
 		_escape()
 	else:
@@ -440,14 +444,16 @@ func _pick_target() -> void:
 	_resting = false
 	_stall_time = 0.0
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	var world := _walker.world()
+	# Mapa čtverce ve světě nezačíná v (0, 0), ale v space_origin.
+	var low := _walker.space_origin
+	var high := low + _walker.world()
 	if _flying:
 		var margin := FLY_MARGIN * tile
-		_target = Vector2(_rng.randf_range(margin, world.x - margin), _rng.randf_range(margin, world.y - margin))
+		_target = Vector2(_rng.randf_range(low.x + margin, high.x - margin), _rng.randf_range(low.y + margin, high.y - margin))
 		return
 	for _try in 12:
 		var spot := position + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
-		if spot.x < 0.0 or spot.y < 0.0 or spot.x >= world.x or spot.y >= world.y:
+		if not _walker.contains(spot):
 			continue
 		if not _walker.blocked(spot, _body, crowd_id):
 			_target = spot

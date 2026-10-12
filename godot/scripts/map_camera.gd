@@ -15,6 +15,8 @@ var _zoom_velocity := 0.0
 ## Zoom určuje skupina hráčů (frame). Ladicí zoom na klávesnici se pak nepoužije.
 var _framed := false
 var _map_size := Vector2.ZERO
+## Otevřený svět. Kamera se nedrží v jednom obdélníku a oddálení má strop ZOOM_MIN.
+var _roam := false
 var _published_center := Vector2.INF
 var _published_zoom := 0.0
 var _published_view := Vector2.ZERO
@@ -29,12 +31,22 @@ func setup(map_size: Vector2) -> void:
 	_publish_view()
 
 
+## Svět nemá jeden obdélník. Velikost je jen značka, ať pohled běží, klec mapy se nepoužije.
+func roam() -> void:
+	_roam = true
+	_map_size = Vector2.ONE
+	zoom = Vector2.ONE
+	make_current()
+	_publish_view()
+
+
 func _process(delta: float) -> void:
 	if _map_size == Vector2.ZERO:
 		return
 	if OS.is_debug_build() and not _framed:
 		_apply_zoom(delta)
-	_clamp_position()
+	if not _roam:
+		_clamp_position()
 	_publish_view()
 
 
@@ -44,14 +56,16 @@ func frame(center: Vector2, target_zoom: float) -> void:
 	if _map_size != Vector2.ZERO:
 		zoom = Vector2.ONE * clampf(target_zoom, _min_zoom(), 1.0)
 	position = center
-	_clamp_position()
+	if not _roam:
+		_clamp_position()
 	_publish_view()
 
 
 ## Postava je střed pohledu. U kraje mapy kamera zůstane v mapě, postava pak ze středu obrazovky odejde.
 func follow(target: Vector2) -> void:
 	position = target
-	_clamp_position()
+	if not _roam:
+		_clamp_position()
 	_publish_view()
 
 
@@ -87,6 +101,8 @@ func _apply_zoom(delta: float) -> void:
 
 
 func _min_zoom() -> float:
+	if _roam:
+		return ZOOM_MIN
 	var view := get_viewport_rect().size
 	if _map_size.x <= 0.0 or _map_size.y <= 0.0:
 		return 1.0

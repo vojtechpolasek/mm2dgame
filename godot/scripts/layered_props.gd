@@ -298,10 +298,10 @@ func _scatter(map: MapData, rng: RandomNumberGenerator) -> void:
 				continue
 			var x := index % size
 			var y := index / size
-			var min_x := 0.0 if x > 0 and grows[index - 1] == 1 else 0.45
-			var max_x := 1.0 if x < size - 1 and grows[index + 1] == 1 else 0.55
-			var min_y := 0.0 if y > 0 and grows[index - size] == 1 else 0.45
-			var max_y := 1.0 if y < size - 1 and grows[index + size] == 1 else 0.55
+			var min_x := 0.0 if _side_grows(map, grows, x, y, -1, 0) else 0.45
+			var max_x := 1.0 if _side_grows(map, grows, x, y, 1, 0) else 0.55
+			var min_y := 0.0 if _side_grows(map, grows, x, y, 0, -1) else 0.45
+			var max_y := 1.0 if _side_grows(map, grows, x, y, 0, 1) else 0.55
 			for _attempt in attempts:
 				var pos := Vector2(
 					(float(x) + rng.randf_range(min_x, max_x)) * tile,
@@ -321,8 +321,9 @@ func _crowded(pos: Vector2, kind: int, special: bool) -> bool:
 	var table := _gap_sq_special if special else _gap_sq
 	var row := kind * _kinds.size()
 	var side := grid.side
-	var gx := clampi(int(pos.x / grid.cell), 0, side - 1)
-	var gy := clampi(int(pos.y / grid.cell), 0, side - 1)
+	var at := grid.cell_at(pos)
+	var gx := at.x
+	var gy := at.y
 	for cy in range(maxi(gy - 1, 0), mini(gy + 1, side - 1) + 1):
 		for cx in range(maxi(gx - 1, 0), mini(gx + 1, side - 1) + 1):
 			var item := head[cy * side + cx]
@@ -464,11 +465,31 @@ static func _shuffle(order: PackedInt32Array, rng: RandomNumberGenerator) -> voi
 		order[swap] = saved
 
 
+## Posune rozmístění do světových souřadnic. Mřížka dál hledá podle místa, kde objekt vyrostl.
+func relocate(delta: Vector2) -> void:
+	if delta == Vector2.ZERO or _grid == null:
+		return
+	for i in _pos.size():
+		_pos[i] += delta
+	_grid.origin = delta
+
+
+## Roste porost i na sousední dlaždici? Za krajem světa se bere halo mapy, jinak je tam konec.
+func _side_grows(map: MapData, grows: PackedByteArray, x: int, y: int, dx: int, dy: int) -> bool:
+	var nx := x + dx
+	var ny := y + dy
+	if nx >= 0 and ny >= 0 and nx < map.size and ny < map.size:
+		return grows[ny * map.size + nx] == 1
+	var id := map.outside(x, y, dx, dy)
+	return id >= 0 and id < _grows.size() and _grows[id] == 1
+
+
 ## Mřížka pro hledání sousedů. head drží první objekt v buňce, next další objekt ve stejné buňce.
 ## Buňka je velká jako největší rozestup, takže stačí prohledat ji a osm sousedních.
 class Grid:
 	var cell := 64.0
 	var side := 1
+	var origin := Vector2.ZERO
 	var head := PackedInt32Array()
 	var next := PackedInt32Array()
 
@@ -478,8 +499,16 @@ class Grid:
 		head.resize(side * side)
 		head.fill(-1)
 
+	func cell_at(pos: Vector2) -> Vector2i:
+		var local := pos - origin
+		return Vector2i(
+			clampi(int(local.x / cell), 0, side - 1),
+			clampi(int(local.y / cell), 0, side - 1)
+		)
+
 	func add(index: int, pos: Vector2) -> void:
-		var key := clampi(int(pos.y / cell), 0, side - 1) * side + clampi(int(pos.x / cell), 0, side - 1)
+		var at := cell_at(pos)
+		var key := at.y * side + at.x
 		if index >= next.size():
 			next.resize(index + 1)
 		next[index] = head[key]

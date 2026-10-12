@@ -16,6 +16,14 @@ const CENTER_DRY_MIN := 12.0
 ## Pojistka: voda, která k středu přesto doroste z dálky, se v tomto poloměru v dlaždicích
 ## změní na sousední souš.
 const CENTER_CLEAR := 8.0
+## Čtverec světa navazuje na sousedy: terén z jejich krajní řady doroste do čtverce o 0 až
+## EDGE_WAVE dlaždic dál než nová semínka, náskok se podél kraje vlní s vlnovou délkou EDGE_WAVE_LENGTH.
+const EDGE_WAVE := 8.0
+const EDGE_WAVE_LENGTH := 14.0
+## Nová semínka nejblíž tolik dlaždic od kraje se sousedem.
+const EDGE_MARGIN := 8
+## Na tolik dlaždic od kraje se sousedem slábne šum hranice k nule. Krajní řada tak zůstane sousedova.
+const EDGE_CALM := 5.0
 const SIDES: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const AROUND: Array[Vector2i] = [
 	Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
@@ -26,12 +34,15 @@ const AROUND: Array[Vector2i] = [
 ## Rozdělí mapu mezi náhodné počátky. Každý bere okolní dlaždice, dokud ho nepředběhne jiný terén.
 ## Hranice uhýbá o kus oblasti podle šumu. max_distance omezí terén kolem jeho počátku, v dlaždicích.
 ## max_share je nejvyšší podíl plochy mapy, který smí daný terén zabrat.
+## ring je okolí od sousedních čtverců světa (viz ring_index). Krajní řada souseda je počátkem
+## svého terénu, ten doroste do mapy o 0 až EDGE_WAVE dlaždic dál než nová semínka.
 static func grow(
 	size: int,
 	terrain_names: PackedStringArray,
 	rng: RandomNumberGenerator,
 	max_distance: Dictionary = {},
 	max_share: Dictionary = {},
+	ring: PackedByteArray = PackedByteArray(),
 ) -> MapData:
 	var cell_count := size * size
 	var terrain := PackedByteArray()
@@ -46,19 +57,33 @@ static func grow(
 	for id in terrain_names.size():
 		limits[id] = float(max_distance.get(terrain_names[id], -1.0))
 
-	var seeds := _place_seeds(size, terrain_names, rng)
+	var west := ring_at(ring, size, -1, 0) != MapData.UNCLAIMED_TERRAIN
+	var east := ring_at(ring, size, size, 0) != MapData.UNCLAIMED_TERRAIN
+	var north := ring_at(ring, size, 0, -1) != MapData.UNCLAIMED_TERRAIN
+	var south := ring_at(ring, size, 0, size) != MapData.UNCLAIMED_TERRAIN
+	var bordered := west or east or north or south
+	var lo := Vector2i(EDGE_MARGIN if west else 0, EDGE_MARGIN if north else 0)
+	var hi := Vector2i(size - 1 - (EDGE_MARGIN if east else 0), size - 1 - (EDGE_MARGIN if south else 0))
+	var seeds := _place_seeds(size, terrain_names, rng, lo, hi)
 	# Vlnová délka je zlomek oblasti, ať je ohyb vidět i při maximálním oddálení.
 	var region := float(size) / sqrt(float(maxi(seeds.size(), 1)))
 	var amp := region * WARP
 	var lobe := _noise_field(size, rng.randi(), 2.0 / region)
 	var border := _noise_field(size, rng.randi(), 3.4 / region)
+	# U kraje se sousedem šum slábne, ať krajní řada zůstane sousedova.
+	var calm := _calm_field(size, west, east, north, south) if bordered else PackedFloat32Array()
+	# Nová semínka startují s cenou head. Okraj souseda má náskok 0 až EDGE_WAVE dlaždic.
+	var head := int(EDGE_WAVE * 1000.0) if bordered else 0
+	# Počátek každé dlaždice: číslo semínka. Semínko má polohu a počáteční cenu.
 	var origin := PackedInt32Array()
 	origin.resize(cell_count)
 	origin.fill(-1)
+	var seed_pos := PackedVector2Array()
+	var seed_base := PackedInt32Array()
 	# Fronta po přihrádkách ceny (Dialův algoritmus): přihrádka je široká COST_BUCKET.
 	# V přihrádce je spojový seznam: bucket_head drží první záznam, entry_next další.
-	# Cena je vzdálenost po posunu šumem, nejvýš úhlopříčka mapy plus ten posun.
-	var max_cost := int((float(size) * 1.42 + amp * 3.0) * 1000.0) + COST_BUCKET
+	# Cena je vzdálenost po posunu šumem, nejvýš úhlopříčka mapy plus ten posun a náskok.
+	var max_cost := int((float(size) * 1.42 + amp * 3.0) * 1000.0) + head + COST_BUCKET
 	var bucket_count := max_cost / COST_BUCKET + 2
 	var bucket_head := PackedInt32Array()
 	bucket_head.resize(bucket_count)
@@ -69,12 +94,52 @@ static func grow(
 	for seed in seeds:
 		var index := seed.y * size + seed.x
 		terrain[index] = seed.z
-		cost[index] = 0
-		origin[index] = index
-		entry_next.append(bucket_head[0])
-		bucket_head[0] = entry_cell.size()
+		cost[index] = head
+		origin[index] = seed_pos.size()
+		seed_pos.append(Vector2(float(seed.x), float(seed.y)))
+		seed_base.append(head)
+		var bucket := head / COST_BUCKET
+		entry_next.append(bucket_head[bucket])
+		bucket_head[bucket] = entry_cell.size()
 		entry_cell.append(index)
-		entry_cost.append(0)
+		entry_cost.append(head)
+
+	if bordered:
+		var wave := _edge_noise(rng.randi())
+		for spot in _ring_spots(size):
+			var owner := ring_at(ring, size, spot.x, spot.y)
+			if owner == MapData.UNCLAIMED_TERRAIN or owner >= limits.size():
+				continue
+			var sid := seed_pos.size()
+			var pos := Vector2(float(spot.x), float(spot.y))
+			var base := head - int(_wave_at(wave, spot.z) * 1000.0)
+			seed_pos.append(pos)
+			seed_base.append(base)
+			var limit := limits[owner]
+			# Okraj leží za mapou, do mapy vstoupí přes sousední dlaždice.
+			for neighbor in AROUND:
+				var nx := spot.x + neighbor.x
+				var ny := spot.y + neighbor.y
+				if nx < 0 or ny < 0 or nx >= size or ny >= size:
+					continue
+				var next_index := ny * size + nx
+				if limit >= 0.0 and Vector2(float(nx), float(ny)).distance_squared_to(pos) > limit * limit:
+					continue
+				var shake := amp * calm[next_index]
+				var warped := Vector2(
+					float(nx) + lobe[next_index] * shake,
+					float(ny) + border[next_index] * shake,
+				)
+				var next_cost := base + int(warped.distance_to(pos) * 1000.0)
+				if next_cost < cost[next_index]:
+					cost[next_index] = next_cost
+					terrain[next_index] = owner
+					origin[next_index] = sid
+					var bucket := clampi(next_cost / COST_BUCKET, 0, bucket_count - 1)
+					entry_next.append(bucket_head[bucket])
+					bucket_head[bucket] = entry_cell.size()
+					entry_cell.append(next_index)
+					entry_cost.append(next_cost)
 
 	var current := 0
 	while current < bucket_count:
@@ -90,10 +155,9 @@ static func grow(
 		var y := index / size
 		var owner := terrain[index]
 		var limit := limits[owner]
-		var seed_index := origin[index]
-		var seed_x := seed_index % size
-		var seed_y := seed_index / size
-		var seed_pos := Vector2(float(seed_x), float(seed_y))
+		var sid := origin[index]
+		var seed_at := seed_pos[sid]
+		var base := seed_base[sid]
 		for neighbor in AROUND:
 			var nx := x + neighbor.x
 			var ny := y + neighbor.y
@@ -101,19 +165,20 @@ static func grow(
 				continue
 			var next_index := ny * size + nx
 			if limit >= 0.0:
-				var dx := float(nx - seed_x)
-				var dy := float(ny - seed_y)
+				var dx := float(nx) - seed_at.x
+				var dy := float(ny) - seed_at.y
 				if dx * dx + dy * dy > limit * limit:
 					continue
+			var shake := amp if calm.is_empty() else amp * calm[next_index]
 			var warped := Vector2(
-				float(nx) + lobe[next_index] * amp,
-				float(ny) + border[next_index] * amp,
+				float(nx) + lobe[next_index] * shake,
+				float(ny) + border[next_index] * shake,
 			)
-			var next_cost := int(warped.distance_to(seed_pos) * 1000.0)
+			var next_cost := base + int(warped.distance_to(seed_at) * 1000.0)
 			if next_cost < cost[next_index]:
 				cost[next_index] = next_cost
 				terrain[next_index] = owner
-				origin[next_index] = seed_index
+				origin[next_index] = sid
 				# Bližší než právě zpracovaná přihrádka jde na řadu hned v ní.
 				var bucket := clampi(next_cost / COST_BUCKET, current, bucket_count - 1)
 				entry_next.append(bucket_head[bucket])
@@ -121,21 +186,97 @@ static func grow(
 				entry_cell.append(next_index)
 				entry_cost.append(next_cost)
 
-	_remove_specks(terrain, cost, size)
+	_remove_specks(terrain, cost, size, ring)
 	_fill_gaps(terrain, cost, size, limits, terrain_names.find("grass"))
-	_limit_shares(terrain, cost, size, limits, terrain_names, max_share)
-	_clear_center(terrain, cost, size, terrain_names.find("water"), terrain_names.find("grass"))
+	_limit_shares(terrain, cost, size, limits, terrain_names, max_share, ring)
+	_clear_center(terrain, cost, size, terrain_names.find("water"), terrain_names.find("grass"), CENTER_CLEAR)
 	var map := MapData.new()
 	map.size = size
 	map.names = terrain_names
 	map.terrain = terrain
 	map.cost = cost
+	if bordered:
+		map.halo_w.resize(size)
+		map.halo_e.resize(size)
+		map.halo_n.resize(size)
+		map.halo_s.resize(size)
+		for i in size:
+			map.halo_w[i] = ring_at(ring, size, -1, i)
+			map.halo_e[i] = ring_at(ring, size, size, i)
+			map.halo_n[i] = ring_at(ring, size, i, -1)
+			map.halo_s[i] = ring_at(ring, size, i, size)
 	return map
 
 
+## Okolí čtverce světa: mřížka (size + 2)², kde krajní řady drží terén sousedních čtverců.
+## Dlaždice (x, y) mapy, x i y od -1 do size. Kde soused není, je MapData.UNCLAIMED_TERRAIN.
+static func ring_index(size: int, x: int, y: int) -> int:
+	return (y + 1) * (size + 2) + (x + 1)
+
+
+static func empty_ring(size: int) -> PackedByteArray:
+	var ring := PackedByteArray()
+	ring.resize((size + 2) * (size + 2))
+	ring.fill(MapData.UNCLAIMED_TERRAIN)
+	return ring
+
+
+static func ring_at(ring: PackedByteArray, size: int, x: int, y: int) -> int:
+	if ring.is_empty():
+		return MapData.UNCLAIMED_TERRAIN
+	return ring[ring_index(size, x, y)]
+
+
+## Dlaždice obvodu okolí: x, y a poloha podél kraje pro vlnění. Každý kraj má vlastní úsek šumu.
+static func _ring_spots(size: int) -> Array[Vector3i]:
+	var spots: Array[Vector3i] = []
+	for x in range(-1, size + 1):
+		spots.append(Vector3i(x, -1, x))
+		spots.append(Vector3i(x, size, x + 500))
+	for y in size:
+		spots.append(Vector3i(-1, y, y + 1000))
+		spots.append(Vector3i(size, y, y + 1500))
+	return spots
+
+
+## 0 u kraje se sousedem, 1 od EDGE_CALM dlaždic dál. Kraje bez souseda se nepočítají.
+static func _calm_field(size: int, west: bool, east: bool, north: bool, south: bool) -> PackedFloat32Array:
+	var field := PackedFloat32Array()
+	field.resize(size * size)
+	for y in size:
+		for x in size:
+			var near := EDGE_CALM
+			if west:
+				near = minf(near, float(x + 1))
+			if east:
+				near = minf(near, float(size - x))
+			if north:
+				near = minf(near, float(y + 1))
+			if south:
+				near = minf(near, float(size - y))
+			field[y * size + x] = smoothstep(0.0, 1.0, near / EDGE_CALM)
+	return field
+
+
+static func _edge_noise(seed: int) -> FastNoiseLite:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 1.0 / EDGE_WAVE_LENGTH
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 2
+	return noise
+
+
+## Náskok okraje v dlaždicích, 0 až EDGE_WAVE.
+static func _wave_at(noise: FastNoiseLite, along: int) -> float:
+	return clampf(noise.get_noise_1d(float(along)) * 0.5 + 0.5, 0.0, 1.0) * EDGE_WAVE
+
+
 ## Rohy dlaždic pro shader terénu (RGBA = levý horní, pravý horní, levý dolní, pravý dolní)
-## a náhodná varianta textury každé dlaždice.
-static func corner_data(map: MapData, rng: RandomNumberGenerator, variant_count: int) -> Dictionary:
+## a náhodná varianta textury každé dlaždice. fixed jsou hotové vrcholy (size + 1)², hlavně kraje
+## převzaté od sousedních čtverců, MapData.UNCLAIMED_TERRAIN je volný vrchol. Výsledek vrací i vrcholy.
+static func corner_data(map: MapData, rng: RandomNumberGenerator, variant_count: int, fixed: PackedByteArray = PackedByteArray()) -> Dictionary:
 	var size := map.size
 	var span := size + 1
 	# Vrchol patří dlaždici s nejnižší cenou růstu, tedy té blíž svému počátku.
@@ -143,6 +284,9 @@ static func corner_data(map: MapData, rng: RandomNumberGenerator, variant_count:
 	vertex.resize(span * span)
 	for vy in span:
 		for vx in span:
+			if not fixed.is_empty() and fixed[vy * span + vx] != MapData.UNCLAIMED_TERRAIN:
+				vertex[vy * span + vx] = fixed[vy * span + vx]
+				continue
 			var best_cost := UNCLAIMED
 			var best := 0
 			for cy in range(maxi(vy - 1, 0), mini(vy, size - 1) + 1):
@@ -165,7 +309,7 @@ static func corner_data(map: MapData, rng: RandomNumberGenerator, variant_count:
 			corners[cell * 4 + 2] = vertex[top + span]
 			corners[cell * 4 + 3] = vertex[top + span + 1]
 			variants[cell] = rng.randi_range(0, variant_count - 1)
-	return {"corners": corners, "variants": variants}
+	return {"corners": corners, "variants": variants, "vertex": vertex}
 
 
 static func _noise_field(size: int, seed: int, frequency: float) -> PackedFloat32Array:
@@ -184,7 +328,8 @@ static func _noise_field(size: int, seed: int, frequency: float) -> PackedFloat3
 
 
 ## Osamocená dlaždice uprostřed jiného terénu se přebarví. Jinak by šum dělal tečky.
-static func _remove_specks(terrain: PackedByteArray, cost: PackedInt32Array, size: int) -> void:
+## Dlaždice u kraje, která pokračuje terénem souseda z ring, osamocená není.
+static func _remove_specks(terrain: PackedByteArray, cost: PackedInt32Array, size: int, ring: PackedByteArray = PackedByteArray()) -> void:
 	var around := PackedInt32Array()
 	around.resize(4)
 	var around_cost := PackedInt32Array()
@@ -202,6 +347,9 @@ static func _remove_specks(terrain: PackedByteArray, cost: PackedInt32Array, siz
 					var nx := x + side.x
 					var ny := y + side.y
 					if nx < 0 or ny < 0 or nx >= size or ny >= size:
+						if ring_at(ring, size, nx, ny) == own:
+							lonely = false
+							break
 						continue
 					var nindex := ny * size + nx
 					if terrain[nindex] == own:
@@ -287,6 +435,7 @@ static func _fill_gaps(
 
 ## Terén z max_share nesmí zabrat víc než daný podíl dlaždic.
 ## Přebytek se ubírá od břehu. Větší jezero přijde na řadu dřív než malé.
+## Krajní dlaždice, kterou terén přechází k sousedovi z ring, zůstane, ať na sebe čtverce navazují.
 static func _limit_shares(
 	terrain: PackedByteArray,
 	cost: PackedInt32Array,
@@ -294,6 +443,7 @@ static func _limit_shares(
 	limits: PackedFloat32Array,
 	terrain_names: PackedStringArray,
 	max_share: Dictionary,
+	ring: PackedByteArray = PackedByteArray(),
 ) -> void:
 	for terrain_name in max_share:
 		var id := terrain_names.find(str(terrain_name))
@@ -302,7 +452,7 @@ static func _limit_shares(
 		var share := float(max_share[terrain_name])
 		if share < 0.0 or share >= 1.0:
 			continue
-		_shrink_to_share(terrain, cost, size, limits, id, share, terrain_names.find("grass"))
+		_shrink_to_share(terrain, cost, size, limits, id, share, terrain_names.find("grass"), ring)
 
 
 static func _shrink_to_share(
@@ -313,6 +463,7 @@ static func _shrink_to_share(
 	id: int,
 	share: float,
 	preferred: int,
+	ring: PackedByteArray,
 ) -> void:
 	var cell_count := size * size
 	var budget := floori(float(cell_count) * share)
@@ -324,7 +475,7 @@ static func _shrink_to_share(
 			if terrain[index] != id:
 				continue
 			count += 1
-			if _touches_land(terrain, size, index, id):
+			if _touches_land(terrain, size, index, id, ring):
 				shore.append(index)
 	if count <= budget:
 		return
@@ -337,7 +488,7 @@ static func _shrink_to_share(
 	var fallback := _land_fallback(limits, preferred, id)
 	while count > budget and not heap.is_empty():
 		var index := _heap_pop(heap).y
-		if terrain[index] != id:
+		if terrain[index] != id or _held(ring, size, index, id):
 			continue
 		if _give_to_land(terrain, cost, size, index, id):
 			unresolved.append(index)
@@ -357,7 +508,7 @@ static func _shrink_to_share(
 		for index in cell_count:
 			if count <= budget:
 				break
-			if terrain[index] != id:
+			if terrain[index] != id or _held(ring, size, index, id):
 				continue
 			if _give_to_land(terrain, cost, size, index, id):
 				unresolved.append(index)
@@ -366,21 +517,21 @@ static func _shrink_to_share(
 
 
 ## Okraj mapy se počítá jako břeh, odtud se voda taky smí ubírat.
-## Voda blíž ke středu než CENTER_CLEAR převezme terén sousední souše, od kraje kruhu dovnitř.
+## Voda blíž ke středu než radius převezme terén sousední souše, od kraje kruhu dovnitř.
 ## Kde souš v dosahu není, zůstane tráva.
-static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size: int, liquid: int, fallback: int) -> void:
+static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size: int, liquid: int, fallback: int, radius: float) -> void:
 	if liquid < 0:
 		return
 	var center := Vector2(float(size), float(size)) * 0.5
-	var lo := maxi(int(center.x - CENTER_CLEAR) - 1, 0)
-	var hi := mini(int(center.x + CENTER_CLEAR) + 1, size - 1)
+	var lo := maxi(int(center.x - radius) - 1, 0)
+	var hi := mini(int(center.x + radius) + 1, size - 1)
 	var pending := PackedInt32Array()
 	for y in range(lo, hi + 1):
 		for x in range(lo, hi + 1):
 			var index := y * size + x
 			if terrain[index] != liquid:
 				continue
-			if Vector2(float(x) + 0.5, float(y) + 0.5).distance_to(center) >= CENTER_CLEAR:
+			if Vector2(float(x) + 0.5, float(y) + 0.5).distance_to(center) >= radius:
 				continue
 			terrain[index] = MapData.UNCLAIMED_TERRAIN
 			pending.append(index)
@@ -388,15 +539,40 @@ static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size
 		_resolve_unclaimed(terrain, cost, size, pending, liquid, fallback)
 
 
-static func _touches_land(terrain: PackedByteArray, size: int, index: int, liquid: int) -> bool:
+## Voda v kruhu kolem středu hotové mapy se změní na souš. Pro továrnu ve světě,
+## ať nestojí v jezeře. Kraj mapy se nemění, když je poloměr menší než půlka strany.
+static func clear_disk(map: MapData, radius: float) -> void:
+	_clear_center(map.terrain, map.cost, map.size, map.names.find("water"), map.names.find("grass"), radius)
+
+
+## Za krajem mapy je souš, pokud tam ring nemá stejnou vodu od souseda.
+static func _touches_land(terrain: PackedByteArray, size: int, index: int, liquid: int, ring: PackedByteArray = PackedByteArray()) -> bool:
 	var x := index % size
 	var y := index / size
-	if x == 0 or y == 0 or x == size - 1 or y == size - 1:
-		return true
 	for side in SIDES:
 		var nx := x + side.x
 		var ny := y + side.y
+		if nx < 0 or ny < 0 or nx >= size or ny >= size:
+			if ring_at(ring, size, nx, ny) != liquid:
+				return true
+			continue
 		if terrain[ny * size + nx] != liquid:
+			return true
+	return false
+
+
+## Krajní dlaždice, za kterou má soused v ring stejný terén.
+static func _held(ring: PackedByteArray, size: int, index: int, id: int) -> bool:
+	if ring.is_empty():
+		return false
+	var x := index % size
+	var y := index / size
+	if x > 0 and y > 0 and x < size - 1 and y < size - 1:
+		return false
+	for side in SIDES:
+		var nx := x + side.x
+		var ny := y + side.y
+		if (nx < 0 or ny < 0 or nx >= size or ny >= size) and ring_at(ring, size, nx, ny) == id:
 			return true
 	return false
 
@@ -527,7 +703,8 @@ static func _resolve_unclaimed(
 			cost[index] = 0
 
 
-static func _place_seeds(size: int, terrain_names: PackedStringArray, rng: RandomNumberGenerator) -> Array[Vector3i]:
+## Počátky leží v obdélníku lo až hi včetně. Kraj se sousedem tak zůstane terénu souseda.
+static func _place_seeds(size: int, terrain_names: PackedStringArray, rng: RandomNumberGenerator, lo: Vector2i, hi: Vector2i) -> Array[Vector3i]:
 	var count := mini(maxi(int(round(float(size) / 6.0)), terrain_names.size()), size * size)
 	var spacing := maxi(4, int(float(size) / sqrt(float(count)) * 0.55))
 	var spacing_sq := spacing * spacing
@@ -536,7 +713,7 @@ static func _place_seeds(size: int, terrain_names: PackedStringArray, rng: Rando
 	var guard := 0
 	while points.size() < count and guard < count * 80:
 		guard += 1
-		var point := Vector2i(rng.randi_range(0, size - 1), rng.randi_range(0, size - 1))
+		var point := Vector2i(rng.randi_range(lo.x, hi.x), rng.randi_range(lo.y, hi.y))
 		if occupied.has(point):
 			continue
 		var clear := true
@@ -551,7 +728,7 @@ static func _place_seeds(size: int, terrain_names: PackedStringArray, rng: Rando
 	guard = 0
 	while points.size() < count and guard < size * size:
 		guard += 1
-		var point := Vector2i(rng.randi_range(0, size - 1), rng.randi_range(0, size - 1))
+		var point := Vector2i(rng.randi_range(lo.x, hi.x), rng.randi_range(lo.y, hi.y))
 		if occupied.has(point):
 			continue
 		points.append(point)

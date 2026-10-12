@@ -101,6 +101,10 @@ var _gem_rot := PackedFloat32Array()
 ## Bezedné jezírko má svého materiálu pořád dost. Jinak má kameny jen v _pond_gems a ubývají.
 ## Nastaví svět.
 var bottomless := true
+## Svět pás hor nechce. Jezírka pak smí blíž ke kraji: edge_guard je odstup středu v metrech,
+## záporné nechá dnešní odstup za stěnou.
+var draw_rim := true
+var edge_guard := -1.0
 ## Kameny v jezírku podle pořadí, ve kterém do něj přišly. Bezedné tu má jen kameny vložené
 ## navíc, svůj materiál nepočítá.
 var _pond_gems: Array[PackedInt32Array] = []
@@ -118,7 +122,8 @@ func plant(map: MapData, rng: RandomNumberGenerator) -> void:
 		return
 	_begin_plant(map)
 	_place_ponds(map, rng)
-	_place_rim(map, rng)
+	if draw_rim:
+		_place_rim(map, rng)
 	_scatter(map, rng)
 
 
@@ -225,7 +230,7 @@ func _place_ponds(map: MapData, rng: RandomNumberGenerator) -> void:
 		if want <= 0:
 			continue
 		var mat := _by_points[order]
-		var ring := pond_annulus(band, present, map.size) * tile
+		var ring := pond_annulus(band, present, map.size, edge_guard) * tile
 		_place_ring(map, rng, mat, want, origin, ring.x, ring.y)
 		band += 1
 
@@ -237,7 +242,8 @@ static func pond_gems(_order: int) -> int:
 
 func _pond_cell(x: int, y: int, size: int) -> bool:
 	var edge := mini(mini(x, y), mini(size - 1 - x, size - 1 - y))
-	return float(edge) >= _rim_guard(size)
+	var guard := edge_guard if edge_guard >= 0.0 else _rim_guard(size)
+	return float(edge) >= guard
 
 
 ## Bod rovnoměrně po ploše mezikruží, ne po poloměru, ať se jezírka u vnitřní hrany nehromadí.
@@ -270,8 +276,9 @@ func _near_object(pos: Vector2, gap: float) -> bool:
 	var grid := _grid
 	var span := ceili(gap / grid.cell)
 	var side := grid.side
-	var gx := clampi(int(pos.x / grid.cell), 0, side - 1)
-	var gy := clampi(int(pos.y / grid.cell), 0, side - 1)
+	var at := grid.cell_at(pos)
+	var gx := at.x
+	var gy := at.y
 	for cy in range(maxi(gy - span, 0), mini(gy + span, side - 1) + 1):
 		for cx in range(maxi(gx - span, 0), mini(gx + span, side - 1) + 1):
 			var item := grid.head[cy * side + cx]
@@ -286,8 +293,9 @@ func _near_object(pos: Vector2, gap: float) -> bool:
 ## count je počet materiálů, které na mapě opravdu mají jezírka. Pásy jsou stejně široké
 ## a sousedé se jen dotýkají. Nejběžnější z nich začíná za volným kruhem, nejdražší končí
 ## u pásu skal.
-static func pond_annulus(order: int, count: int, size: int) -> Vector2:
-	var reach := maxf(float(size) * 0.5 - _rim_guard(size), POND_CLEAR)
+static func pond_annulus(order: int, count: int, size: int, guard: float = -1.0) -> Vector2:
+	var inset := guard if guard >= 0.0 else _rim_guard(size)
+	var reach := maxf(float(size) * 0.5 - inset, POND_CLEAR)
 	var bands := maxi(count, 1)
 	var width := (reach - POND_CLEAR) / float(bands)
 	var inner := POND_CLEAR + float(clampi(order, 0, bands - 1)) * width
@@ -421,10 +429,15 @@ func acquire(index: int) -> Node2D:
 	return node
 
 
+## Kameny schovaného jezírka se uvolní. Mají instanční uniformy a těch je na celou hru jen
+## pár tisíc, ve světě s mnoha čtverci by jinak došly. Při acquire je _sync_pond vytvoří znovu.
 func release(index: int, node: Node2D) -> void:
 	var slot := _pond_slot[index] if index < _pond_slot.size() else -1
 	if slot >= 0:
 		_pond_nodes.erase(slot)
+		var holder := node.get_node_or_null("Gems") as Node2D
+		if holder != null:
+			_match_gems(holder, 0)
 	super.release(index, node)
 
 
@@ -719,8 +732,9 @@ func _rim_crowded(pos: Vector2, kind: int, variant: int, turn: float, touch: flo
 	var grid := _grid
 	var span := ceili((_kind_foot[kind] + _foot) * touch / grid.cell)
 	var side := grid.side
-	var gx := clampi(int(pos.x / grid.cell), 0, side - 1)
-	var gy := clampi(int(pos.y / grid.cell), 0, side - 1)
+	var at := grid.cell_at(pos)
+	var gx := at.x
+	var gy := at.y
 	for ring in span + 1:
 		for cy in range(maxi(gy - ring, 0), mini(gy + ring, side - 1) + 1):
 			var edge_row := absi(cy - gy) == ring
@@ -826,8 +840,9 @@ func _push(pos: Vector2, body: float, clearance: float) -> Vector2:
 	var reach := _foot + body
 	var span := ceili(reach / grid.cell)
 	var side := grid.side
-	var gx := clampi(int(pos.x / grid.cell), 0, side - 1)
-	var gy := clampi(int(pos.y / grid.cell), 0, side - 1)
+	var at := grid.cell_at(pos)
+	var gx := at.x
+	var gy := at.y
 	var result := pos
 	for cy in range(maxi(gy - span, 0), mini(gy + span, side - 1) + 1):
 		for cx in range(maxi(gx - span, 0), mini(gx + span, side - 1) + 1):

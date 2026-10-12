@@ -1,23 +1,26 @@
 shader_type canvas_item;
 render_mode unshaded;
 
+// Každý kámen má svůj materiál. Instanční uniformy by v renderu Compatibility
+// stačily jen na pár stovek objektů a další by dostaly cizí barvy.
+
 // Stejný posun výšky jako tree_layer.gdshader. Kámen v ruce je ve výšce těla, na zemi je 0.
-instance uniform float height_m = 0.0;
+uniform float height_m = 0.0;
 // Kámen zasazený do šipky na okraji kotliny posouvá stejně jako okraj: posun se počítá od
 // středu kotliny, který je o anchor_offset pixelů světa za kamenem. Ostatní kameny mají 0.
-instance uniform vec2 anchor_offset = vec2(0.0);
+uniform vec2 anchor_offset = vec2(0.0);
 global uniform vec2 camera_position;
 uniform float parallax = 0.016;
 global uniform float camera_zoom;
 
 // R textury je světlost fasety, G semínko odlesku (jas = fáze bliknutí), B okraj.
 // Alfa je krytí, ne další kanál. Semínko je kolečko, hvězdičku kreslí glint_star.
-instance uniform vec3 gem_color : source_color = vec3(0.77, 0.13, 0.19);
-instance uniform vec3 glint_color : source_color = vec3(1.0, 0.91, 0.88);
-instance uniform float sparkle = 0.65;
-instance uniform float phase = 0.0;
+uniform vec3 gem_color : source_color = vec3(0.77, 0.13, 0.19);
+uniform vec3 glint_color : source_color = vec3(1.0, 0.91, 0.88);
+uniform float sparkle = 0.65;
+uniform float phase = 0.0;
 // Poloprůhledný kámen nad hlavou vesničana. COLOR se tu přepisuje, modulate by se ztratil.
-instance uniform float alpha = 1.0;
+uniform float alpha = 1.0;
 
 // Odlesk jako při focení proti slunci: malé jádro a šest tenkých paprsků.
 // p je v pixelech textury, směr paprsků je vůči obrazovce.

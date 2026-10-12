@@ -16,6 +16,7 @@ const NEAR_CELLS := 3
 
 var _astar := AStarGrid2D.new()
 var _size := 0
+var space_origin := Vector2.ZERO
 
 
 ## clearance je výška, kterou tělo přeskočí. Nižší překážky se neoznačí, cesta vede přes ně.
@@ -49,6 +50,9 @@ func path(from: Vector2, to: Vector2) -> PackedVector2Array:
 	var points := _astar.get_point_path(start, goal, true)
 	if points.size() > 1:
 		points.remove_at(0)
+	if space_origin != Vector2.ZERO:
+		for i in points.size():
+			points[i] += space_origin
 	return points
 
 
@@ -84,9 +88,14 @@ func reaches(from: Vector2, to: Vector2) -> bool:
 	return start == goal or not _astar.get_id_path(start, goal).is_empty()
 
 
+func set_space(origin: Vector2) -> void:
+	space_origin = origin
+
+
 func _cell(pos: Vector2) -> Vector2i:
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	return Vector2i(clampi(int(pos.x / tile), 0, _size - 1), clampi(int(pos.y / tile), 0, _size - 1))
+	var local := pos - space_origin
+	return Vector2i(clampi(floori(local.x / tile), 0, _size - 1), clampi(floori(local.y / tile), 0, _size - 1))
 
 
 func _free_cell(cell: Vector2i) -> Vector2i:

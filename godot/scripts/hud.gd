@@ -49,6 +49,9 @@ var _arrow: FactoryArrow
 var _notice: PanelContainer
 var _notice_text: Label
 var _notice_left := 0.0
+## U kraje čtverce šipka na továrnu bliká.
+var _blink := false
+var _blink_age := 0.0
 var _result: Control
 var _result_title: Label
 var _result_note: Label
@@ -298,11 +301,43 @@ func hide_notice() -> void:
 	_notice_left = 0.0
 
 
+func hide_clock() -> void:
+	_time.visible = false
+	if _record != null:
+		_record.visible = false
+
+
+## Úkol čtverce, na kterém stojí první hráč. total 0 je čtverec bez kamenů.
+func show_square(title: String, delivered: int, total: int) -> void:
+	_level.text = title
+	if total <= 0:
+		_score.text = "—"
+		_unit.text = ""
+		_bar.value = 0
+		return
+	_score.text = "%d / %d" % [delivered, total]
+	_unit.text = str(UNITS["ponds"])
+	_bar.max_value = total
+	_bar.value = mini(delivered, total)
+
+
+func set_edge_blink(on: bool) -> void:
+	_blink = on
+
+
 func _process(delta: float) -> void:
 	if _notice_left > 0.0:
 		_notice_left -= delta
 		if _notice_left <= 0.0:
 			_notice.visible = false
+	if _arrow == null:
+		return
+	if _blink and _arrow.visible:
+		_blink_age += delta
+		var wave := 0.5 + 0.5 * sin(_blink_age * TAU * 2.0)
+		_arrow.modulate.a = lerpf(0.25, 1.0, wave)
+	else:
+		_arrow.modulate.a = 1.0
 
 
 func _build_notice() -> void:

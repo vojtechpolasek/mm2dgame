@@ -25,6 +25,16 @@ var _rock_grid: Grid
 
 ## Rozestup je v metrech a dlaždice je jeden metr. Skály z rocks stromy obcházejí.
 ## Nesahá na scénu, smí běžet ve vlákně.
+func relocate(delta: Vector2) -> void:
+	super.relocate(delta)
+	if delta == Vector2.ZERO:
+		return
+	for i in _rock_pos.size():
+		_rock_pos[i] += delta
+	if _rock_grid != null:
+		_rock_grid.origin = delta
+
+
 func plant(map: MapData, rng: RandomNumberGenerator, rocks: LayeredProps = null) -> void:
 	if _kinds.is_empty():
 		return
@@ -33,7 +43,8 @@ func plant(map: MapData, rng: RandomNumberGenerator, rocks: LayeredProps = null)
 	_rock_pos = PackedVector2Array()
 	_rock_gap = PackedFloat32Array()
 	if rocks != null:
-		_rock_pos = rocks.spot_positions()
+		# Kopie: relocate posouvá vlastní pole. Sdílené by posunulo skály podruhé.
+		_rock_pos = rocks.spot_positions().duplicate()
 		_rock_gap = rocks.spot_gaps()
 	var cell := _grid.cell
 	for gap in _rock_gap:
@@ -130,8 +141,9 @@ func _hits_rock(pos: Vector2, kind: int) -> bool:
 	var next := grid.next
 	var own := _gaps[kind * (_kinds.size() + 1)]
 	var side := grid.side
-	var gx := clampi(int(pos.x / grid.cell), 0, side - 1)
-	var gy := clampi(int(pos.y / grid.cell), 0, side - 1)
+	var at := grid.cell_at(pos)
+	var gx := at.x
+	var gy := at.y
 	for cy in range(maxi(gy - 1, 0), mini(gy + 1, side - 1) + 1):
 		for cx in range(maxi(gx - 1, 0), mini(gx + 1, side - 1) + 1):
 			var item := head[cy * side + cx]
@@ -179,8 +191,9 @@ func _push(pos: Vector2, body: float, clearance: float) -> Vector2:
 	var reach := _solid_reach + body
 	var span := maxi(ceili(reach / grid.cell), 1)
 	var side := grid.side
-	var gx := clampi(int(pos.x / grid.cell), 0, side - 1)
-	var gy := clampi(int(pos.y / grid.cell), 0, side - 1)
+	var at := grid.cell_at(pos)
+	var gx := at.x
+	var gy := at.y
 	var result := pos
 	for cy in range(maxi(gy - span, 0), mini(gy + span, side - 1) + 1):
 		for cx in range(maxi(gx - span, 0), mini(gx + span, side - 1) + 1):

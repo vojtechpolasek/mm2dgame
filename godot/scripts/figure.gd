@@ -11,7 +11,6 @@ const CATALOG := "res://graphics/characters/person/person.json"
 const TINTS: PackedStringArray = ["skin", "hair", "eye", "shirt", "pants", "shoe", "lace"]
 
 static var _info := {}
-static var _materials := {}
 
 var frames := 16
 var atlas_frames := 17
@@ -73,10 +72,10 @@ func build(host: Node2D, walk: bool, cycle_m: float) -> bool:
 		sprite.vframes = maxi(ceili(float(atlas_frames) / float(columns)), 1)
 		sprite.centered = true
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		var material := _material(info, str(key), height)
+		var material := _material(info, height)
+		material.set_shader_parameter("slot", float(layer.get("slot", 0.0)))
 		sprite.material = material
 		_layer_materials.append(material)
-		sprite.set_instance_shader_parameter("slot", float(layer.get("slot", 0.0)))
 		if is_equal_approx(float(layer.get("slot", -1.0)), 1.0):
 			_body = sprite
 			hand_height = height
@@ -115,9 +114,9 @@ static func _catalog() -> Dictionary:
 	return _info
 
 
-static func _material(info: Dictionary, key: String, height: float) -> ShaderMaterial:
-	if _materials.has(key):
-		return _materials[key]
+## Každá vrstva má vlastní materiál s barvami. Instanční uniformy stačí v renderu
+## Compatibility jen na pár stovek objektů.
+static func _material(info: Dictionary, height: float) -> ShaderMaterial:
 	var shader := load(str(info.get("shader", ""))) as Shader
 	if shader == null:
 		push_error("Chybí shader postavy.")
@@ -131,7 +130,6 @@ static func _material(info: Dictionary, key: String, height: float) -> ShaderMat
 	material.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
 	material.set_shader_parameter("shade_floor", float(info.get("shade_floor", 0.2)))
 	material.set_shader_parameter("sheen", Vector2(float(sheen[0]), float(sheen[1])))
-	_materials[key] = material
 	return material
 
 
@@ -145,8 +143,8 @@ func tint(colors: Variant) -> void:
 		if hex.is_empty():
 			continue
 		var color := Color.html(hex)
-		for sprite: Sprite2D in _sprites:
-			sprite.set_instance_shader_parameter("%s_color" % tint_name, color)
+		for material in _layer_materials:
+			material.set_shader_parameter("%s_color" % tint_name, color)
 
 
 func set_frame(index: int) -> void:

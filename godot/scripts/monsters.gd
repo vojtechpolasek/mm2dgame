@@ -145,6 +145,11 @@ func any_chasing_in_view() -> bool:
 
 
 ## Mřížka cest pro tělo a výšku skoku. Létající příšera žádnou nepotřebuje.
+func set_space(origin: Vector2) -> void:
+	for key in _navs:
+		(_navs[key] as NavGrid).set_space(origin)
+
+
 func _nav_for(body: float, jump: float, walker: Walker, rocks: Rocks, forest: Forest) -> NavGrid:
 	var bucket := ceilf(body / NAV_BUCKET) * NAV_BUCKET
 	var key := "%d/%.2f" % [int(bucket), jump]
@@ -159,8 +164,9 @@ func _nav_for(body: float, jump: float, walker: Walker, rocks: Rocks, forest: Fo
 func _spawn_point(walker: Walker, nav: NavGrid, body: float, flying: bool, rng: RandomNumberGenerator) -> Vector2:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var world := walker.world()
-	var center := world * 0.5
-	var outer := minf(center.x - SPAWN_NEAR * tile, SPAWN_REACH * tile)
+	var center := walker.space_origin + world * 0.5
+	var half := world.x * 0.5
+	var outer := minf(half - SPAWN_NEAR * tile, SPAWN_REACH * tile)
 	var inner := maxf(outer - (SPAWN_FAR - SPAWN_NEAR) * tile, tile)
 	var far := (SPAWN_FAR - SPAWN_NEAR) * tile
 	var spot := center

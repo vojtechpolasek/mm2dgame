@@ -39,8 +39,8 @@ func apply(colors: Dictionary) -> void:
 		if hex.is_empty():
 			continue
 		var color := Color.html(hex)
-		for sprite: Sprite2D in _sprites:
-			sprite.set_instance_shader_parameter("%s_color" % tint_name, color)
+		for material in _materials:
+			material.set_shader_parameter("%s_color" % tint_name, color)
 
 
 func _build() -> void:
@@ -85,8 +85,8 @@ func _build() -> void:
 		material.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
 		material.set_shader_parameter("shade_floor", float(info.get("shade_floor", 0.2)))
 		material.set_shader_parameter("sheen", Vector2(float(sheen[0]), float(sheen[1])))
+		material.set_shader_parameter("slot", float(layer.get("slot", 0.0)))
 		sprite.material = material
-		sprite.set_instance_shader_parameter("slot", float(layer.get("slot", 0.0)))
 		add_child(sprite)
 		_sprites.append(sprite)
 		_heights.append(height)

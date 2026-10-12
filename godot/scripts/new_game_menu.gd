@@ -31,21 +31,29 @@ var _next_repeat := 0.0
 
 func _ready() -> void:
 	Sound.play_menu_music()
-	_selected = GameSession.unlocked_level()
 	_mode.text = str(GameSession.rules()["title"])
+	$Center/Panel/Column/Buttons/Back.pressed.connect(_back)
+	$Center/Panel/Column/Buttons/Start.pressed.connect(_choose)
+	if str(GameSession.rules()["id"]) == "world":
+		_selected = 1
+		_list.visible = false
+		_records.visible = false
+		_info.text = "Čtverce 96 × 96 m · bez limitu · úkol v každé továrně"
+		return
+	_selected = GameSession.unlocked_level()
 	for i in AROUND * 2 + 1:
 		var row := Button.new()
 		row.custom_minimum_size = ROW_SIZE
 		row.focus_mode = Control.FOCUS_NONE
 		_list.add_child(row)
 		_rows.append(row)
-	$Center/Panel/Column/Buttons/Back.pressed.connect(_back)
-	$Center/Panel/Column/Buttons/Start.pressed.connect(_choose)
 	_show()
 
 
 ## Nahoru a dolů ze všech ovladačů najednou, s opakováním při podržení.
 func _process(delta: float) -> void:
+	if str(GameSession.rules()["id"]) == "world":
+		return
 	var step := 0
 	for device in Controls.COUNT:
 		var dir := Controls.direction(device)
