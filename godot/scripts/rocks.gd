@@ -917,6 +917,22 @@ func pond_summary(slot: int) -> Array:
 	return out
 
 
+## Jezírka, ve kterých kámen mat právě leží. Bezedné má svůj materiál pořád.
+func ponds_holding(mat: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for slot in _pond_rock.size():
+		if _pond_mat[slot] < 0:
+			continue
+		if (bottomless and _pond_mat[slot] == mat) or _pond_gems[slot].has(mat):
+			out.append(slot)
+	return out
+
+
+## Střed jezírka ve světě.
+func pond_center(slot: int) -> Vector2:
+	return _pos[_pond_rock[slot]]
+
+
 ## Všechny kameny ve všech jezírkách na začátku levelu.
 func gem_total() -> int:
 	return _gem_total

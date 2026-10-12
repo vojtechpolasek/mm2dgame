@@ -12,6 +12,7 @@ const Person := preload("res://scripts/person.gd")
 const Crystal := preload("res://scripts/crystal.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Monsters := preload("res://scripts/monsters.gd")
+const Villagers := preload("res://scripts/villagers.gd")
 const Crowd := preload("res://scripts/crowd.gd")
 const Party := preload("res://scripts/party.gd")
 const Walker := preload("res://scripts/walker.gd")
@@ -123,7 +124,10 @@ func _ready() -> void:
 	monsters.name = "Monsters"
 	add_child(monsters)
 	_monsters = monsters
-	_task = WorkerThreadPool.add_task(_generate.bind(size, catalog, rng, town, rocks, forest, crystal, monsters), true, "Generování mapy")
+	var villagers := Villagers.new()
+	villagers.name = "Villagers"
+	add_child(villagers)
+	_task = WorkerThreadPool.add_task(_generate.bind(size, catalog, rng, town, rocks, forest, crystal, monsters, villagers), true, "Generování mapy")
 	while not WorkerThreadPool.is_task_completed(_task):
 		await get_tree().process_frame
 	WorkerThreadPool.wait_for_task_completion(_task)
@@ -156,6 +160,9 @@ func _ready() -> void:
 	var monster_rng := RandomNumberGenerator.new()
 	monster_rng.randomize()
 	monsters.spawn(rocks.pond_materials(), crystal, _persons[0].walker, rocks, forest, _persons, camera, props, monster_rng)
+	var villager_rng := RandomNumberGenerator.new()
+	villager_rng.randomize()
+	villagers.spawn(town, rocks, crystal, _persons[0].walker, _persons, camera, props, villager_rng)
 	var labels := PondLabels.new()
 	labels.name = "PondLabels"
 	add_child(labels)
@@ -414,6 +421,7 @@ func _generate(
 	forest: Forest,
 	crystal: Crystal,
 	monsters: Monsters,
+	villagers: Villagers,
 ) -> void:
 	var grown := MapGenerator.grow(size, catalog.names, rng, catalog.max_distance, catalog.max_share)
 	grown.surfaces = catalog.surfaces
@@ -424,6 +432,7 @@ func _generate(
 	# Mřížky cest, hranice skal a mapa vody by jinak zasekly hru na konci načítání.
 	var walker := Walker.new(rocks, forest, town, grown)
 	monsters.prepare(rocks.pond_materials(), crystal, walker, rocks, forest)
+	villagers.prepare(walker, rocks, forest)
 	rocks.prepare_bounds(Person.BODY)
 	_build_water_map(grown)
 	map = grown

@@ -16,6 +16,8 @@ instance uniform vec3 gem_color : source_color = vec3(0.77, 0.13, 0.19);
 instance uniform vec3 glint_color : source_color = vec3(1.0, 0.91, 0.88);
 instance uniform float sparkle = 0.65;
 instance uniform float phase = 0.0;
+// Poloprůhledný kámen nad hlavou vesničana. COLOR se tu přepisuje, modulate by se ztratil.
+instance uniform float alpha = 1.0;
 
 // Odlesk jako při focení proti slunci: malé jádro a šest tenkých paprsků.
 // p je v pixelech textury, směr paprsků je vůči obrazovce.
@@ -107,5 +109,5 @@ void fragment() {
 			flash = pow(max(wave, 0.0), 14.0) * glint_star(glint_aim(from_seed, duv_dx, duv_dy, TEXTURE_PIXEL_SIZE)) * sparkle;
 		}
 	}
-	COLOR = vec4(body + glint_color * flash, weight.a);
+	COLOR = vec4(body + glint_color * flash, weight.a * alpha);
 }

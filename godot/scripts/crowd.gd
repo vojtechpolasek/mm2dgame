@@ -1,6 +1,7 @@
 extends RefCounted
 
-## Tvorové, kteří nechodí přes sebe: postava a chodící příšery. Každý je kruh o poloměru těla.
+## Tvorové, kteří nechodí přes sebe: postava, vesničané a chodící příšery. Každý je kruh
+## o poloměru těla. Neviditelný tvor (vesničan v domě) se nepočítá.
 ## Létající se nepočítá, letí nad ostatními. Kdo je ve skoku, přeskočí malého tvora (pavouka,
 ## vlka) a malý tvor podběhne skákajícího.
 ## Člen má metody crowd_body() (poloměr v px), crowd_small(), crowd_airborne() a crowd_flying().
@@ -25,7 +26,7 @@ func avoid(pos: Vector2, body: float, who: int, airborne: bool) -> Vector2:
 		if i == who:
 			continue
 		var other := _members[i]
-		if not is_instance_valid(other) or not other.is_inside_tree() or bool(other.crowd_flying()):
+		if not is_instance_valid(other) or not other.is_inside_tree() or not other.visible or bool(other.crowd_flying()):
 			continue
 		if (airborne or bool(other.crowd_airborne())) and (small or bool(other.crowd_small())):
 			continue

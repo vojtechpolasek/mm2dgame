@@ -529,6 +529,48 @@ func home() -> Vector2:
 	return _center + Vector2.DOWN.rotated(_turn) * (float(dock.get("to", 290.0)) + 2.0 * tile)
 
 
+func house_count() -> int:
+	return _houses.size()
+
+
+## Kde stojí tělo o poloměru body, když vyjde ze dveří domu. Dveře jsou uprostřed stěny
+## u cesty (záporné x domu).
+func door(house: int, body: float) -> Vector2:
+	var info := _house_kinds[int(_houses[house]["kind"])]
+	var out := float(info["width"]) * 0.5 + body + 4.0
+	return Vector2(_houses[house]["pos"]) + Vector2(-out, 0.0).rotated(float(_houses[house]["turn"]))
+
+
+## Směr ze dveří ven, úhel ve světě.
+func door_facing(house: int) -> float:
+	return float(_houses[house]["turn"]) + PI
+
+
+## Náhodné místo na vyšlapaném středu cesty, mimo zprůhledněné konce.
+func road_point(rng: RandomNumberGenerator) -> Vector2:
+	var lines: Array[PackedVector2Array] = []
+	var weights := PackedFloat32Array()
+	for line: PackedVector2Array in [_stem, _bar]:
+		if line.size() >= 2:
+			lines.append(line)
+			weights.append(_length(line))
+	if lines.is_empty():
+		return home()
+	var line := lines[rng.rand_weighted(weights)]
+	var fade := mini(int(FADE_M * float(TerrainCatalog.TILE_SIZE) / SAMPLE_PX), (line.size() - 1) / 2)
+	var at := rng.randi_range(fade, line.size() - 1 - fade)
+	var tangent := (line[mini(at + 1, line.size() - 1)] - line[maxi(at - 1, 0)]).normalized()
+	return line[at] + tangent.orthogonal() * rng.randf_range(-0.5, 0.5) * _core_half
+
+
+## Místo kousek před výstupkem továrny pro tělo o poloměru body, náhodně napříč výstupkem.
+func dock_spot(body: float, rng: RandomNumberGenerator) -> Vector2:
+	var dock: Dictionary = _factory_info.get("dock_px", {})
+	var out := float(dock.get("to", 290.0)) + body + 0.4 * float(TerrainCatalog.TILE_SIZE)
+	var across := rng.randf_range(-1.0, 1.0) * float(dock.get("half", 46.0))
+	return _center + Vector2(across, out).rotated(_turn)
+
+
 ## Smí tu stát strom, skála nebo jezírko o poloměru radius? Ne na cestě a ne u továrny a domů.
 func blocks(pos: Vector2, radius: float) -> bool:
 	if _center == Vector2.INF or not _keep_rect.grow(radius).has_point(pos):
