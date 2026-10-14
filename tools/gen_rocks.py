@@ -150,6 +150,20 @@ ROCKS = {
         "variants": 9,
         "spacing": 1.7,
     },
+    # Důl místo bezedného jezírka, o pětinu větší. Kreslí ho gen_mine.py: vrstva 1 je okraj
+    # na zemi, další jsou pod zemí. color je hlína okraje, wall hornina stěn.
+    "dul": {
+        "mine": True,
+        "layers": 4,
+        "widths": {1: 154, 2: 112, 3: 82, 4: 58},
+        "height": {1: 0.0, 2: -0.6, 3: -1.2, 4: -1.8},
+        "color": "7C6A54",
+        "wall": "6E6860",
+        "rough": 0.12,
+        "pond_ratio": 0.54,
+        "variants": 9,
+        "spacing": 2.0,
+    },
     "kotlina": {
         "layers": 2,
         "widths": {1: 384, 2: 348},
@@ -759,7 +773,29 @@ def stack_layers(
     return image
 
 
+def check_mine(name: str, preset: dict) -> int:
+    """Důl má okraj ve výšce 0 a pod ním vrstvy čím dál hlubší a užší."""
+    layers = int(preset["layers"])
+    if not 2 <= layers <= 4:
+        raise SystemExit(f"{name}: důl má mít 2 až 4 vrstvy")
+    if float(preset["height"][1]) != 0.0:
+        raise SystemExit(f"{name}: okraj dolu má výšku 0")
+    for layer in range(2, layers + 1):
+        if float(preset["height"][layer]) >= float(preset["height"][layer - 1]):
+            raise SystemExit(f"{name}: vrstva {layer} má být hlouběji než {layer - 1}")
+        if float(preset["widths"][layer]) >= float(preset["widths"][layer - 1]):
+            raise SystemExit(f"{name}: vrstva {layer} má být užší než {layer - 1}")
+    ratio = float(preset.get("pond_ratio", 0))
+    if not 0.2 <= ratio <= 0.7:
+        raise SystemExit(f"{name}: pond_ratio má být mezi 0.2 a 0.7")
+    parse_hex(preset["color"])
+    parse_hex(preset["wall"])
+    return layers
+
+
 def check_preset(name: str, preset: dict) -> int:
+    if preset.get("mine"):
+        return check_mine(name, preset)
     layers = int(preset["layers"])
     if not 1 <= layers <= 4:
         raise SystemExit(f"{name}: vrstvy mají být 1 až 4")
@@ -811,7 +847,12 @@ def rock_info(rocks: dict) -> dict:
     for name, preset in rocks.items():
         check_preset(name, preset)
         layers = int(preset["layers"])
-        drawn = canvas_size(preset)
+        if preset.get("mine"):
+            from gen_mine import canvas_size as mine_canvas
+
+            drawn = mine_canvas(preset)
+        else:
+            drawn = canvas_size(preset)
         layer_cells = {
             layer: atlas_cell(OUT_DIR / name / f"layer_{layer}.png", ATLAS_COLUMNS) or drawn
             for layer in range(1, layers + 1)
@@ -835,7 +876,11 @@ def rock_info(rocks: dict) -> dict:
             },
             "spacing": float(preset["spacing"]),
         }
-        if preset.get("round"):
+        if preset.get("mine"):
+            catalog[name]["mine"] = True
+            catalog[name]["wall"] = preset["wall"]
+            catalog[name]["mouth"] = round(float(preset["widths"][1]) * 0.5 * float(preset["pond_ratio"]), 1)
+        elif preset.get("round"):
             mouth = float(preset["widths"][layers]) * 0.5 * float(preset["pond_ratio"])
             if preset.get("dry"):
                 mouth *= 0.9
@@ -906,11 +951,18 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
     check_preset(name, preset)
     count = int(preset.get("variants", 9) if variants is None else variants)
     layers = int(preset["layers"])
-    size = canvas_size(preset)
-    color = parse_hex(preset["color"])
     out = OUT_DIR / name
     clean_output(out)
     out.mkdir(parents=True, exist_ok=True)
+    if preset.get("mine"):
+        from gen_mine import generate_mine
+
+        saved = generate_mine(name, preset, out, PREVIEW, seed, count)
+        print(f"{count} variant dolu, buňky {min(saved)}–{max(saved)} -> {out}")
+        print(PREVIEW / f"{name}.png")
+        return out
+    size = canvas_size(preset)
+    color = parse_hex(preset["color"])
 
     heights = {layer: float(preset["height"][layer]) for layer in range(1, layers + 1)}
     composites: list[Image.Image] = []

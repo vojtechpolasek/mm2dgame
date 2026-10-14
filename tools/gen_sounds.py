@@ -8,7 +8,9 @@ basin/    dopad kamene do kotliny podle materiálu (jména z gen_crystal.MATERIA
           tupě žuchne, s cenou přibývá výšky a zvonění, nejdražší cinkne.
 monsters/ kroky příšer (had šustí, pavouk cupitá, vlk tlapky, tyranosaurus duní, ptakoještěr mává
           křídly) a zařvání každého druhu, když začne honit.
-sfx/      sebrání kamene, krádež příšerou, skok a dopad.
+sfx/      sebrání kamene, krádež příšerou, skok a dopad. Továrna v typu hry Skafandry:
+          drcení kamenů celou továrnou (crush), jedním zásobníkem (crush_short)
+          a vítr, který po drcení zafouká (wind).
 ui/       menu: posun, potvrzení, zpět, připojení a odpojení hráče, start, výhra, prohra,
           tikání posledních sekund.
 music/    game_1..4 hudby do hry (dur, bez výrazné melodie), chase_1..4 hudby při honičce
@@ -16,6 +18,7 @@ music/    game_1..4 hudby do hry (dur, bez výrazné melodie), chase_1..4 hudby 
           se přičte na začátek. Hudba a voda jsou OGG Vorbis, ostatní WAV.
 
   py tools/gen_sounds.py
+  py tools/gen_sounds.py sfx/crush sfx/wind   jen vybrané zvuky ze sfx
 """
 
 from __future__ import annotations
@@ -787,11 +790,67 @@ def sfx(name: str) -> np.ndarray:
         t = np.arange(length) / RATE
         out = band(noise(rng, length), 600, 3000) * np.interp(t, [0.0, 0.05, 0.25], [0.0, 1.0, 0.0])
         return fade(normalize(out, 0.3), 0.002, 0.05)
+    if name == "crush":
+        return crush(4.6, 21)
+    if name == "crush_short":
+        return crush(2.4, 23)
+    if name == "wind":
+        return wind()
     if name == "land":
         length = seconds(0.3)
         out = thump(rng, length, 220, 0.05) + band(noise(rng, length), 600, 2500) * envelope(length, 0.002, 0.02) * 0.3
         return fade(normalize(out, 0.45), 0.002, 0.04)
     return np.zeros(1)
+
+
+def crush(length_s: float, seed: int) -> np.ndarray:
+    """Továrna drtí kameny: motor se rozjede, válce melou a kameny praskají a bouchají,
+    nakonec motor doběhne. Dozvuk jako ve velké kovové hale."""
+    rng = np.random.default_rng(seed)
+    length = seconds(length_s)
+    t = np.arange(length) / RATE
+    run = np.interp(t, [0.0, 0.45, length_s - 0.7, length_s], [0.0, 1.0, 1.0, 0.0])
+    # Motor: nízký bzukot, který s rozjezdem stoupne a s doběhem klesne.
+    speed = 0.6 + 0.4 * run
+    phase = 2 * math.pi * np.cumsum(46.0 * speed) / RATE
+    motor = (np.sin(phase) + 0.5 * np.sin(2 * phase) + 0.25 * np.sin(3 * phase + 0.4)) * 0.35
+    motor = lowpass(motor, 380, 2) * run
+    # Mletí: pásmový šum, který se v rytmu válců zhoustne.
+    grind = band(noise(rng, length), 180, 1600) * (0.6 + 0.4 * np.sin(2 * math.pi * 3.1 * t) ** 2)
+    out = motor + grind * run * 0.55
+    # Kameny praskají a bouchají nepravidelně, nejvíc uprostřed.
+    at = 0.35
+    while at < length_s - 0.6:
+        size = seconds(rng.uniform(0.05, 0.16))
+        hit = thump(rng, size, rng.uniform(260, 700), rng.uniform(0.02, 0.05))
+        hit += band(noise(rng, size), 900, 4200) * envelope(size, 0.001, rng.uniform(0.006, 0.02)) * rng.uniform(0.3, 0.8)
+        place(out, hit, at, rng.uniform(0.5, 1.0) * float(np.interp(at, t, run)))
+        at += rng.uniform(0.04, 0.17)
+    # Občas cinkne kov o kov.
+    for _ in range(int(length_s * 1.4)):
+        size = seconds(0.35)
+        clank = tone(rng.uniform(700, 1300), 0.25, "bell", 0.25)[:size]
+        place(out, clank, rng.uniform(0.4, length_s - 0.8), rng.uniform(0.15, 0.3))
+    return fade(normalize(reverb(out, 1.3, 0.22), 0.8), 0.01, 0.4)
+
+
+def wind(length_s: float = 4.2, seed: int = 61) -> np.ndarray:
+    """Po drcení se zvedne vítr: šum, kterému se pomalu posouvá výška, a tiché hvízdání.
+    Zesílí, chvíli fouká a utichne."""
+    rng = np.random.default_rng(seed)
+    length = seconds(length_s)
+    t = np.arange(length) / RATE
+    swell = np.interp(t, [0.0, 1.2, length_s - 1.6, length_s], [0.0, 1.0, 0.85, 0.0])
+    gust = 0.7 + 0.3 * np.sin(2 * math.pi * 0.45 * t + 0.6) * np.sin(2 * math.pi * 0.23 * t)
+    out = np.zeros(length)
+    # Několik pásem, každé se pomalu vlní jinak. Dohromady šum mění barvu jako poryvy.
+    for low, high, rate, phase in ((250, 700, 0.31, 0.0), (500, 1400, 0.47, 1.3), (900, 2600, 0.23, 2.1)):
+        part = band(noise(rng, length), low, high)
+        part *= 0.55 + 0.45 * np.sin(2 * math.pi * rate * t + phase)
+        out += part
+    whistle = np.sin(sweep(length, 620, 880, 0.8) + 0.8 * np.sin(2 * math.pi * 0.7 * t)) * 0.05
+    out = (out + whistle) * swell * gust
+    return fade(normalize(reverb(out, 1.6, 0.3), 0.7), 0.05, 0.6)
 
 
 def ui(name: str) -> np.ndarray:
@@ -832,7 +891,19 @@ def ui(name: str) -> np.ndarray:
     return np.zeros(1)
 
 
+SFX = ("pickup", "steal", "jump", "land", "crush", "crush_short", "wind")
+
+
 def main() -> None:
+    import sys
+
+    only = [arg.removeprefix("sfx/") for arg in sys.argv[1:]]
+    if only:
+        for name in only:
+            if name not in SFX:
+                raise SystemExit(f"neznámý zvuk sfx/{name}")
+            print(write(f"sfx/{name}", sfx(name)).relative_to(ROOT))
+        return
     written: list[Path] = []
     for surface in ("grass", "dirt", "desert", "snow"):
         for variant in range(4):
@@ -845,7 +916,7 @@ def main() -> None:
         for variant in range(3):
             written.append(write(f"monsters/{kind}_step_{variant + 1}", monster_step(kind, 40 + variant * 11 + len(kind))))
         written.append(write(f"monsters/{kind}_roar", roar(kind)))
-    for name in ("pickup", "steal", "jump", "land"):
+    for name in SFX:
         written.append(write(f"sfx/{name}", sfx(name)))
     for name in ("move", "select", "back", "join", "leave", "start", "win", "lose", "tick"):
         written.append(write(f"ui/{name}", ui(name)))

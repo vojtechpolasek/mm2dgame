@@ -15,6 +15,7 @@ const MapData := preload("res://scripts/map_data.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Crystal := preload("res://scripts/crystal.gd")
 const Factory := preload("res://scripts/factory.gd")
+const SuitFactory := preload("res://scripts/suit_factory.gd")
 
 ## Kámen dojel v továrně pod mezikruží a započítal se. pos je místo ve světě.
 signal settled(mat: int, pos: Vector2)
@@ -71,8 +72,13 @@ const TOUCH_PX := 2.0
 ## Buňka mřížky úseků cesty v pixelech.
 const SEG_CELL := 128.0
 
+## Typ hry Skafandry: zásobníky továrny, dvojice [materiál, počet], a recept skafandru.
+## Nastaví svět před spawn, prázdný plán postaví obyčejnou továrnu s pásy.
+var suit_plan: Array = []
+var suit_recipe := PackedInt32Array()
 var _factory_info := {}
 var _factory_base: Texture2D
+var _factory_suits: Texture2D
 var _factory_ring: Texture2D
 var _factory_shader: Shader
 ## Vzory cest: textura a šířka plné cesty v px.
@@ -119,6 +125,9 @@ func load_assets() -> bool:
 	_factory_base = _texture("%s/%s" % [root, str((layers.get("base", {}) as Dictionary).get("file", "base.png"))])
 	_factory_ring = _texture("%s/%s" % [root, str((layers.get("ring", {}) as Dictionary).get("file", "ring.png"))])
 	_factory_shader = load(str(_factory_info.get("shader", ""))) as Shader
+	var suits: Dictionary = _factory_info.get("suits", {})
+	if suits.has("file"):
+		_factory_suits = _texture("%s/%s" % [root, str(suits["file"])])
 	if _factory_base == null or _factory_ring == null or _factory_shader == null:
 		push_error("Chybí grafika továrny.")
 		_factory_info = {}
@@ -813,12 +822,15 @@ func spawn(camera: MapCamera, road: Node2D, props: Node2D, crystal: Crystal) -> 
 			road.add_child(_road_line(_stem, 0.0, FADE_M * tile))
 		if _bar.size() >= 2:
 			road.add_child(_road_line(_bar, FADE_M * tile, FADE_M * tile))
-	_factory = Factory.new()
+	var suits := not suit_plan.is_empty() and _factory_suits != null
+	_factory = SuitFactory.new() if suits else Factory.new()
 	_factory.name = "Factory"
 	_factory.position = _center
 	_factory.rotation = _turn
 	props.add_child(_factory)
-	_factory.setup(_factory_info, _factory_base, _factory_ring, _factory_shader, crystal, camera)
+	_factory.setup(_factory_info, _factory_suits if suits else _factory_base, _factory_ring, _factory_shader, crystal, camera)
+	if suits:
+		(_factory as SuitFactory).configure(_factory_info, suit_plan, suit_recipe, hash(_center))
 	_factory.counted.connect(func(mat: int, pos: Vector2) -> void: settled.emit(mat, pos))
 	_spawn_houses(props)
 	camera.view_changed.connect(_fit_roofs)
@@ -832,14 +844,40 @@ func drop_spot(from: Vector2, rng: RandomNumberGenerator) -> Vector2:
 	return _factory.belt_drop(from, rng)
 
 
-## Kámen dopadl na pás. Ozve se hned, započítá se, až dojede pod mezikruží.
-func receive(mat: int, world: Vector2, rot: float) -> void:
+## Kámen dopadl na pás. Ozve se hned, započítá se, až dojede pod mezikruží. lane je zásobník
+## továrny typu Skafandry, -1 obyčejný pás.
+func receive(mat: int, world: Vector2, rot: float, lane: int = -1) -> void:
 	if _factory == null:
 		settled.emit(mat, world)
 		return
 	if _crystal != null:
 		Sound.at("basin/" + _crystal.name_of(mat), world)
+	if lane >= 0 and suit_factory() != null:
+		suit_factory().receive_lane(lane, mat, world, rot)
+		return
 	_factory.receive(mat, world, rot)
+
+
+## Továrna typu Skafandry, jinak null.
+func suit_factory() -> SuitFactory:
+	return _factory as SuitFactory
+
+
+## Zásobník továrny Skafandrů, kam postava u from hodí kámen mat. Místo v něm zabere.
+## -1 když tu žádný kámen mat nechce, nebo továrna zásobníky nemá.
+func claim_lane(from: Vector2, mat: int) -> int:
+	var suits := suit_factory()
+	if suits == null:
+		return -1
+	var lane := suits.lane_for(from, mat)
+	if lane >= 0:
+		suits.claim(lane, mat)
+	return lane
+
+
+## Kam dopadne kámen hozený do zásobníku lane.
+func lane_drop(lane: int, rng: RandomNumberGenerator) -> Vector2:
+	return suit_factory().lane_drop(lane, rng) if suit_factory() != null else _center
 
 
 ## Pás vzoru po křivce. Vzor se opakuje po délce, šířka obrázku jde napříč. Začátek a konec

@@ -34,6 +34,8 @@ const NAV_BUCKET := 8.0
 var _textures := {}
 ## Všechny příšery levelu.
 var members: Array[Monster] = []
+## Vesničané, kteří nesou kámen. Příšery je honí jako hráče, pole sdílejí všechny.
+var carriers: Array = []
 var _navs := {}
 var _catalog := {}
 
@@ -122,6 +124,7 @@ func spawn(
 		var nav: NavGrid = null if flying else _nav_for(body, jump, walker, rocks, forest)
 		var at := _spawn_point(walker, nav, body, flying, rng)
 		monster.setup(info, textures, shared, colors, speed, shadow_alpha, walker, nav, persons, camera, rng, at)
+		monster.carriers = carriers
 		members.append(monster)
 		if not flying and walker.crowd != null:
 			monster.crowd_id = walker.crowd.join(monster)

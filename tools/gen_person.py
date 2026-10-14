@@ -34,6 +34,10 @@ Třetí set je chůze vesničanů, layer_N_walk.png: kratší krok, chodidla sko
 u země, ruce jen lehce pokrčené, menší natáčení ramen a hlava rovně nad tělem.
 Snímek stání je stejný jako u běhu, jen hlava je rovně.
 
+Dýchací přístroj je překryv, gear_body.png nad tělem a gear_head.png nad hlavou, pro chůzi
+gear_*_walk.png. Stejné snímky jako postava, váhy R láhve, G kov a hadice, B náústek.
+Prázdný skafandr na zemi (gear_item.png) je jeden obrázek se stejnými kanály.
+
   py tools/gen_person.py
 """
 
@@ -164,6 +168,41 @@ EAR_R = 3.2
 HAIR_SHIFT = 5.0
 HAIR_RY = 9.0
 EYE_SPOT = ((4.2, -5.0), (2.2, 1.7))
+
+
+# Dýchací přístroj: překryvné atlasy nad tělem a nad hlavou se stejnými snímky jako postava.
+# Váhy: R láhve, G kov a hadice, B náústek. Láhve stojí na zádech, shora jsou vidět jejich
+# víčka s ventily ve výšce GEAR_BODY_HEIGHT. Hadice vede od levé láhve přes levé rameno
+# (pravá ruka se natahuje pro kámen) kolem tváře k náústku před pusou.
+TANK = (214, 218, 222)
+HOSE = (74, 78, 84)
+MOUTH = (44, 47, 51)
+GEAR_TINT = (TANK, HOSE, MOUTH)
+GEAR_SLOT = 3.0
+GEAR_CHANNELS = ["tank", "hose", "mouth"]
+GEAR_TANK, GEAR_HOSE, GEAR_MOUTH = 0, 1, 2
+GEAR_BODY_HEIGHT = 1.4
+# Klíč vrstvy postavy, nad kterou překryv leží, a jeho výška.
+GEAR_LAYERS = {2: GEAR_BODY_HEIGHT, 3: LAYERS[3]["height"]}
+GEAR_FILES = {2: "gear_body.png", 3: "gear_head.png"}
+GEAR_WALK_FILES = {2: "gear_body_walk.png", 3: "gear_head_walk.png"}
+# Středy láhví od středu trupu a jejich poloměr. Záda trupu jsou na y = 12.
+TANK_AT = (5.4, 13.5)
+TANK_R = 5.2
+VALVE_R = 1.7
+HOSE_R = 1.25
+# Hadice na těle končí kousek pod hlavou, hadice na hlavě začíná ještě níž. Vrstvy se při
+# posunu kamery rozjedou o pár px, takže se kousky musí překrývat.
+HOSE_BODY = ((-TANK_AT[0], TANK_AT[1] - 0.5), (-12.5, 9.0), (-11.2, -3.0))
+HOSE_HEAD_START = (-10.8, 4.0)
+# Náústek před pusou: posun od předního okraje hlavy a poloosy.
+MOUTH_AHEAD = 0.6
+MOUTH_R = (3.6, 2.0)
+# Prázdný skafandr jako předmět: láhve leží na zemi vedle sebe, přes ně dva řemeny,
+# od ventilu vede stočená hadice k náústku. Délka láhve a řemenů od středu v px.
+ITEM_FILE = "gear_item.png"
+ITEM_TANK = 13.0
+ITEM_STRAPS = (-5.5, 6.0)
 
 
 @dataclass(frozen=True)
@@ -360,6 +399,64 @@ def render_weights(frame: int, hold: bool = False, gait: Gait = RUN) -> dict[int
     return {1: legs, 2: body, 3: head}
 
 
+def bezier(points: tuple[Point, Point, Point], steps: int = 12) -> list[Point]:
+    a, b, c = points
+    out = []
+    for step in range(steps + 1):
+        t = step / steps
+        out.append(lerp(lerp(a, b, t), lerp(b, c, t), t))
+    return out
+
+
+def stamp_hose(weights: Weights, points: list[Point]) -> None:
+    for start, end in zip(points, points[1:]):
+        weights.stamp(GEAR_HOSE, capsule(start, end, HOSE_R), LIMB_EDGE)
+
+
+def render_gear(frame: int, gait: Gait = RUN) -> dict[int, Weights]:
+    """Dýchací přístroj pro snímek. Láhve se natáčejí s rameny, náústek se kývá s hlavou.
+    Úchop na přístroj nemá vliv, ruce zůstávají pod ním i vedle něj."""
+    pose = Pose(frame, False, gait)
+    body, head = Weights(), Weights()
+    valves = [turn((side * TANK_AT[0], TANK_AT[1]), TORSO, pose.twist) for side in (-1.0, 1.0)]
+    for valve in valves:
+        body.stamp(GEAR_TANK, ellipse(valve, (TANK_R, TANK_R)), DOME_EDGE)
+    body.stamp(GEAR_HOSE, capsule(valves[0], valves[1], 0.9), SMALL_EDGE)
+    for valve in valves:
+        body.stamp(GEAR_HOSE, ellipse(valve, (VALVE_R, VALVE_R)), SMALL_EDGE)
+    path = tuple(turn(point, TORSO, pose.twist) for point in HOSE_BODY)
+    stamp_hose(body, bezier(path))
+
+    hx, hy = pose.head
+    mouth = (hx, hy - HEAD_R - MOUTH_AHEAD)
+    start = turn(HOSE_HEAD_START, TORSO, pose.twist)
+    stamp_hose(head, bezier((start, (hx - HEAD_R - 3.0, hy - 4.0), (hx - MOUTH_R[0] + 0.5, mouth[1] + 0.3))))
+    head.stamp(GEAR_MOUTH, ellipse(mouth, MOUTH_R), SMALL_EDGE)
+    head.stamp(GEAR_HOSE, ellipse((hx, mouth[1] - 0.4), (1.8, 0.7)))
+    return {2: body, 3: head}
+
+
+def render_gear_item() -> Weights:
+    """Prázdný skafandr ležící na zemi, shora. Stejné kanály jako přístroj."""
+    item = Weights()
+    tops = []
+    for side in (-1.0, 1.0):
+        x = side * TANK_AT[0]
+        item.stamp(GEAR_TANK, capsule((x, -ITEM_TANK + TANK_R), (x, ITEM_TANK - TANK_R), TANK_R), DOME_EDGE)
+        tops.append((x, -ITEM_TANK))
+    for y in ITEM_STRAPS:
+        outer = ellipse((0.0, y), (TANK_AT[0] + TANK_R + 2.2, 2.6))
+        inner = ellipse((0.0, y), (TANK_AT[0] + TANK_R + 0.6, 1.2))
+        item.stamp(GEAR_HOSE, np.where(inner <= 1.0, 2.0, outer), SMALL_EDGE)
+    item.stamp(GEAR_HOSE, capsule(tops[0], tops[1], 0.9), SMALL_EDGE)
+    for top in tops:
+        item.stamp(GEAR_HOSE, ellipse(top, (VALVE_R, VALVE_R)), SMALL_EDGE)
+    mouth = (-TANK_AT[0] - TANK_R - 8.0, 6.0)
+    stamp_hose(item, bezier((tops[0], (-TANK_AT[0] - TANK_R - 14.0, -16.0), (mouth[0] + 1.0, mouth[1] - MOUTH_R[1]))))
+    item.stamp(GEAR_MOUTH, ellipse(mouth, (MOUTH_R[1], MOUTH_R[0])), SMALL_EDGE)
+    return item
+
+
 def downscale(values: np.ndarray) -> np.ndarray:
     return values.reshape(CELL, SS, CELL, SS).mean(axis=(1, 3))
 
@@ -404,13 +501,13 @@ def shadow() -> Image.Image:
 SHADOW = shadow()
 
 
-def compose(layers: dict[int, Image.Image], shift: Point = (0.0, 0.0)) -> Image.Image:
+def compose(stack: list[tuple[float, Image.Image]], shift: Point = (0.0, 0.0)) -> Image.Image:
+    """Vrstvy v pořadí kreslení, každá se svou výškou."""
     image = blank(CELL)
     image.alpha_composite(SHADOW)
-    for key in sorted(layers):
-        height = LAYERS[key]["height"]
+    for height, layer in stack:
         placed = blank(CELL)
-        placed.paste(layers[key], (round(shift[0] * height), round(shift[1] * height)))
+        placed.paste(layer, (round(shift[0] * height), round(shift[1] * height)))
         image.alpha_composite(placed)
     return image
 
@@ -418,6 +515,18 @@ def compose(layers: dict[int, Image.Image], shift: Point = (0.0, 0.0)) -> Image.
 def colored_layers(frame: int, hold: bool = False, gait: Gait = RUN) -> dict[int, Image.Image]:
     weights = render_weights(frame, hold, gait)
     return {layer: colorize(pack_mask(weights[layer]), LAYER_TINT[layer]) for layer in LAYERS}
+
+
+def colored_stack(frame: int, hold: bool = False, gait: Gait = RUN, gear: bool = False) -> list[tuple[float, Image.Image]]:
+    """Barevné vrstvy v pořadí jako ve hře: překryv přístroje hned nad svou vrstvou."""
+    layers = colored_layers(frame, hold, gait)
+    gear_layers = render_gear(frame, gait) if gear else {}
+    stack = []
+    for key in sorted(layers):
+        stack.append((LAYERS[key]["height"], layers[key]))
+        if key in gear_layers:
+            stack.append((GEAR_LAYERS[key], colorize(pack_mask(gear_layers[key]), GEAR_TINT)))
+    return stack
 
 
 def save_gif(frames: list[Image.Image], path: Path, scale: int, ms: int) -> None:
@@ -434,25 +543,38 @@ def save_gif(frames: list[Image.Image], path: Path, scale: int, ms: int) -> None
 def write_previews() -> None:
     shown = list(range(0, FRAMES, SHEET_STEP)) + [IDLE_FRAME]
     for hold, name, sheet, word in ((False, "person", "person_chuz", "snímek"), (True, "person_hold", "person_hold", "úchop")):
-        frames = [compose(colored_layers(frame, hold)) for frame in range(ATLAS_FRAMES)]
+        frames = [compose(colored_stack(frame, hold)) for frame in range(ATLAS_FRAMES)]
         save_gif(frames[:FRAMES], PREVIEW / f"{name}.gif", 4, PREVIEW_MS)
         labels = [f"{word} {index}" for index in shown[:-1]] + ["stání"]
         contact_sheet([frames[index] for index in shown], labels, PREVIEW / f"{sheet}.png", 3)
-    walk = [compose(colored_layers(frame, gait=WALK)) for frame in range(ATLAS_FRAMES)]
+    walk = [compose(colored_stack(frame, gait=WALK)) for frame in range(ATLAS_FRAMES)]
     save_gif(walk[:FRAMES], PREVIEW / "person_walk.gif", 4, WALK_PREVIEW_MS)
     labels = [f"chůze {index}" for index in shown[:-1]] + ["stání"]
     contact_sheet([walk[index] for index in shown], labels, PREVIEW / "person_vesnican.png", 3)
 
-    layers = colored_layers(FRAMES // 4)
-    panels = [layers[1], layers[2], layers[3], compose(layers), compose(layers, EDGE)]
+    # Dýchací přístroj: běh s úchopem, chůze a vrstvy zvlášť.
+    geared = [compose(colored_stack(frame, True, gear=True)) for frame in range(ATLAS_FRAMES)]
+    save_gif(geared[:FRAMES], PREVIEW / "person_pristroj.gif", 4, PREVIEW_MS)
+    walking = [compose(colored_stack(frame, gait=WALK, gear=True)) for frame in range(ATLAS_FRAMES)]
+    labels = [f"úchop {index}" for index in shown[:-1]] + ["stání"]
+    contact_sheet([geared[index] for index in shown] + [walking[index] for index in shown], labels + [f"chůze {index}" for index in shown[:-1]] + ["stání"], PREVIEW / "person_pristroj.png", 3)
+
+    stack = colored_stack(FRAMES // 4)
+    panels = [layer for _, layer in stack] + [compose(stack), compose(stack, EDGE)]
     labels = ["nohy · 0 m", "tělo · 1.2 m", "hlava · 1.65 m", "spolu", "u kraje"]
     contact_sheet(panels, labels, PREVIEW / "person_vrstvy.png", 3)
+    stack = colored_stack(FRAMES // 4, gear=True)
+    panels = [stack[2][1], stack[4][1], compose(stack), compose(stack, EDGE)]
+    labels = [f"láhve · {GEAR_BODY_HEIGHT} m", f"náústek · {GEAR_LAYERS[3]} m", "spolu", "u kraje"]
+    contact_sheet(panels, labels, PREVIEW / "person_pristroj_vrstvy.png", 3)
+    item = colorize(pack_mask(render_gear_item()), GEAR_TINT)
+    contact_sheet([item, compose(colored_stack(IDLE_FRAME, True, gear=True))], ["na zemi", "nasazený"], PREVIEW / "person_skafandr.png", 4)
     stale = PREVIEW / "person_smery.png"
     if stale.exists():
         stale.unlink()
 
 
-def write_info(cells: dict[int, int], hold_cell: int, walk_cells: dict[int, int]) -> Path:
+def write_info(cells: dict[int, int], hold_cell: int, walk_cells: dict[int, int], gear_cells: dict[int, int], gear_walk_cells: dict[int, int], item_cell: int) -> Path:
     path = OUT_DIR / "person.json"
     cell = max(cells.values())
     catalog = {
@@ -494,7 +616,25 @@ def write_info(cells: dict[int, int], hold_cell: int, walk_cells: dict[int, int]
                 for layer in LAYERS
             },
         },
+        "gear": {
+            "slot": GEAR_SLOT,
+            "channels": GEAR_CHANNELS,
+            "layers": {
+                str(layer): {
+                    "height": height,
+                    "file": GEAR_FILES[layer],
+                    "cell": gear_cells[layer],
+                    "center": gear_cells[layer] // 2,
+                    "walk": {"file": GEAR_WALK_FILES[layer], "cell": gear_walk_cells[layer], "center": gear_walk_cells[layer] // 2},
+                }
+                for layer, height in GEAR_LAYERS.items()
+            },
+            "item": {"file": ITEM_FILE, "cell": item_cell, "center": item_cell // 2},
+        },
         "colors": {
+            "tank": "%02X%02X%02X" % TANK,
+            "hose": "%02X%02X%02X" % HOSE,
+            "mouth": "%02X%02X%02X" % MOUTH,
             "skin": "F6CDB0",
             "hair": "5C3A28",
             "eye": "241C1A",
@@ -506,6 +646,32 @@ def write_info(cells: dict[int, int], hold_cell: int, walk_cells: dict[int, int]
     }
     path.write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def write_gear_set(gait: Gait, files: dict[int, str]) -> dict[int, int]:
+    """Atlasy dýchacího přístroje pro jeden krok. Vrací šířky buněk podle vrstvy."""
+    frames: dict[int, list[Image.Image]] = {layer: [] for layer in GEAR_LAYERS}
+    for frame in range(ATLAS_FRAMES):
+        gear = render_gear(frame, gait)
+        for layer in GEAR_LAYERS:
+            frames[layer].append(pack_mask(gear[layer]))
+    cells = {}
+    for layer in GEAR_LAYERS:
+        fitted = crop_square(frames[layer])
+        cells[layer] = fitted[0].width
+        pack_atlas(fitted, COLUMNS).save(OUT_DIR / files[layer])
+    return cells
+
+
+def write_gear() -> tuple[dict[int, int], dict[int, int]]:
+    return write_gear_set(RUN, GEAR_FILES), write_gear_set(WALK, GEAR_WALK_FILES)
+
+
+def write_gear_item() -> int:
+    """Předmět prázdného skafandru. Vrací stranu obrázku."""
+    image = crop_square([pack_mask(render_gear_item())])[0]
+    image.save(OUT_DIR / ITEM_FILE)
+    return image.width
 
 
 def main() -> None:
@@ -532,15 +698,18 @@ def main() -> None:
     held = crop_square(held)
     hold_cell = held[0].width
     pack_atlas(held, COLUMNS).save(OUT_DIR / HOLD_FILE)
+    gear_cells, gear_walk_cells = write_gear()
+    item_cell = write_gear_item()
 
     write_previews()
-    info = write_info(cells, hold_cell, walk_cells)
+    info = write_info(cells, hold_cell, walk_cells, gear_cells, gear_walk_cells, item_cell)
     span = "–".join(str(cells[layer]) for layer in LAYERS)
     walk_span = "–".join(str(walk_cells[layer]) for layer in LAYERS)
     print(f"atlasy buňky {span}, úchop {hold_cell}, chůze {walk_span} -> {OUT_DIR}")
     print(PREVIEW / "person.gif")
     print(PREVIEW / "person_hold.gif")
     print(PREVIEW / "person_walk.gif")
+    print(PREVIEW / "person_pristroj.gif")
     print(info)
 
 

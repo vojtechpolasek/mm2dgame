@@ -40,6 +40,16 @@
     "drum_px": 170.74,
     "drum_half_px": 4.46
   },
+  "suits": {
+    "file": "base_suits.png",
+    "lane_offset_px": 25.03,
+    "lane_half_px": 15.09,
+    "dock_belt": {
+      "outer_px": 274.29,
+      "drum_px": 261.53
+    },
+    "cell": 580
+  },
   "shade": [
     0.42,
     1.1

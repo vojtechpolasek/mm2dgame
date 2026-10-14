@@ -111,8 +111,8 @@ func _show() -> void:
 		row.modulate.a = FADE[absi(offset)] if shown else 0.0
 		row.flat = offset != 0
 		row.add_theme_font_size_override("font_size", 28 if offset == 0 else 22)
-	var size := GameSession.level_size(_selected)
-	var materials := mini(GameSession.level_materials(_selected), GameSession.material_points().size())
+	var size := GameSession.mode_size(_selected)
+	var materials := mini(GameSession.mode_materials(_selected), GameSession.material_points().size())
 	if bool(GameSession.rules()["timed"]):
 		var time := GameSession.mode_time(_selected)
 		_info.text = "Mapa %d × %d m · čas %d:%02d · materiálů %d" % [size, size, time / 60, time % 60, materials]

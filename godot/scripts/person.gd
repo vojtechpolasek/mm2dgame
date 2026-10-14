@@ -18,6 +18,12 @@ const Figure := preload("res://scripts/figure.gd")
 
 ## Co postava drží. -1 je prázdná ruka.
 signal held_changed(mat: int)
+## Postava vzala kámen mat z jezírka slot.
+signal took_gem(slot: int, mat: int)
+## Postava hodila kámen do továrny.
+signal threw_gem
+## Postava se dotkla továrny, ať nese cokoli.
+signal touched_factory
 
 ## Běh, v metrech za sekundu. Dlaždice je jeden metr.
 const RUN_METERS := 4.5
@@ -57,6 +63,16 @@ const STEP_SURFACES: PackedStringArray = ["grass", "dirt", "desert", "snow"]
 const STEP_VARIANTS := 4
 const STEP_DB := -6.0
 const THROW_ARC := 36.0
+## Skafandr ležící na výstupku továrny se vezme, když je střed těla blíž než tolik px navíc.
+const SUIT_REACH := 30.0
+## Skafandr v ruce je trochu menší než na zemi.
+const SUIT_SCALE := 0.8
+
+## Typ hry Skafandry: ukradený kámen zmizí, neletí zpátky do dolu. Nastaví svět.
+var stolen_vanish := false
+## Typ hry Skafandry: zavolá se s polohou postavy, která nese skafandr. Vrátí true, když ho
+## u dveří domu převzal vesničan. Nastaví svět.
+var deliver_suit: Callable
 
 var _rocks: Rocks
 var _forest: Forest
@@ -100,11 +116,17 @@ var _fly_spin := 0.0
 var _fly_age := 0.0
 var _fly_height := 0.0
 var _fly_mat := -1
+## Zásobník továrny Skafandrů, kam kámen letí, -1 obyčejný pás.
+var _fly_lane := -1
+## Prázdný skafandr v ruce.
+var _suit: Sprite2D
 ## Továrna, do které kámen letí. Přechod na jiný čtverec ji nezmění.
 var _fly_town: Town
 ## Čtverec, ve kterém postava bere a odkládá kameny. Nula znamená jednu mapu bez světa.
 var _square_origin := Vector2.ZERO
 var _square_span := 0.0
+## Dotýkala se postava v minulém snímku továrny? Dotyk se ohlásí jen na začátku.
+var _at_factory := false
 
 
 func setup(rocks: Rocks, forest: Forest, town: Town, camera: MapCamera, map: MapData, crystal: Crystal, player: int = 0) -> void:
@@ -143,6 +165,10 @@ func _process(delta: float) -> void:
 	if _flyer != null:
 		_advance_throw(delta)
 	_carry(delta)
+	var touching := _town != null and _town.touches_factory(position, BODY)
+	if touching and not _at_factory:
+		touched_factory.emit()
+	_at_factory = touching
 
 
 func _begin_jump(direction: Vector2) -> void:
@@ -300,6 +326,8 @@ func _fit(view: Vector2) -> void:
 		_pad_gem(_held, _hand_height)
 	if _flyer != null:
 		_pad_gem(_flyer, _fly_height)
+	if _suit != null and view != Vector2.ZERO:
+		ObjectLayers.fit_sprite(_suit, _suit.material as ShaderMaterial, _hand_height, view, true)
 
 
 func _attach_hand() -> void:
@@ -319,9 +347,26 @@ func _carry(delta: float) -> void:
 		return
 	if not _inside_square():
 		return
+	if _suit != null:
+		if deliver_suit.is_valid() and deliver_suit.call(position):
+			_drop_suit()
+		elif _town != null and _town.suit_factory() != null and _town.suit_factory().cleared() and _town.suit_factory().at_dock(position, BODY):
+			# Vzduch je čistý, skafandr patří zpátky na výstupek.
+			_town.suit_factory().store_suit()
+			_drop_suit()
+		return
+	if _held_mat < 0 and _town != null and _town.suit_factory() != null and _town.suit_factory().take_suit(position, BODY + SUIT_REACH):
+		_take_suit()
+		return
 	if _held_mat >= 0 and _town != null and _town.touches_factory(position, BODY):
-		_throw()
 		_touch_slot = -1
+		if _town.suit_factory() == null:
+			_throw()
+			return
+		# Zásobník na straně, u které postava stojí. Když tu kámen nikdo nechce, zůstane v ruce.
+		var lane := _town.claim_lane(position, _held_mat)
+		if lane >= 0:
+			_throw(lane)
 		return
 	var slot := _rocks.pond_at(position, BODY, _held_mat >= 0)
 	if slot < 0:
@@ -339,6 +384,37 @@ func _carry(delta: float) -> void:
 		_take(slot, mat)
 	elif held >= 0:
 		_put_down()
+
+
+## Nese prázdný skafandr?
+func carries_suit() -> bool:
+	return _suit != null
+
+
+## Dýchací přístroj na zádech postavy.
+func wear_gear(on: bool) -> void:
+	_figure.set_gear(on)
+	_fit(_fitted)
+
+
+## V ruce je prázdný skafandr. Příšery ho nekradou, carried() je pořád -1.
+func _take_suit() -> void:
+	_suit = Figure.gear_item(_hand_height)
+	if _suit == null:
+		return
+	_suit.position = PALM + Vector2(-4.0, -6.0)
+	_suit.scale = Vector2.ONE * SUIT_SCALE
+	add_child(_suit)
+	_set_hold(true)
+	Sound.at("sfx/pickup", global_position, -3.0)
+
+
+## Skafandr si vzal vesničan, ruka je prázdná.
+func _drop_suit() -> void:
+	_suit.queue_free()
+	_suit = null
+	_set_hold(false)
+	Sound.at("sfx/pickup", global_position, -3.0)
 
 
 ## Kámen zůstal v prázdném jezírku, ruka je prázdná.
@@ -377,8 +453,15 @@ func carried() -> int:
 func drop_held() -> void:
 	if _held_mat < 0:
 		return
-	_send_back()
 	Sound.at("sfx/steal", global_position)
+	if stolen_vanish:
+		_held.visible = false
+		_held_mat = -1
+		_held_slot = -1
+		_set_hold(false)
+		held_changed.emit(-1)
+		return
+	_send_back()
 
 
 ## Kámen z ruky odletí obloukem do jezírka, ze kterého ho postava vzala. Až dopadne, jezírku
@@ -438,6 +521,8 @@ func _take(slot: int, mat: int) -> void:
 	_set_hold(true)
 	held_changed.emit(mat)
 	Sound.at("sfx/pickup", global_position, -3.0)
+	if slot >= 0:
+		took_gem.emit(slot, mat)
 
 
 func leave_square() -> void:
@@ -469,7 +554,8 @@ func _inside_square() -> bool:
 	return local.x >= 0.0 and local.y >= 0.0 and local.x < _square_span and local.y < _square_span
 
 
-func _throw() -> void:
+## lane je zásobník továrny Skafandrů, -1 obyčejný pás.
+func _throw(lane: int = -1) -> void:
 	var host := get_parent() as Node2D
 	if host == null or _held == null or _held_mat < 0 or _town == null or _town.center() == Vector2.INF:
 		return
@@ -491,13 +577,15 @@ func _throw() -> void:
 	_flyer = flyer
 	_fly_from = flyer.position
 	_fly_town = _town
-	_fly_to = _fly_town.drop_spot(position, _rng)
+	_fly_lane = lane
+	_fly_to = _fly_town.lane_drop(lane, _rng) if lane >= 0 else _fly_town.drop_spot(position, _rng)
 	_fly_rot = flyer.rotation
 	_fly_spin = sign * TAU * _rng.randf_range(0.75, 1.6)
 	_fly_age = 0.0
 	_fly_height = _hand_height
 	_fly_mat = mat
 	_pad_gem(flyer, _hand_height)
+	threw_gem.emit()
 
 
 func _advance_throw(delta: float) -> void:
@@ -523,7 +611,7 @@ func _advance_throw(delta: float) -> void:
 	_flyer = null
 	var town := _fly_town if _fly_town != null else _town
 	if town != null:
-		town.receive(mat, landed, rot)
+		town.receive(mat, landed, rot, _fly_lane)
 
 
 func _set_hold(on: bool) -> void:

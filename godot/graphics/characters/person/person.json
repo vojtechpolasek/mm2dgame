@@ -82,7 +82,47 @@
       }
     }
   },
+  "gear": {
+    "slot": 3.0,
+    "channels": [
+      "tank",
+      "hose",
+      "mouth"
+    ],
+    "layers": {
+      "2": {
+        "height": 1.4,
+        "file": "gear_body.png",
+        "cell": 44,
+        "center": 22,
+        "walk": {
+          "file": "gear_body_walk.png",
+          "cell": 44,
+          "center": 22
+        }
+      },
+      "3": {
+        "height": 1.65,
+        "file": "gear_head.png",
+        "cell": 36,
+        "center": 18,
+        "walk": {
+          "file": "gear_head_walk.png",
+          "cell": 30,
+          "center": 15
+        }
+      }
+    },
+    "item": {
+      "file": "gear_item.png",
+      "cell": 46,
+      "center": 23
+    }
+  },
   "colors": {
+    "tank": "D6DADE",
+    "hose": "4A4E54",
+    "mouth": "2C2F33",
     "skin": "F6CDB0",
     "hair": "5C3A28",
     "eye": "241C1A",

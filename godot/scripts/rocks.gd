@@ -33,8 +33,10 @@ const RIM_TOUCH := 0.78
 const FOOT_MARGIN := 1.4
 ## Do této výšky je skála pod postavou a jde přeskočit. Vyšší je nad ní.
 const LOW := 1.5
-## Jezírko má počet podle levelu, ne šanci v povrchu.
+## Jezírko má počet podle levelu, ne šanci v povrchu. Bezedné jezírko je důl.
 const POND := "jezirko"
+const MINE := "dul"
+const MINE_SHADER := "res://shaders/mine_layer.gdshader"
 ## Studánek na mapě je nejvýš tolik. Další materiál vznikne na úkor nejlevnějšího.
 const POND_MAX := 11
 ## Volný kruh kolem továrny v metrech. Hráč se objeví u továrny a má kudy projít.
@@ -92,6 +94,11 @@ var _by_points := PackedInt32Array()
 ## Kolik nejlevnějších materiálů má na mapě jezírka. Záporné jsou všechny.
 var _available := -1
 var _pond_kind := -1
+## Druhy, které se nesází podle povrchu: jezírko a důl. Který z nich je _pond_kind, určí bottomless.
+var _lone_kinds := {}
+## Materiál vrstvy dolu podle [druh, vrstva, materiál]. Barvu dolu dává materiál, ne uzel.
+var _mine_materials := {}
+var _mine_shader: Shader
 ## U každé skály číslo jezírka, nebo -1. Dál už jen jezírka a kameny v nich.
 var _pond_slot := PackedInt32Array()
 var _pond_rock := PackedInt32Array()
@@ -105,6 +112,12 @@ var bottomless := true
 ## záporné nechá dnešní odstup za stěnou.
 var draw_rim := true
 var edge_guard := -1.0
+## Počet jezírek každého materiálu od nejlevnějšího. Prázdné nechá pond_layout podle levelu.
+## Nastaví svět, typ hry Skafandry tak dá každému materiálu svůj důl.
+var mine_plan := PackedInt32Array()
+## Pás jezírek jednoho materiálu kolem továrny je široký nejvýš tolik metrů. Záporné nechá
+## pásy roztáhnout po celé mapě.
+var band_max := -1.0
 ## Kameny v jezírku podle pořadí, ve kterém do něj přišly. Bezedné tu má jen kameny vložené
 ## navíc, svůj materiál nepočítá.
 var _pond_gems: Array[PackedInt32Array] = []
@@ -117,7 +130,8 @@ var _pond_nodes := {}
 ## Továrna, cesta a domy (town) už stojí. Nejdřív jezírka kolem továrny, potom pás kolem mapy,
 ## potom skály podle povrchu. Stromy se sází až potom. Nesahá na scénu, smí běžet ve vlákně.
 func plant(map: MapData, rng: RandomNumberGenerator) -> void:
-	_pond_kind = int(_kind_of[POND]) if _kind_of.has(POND) else -1
+	var pond_name := MINE if bottomless and _kind_of.has(MINE) else POND
+	_pond_kind = int(_kind_of[pond_name]) if _kind_of.has(pond_name) else -1
 	if _kinds.is_empty():
 		return
 	_begin_plant(map)
@@ -138,6 +152,11 @@ func bind_crystal(crystal: Crystal) -> void:
 		order.append(index)
 	order.sort_custom(func(a: int, b: int) -> bool: return _points[a] < _points[b])
 	_by_points = PackedInt32Array(order)
+
+
+## Materiály od nejlevnějšího.
+func by_points() -> PackedInt32Array:
+	return _by_points
 
 
 ## Jezírka dostanou jen materiály s nejmenším počtem bodů, tolik, kolik dovolí level.
@@ -219,18 +238,18 @@ func _place_ponds(map: MapData, rng: RandomNumberGenerator) -> void:
 		origin = town.center()
 	var materials := _by_points.size()
 	var count := materials if _available < 0 else mini(_available, materials)
-	var layout := pond_layout(count)
+	var layout := mine_plan if not mine_plan.is_empty() else pond_layout(count)
 	var present := 0
-	for ponds in layout:
-		if ponds > 0:
+	for order in mini(count, layout.size()):
+		if layout[order] > 0:
 			present += 1
 	var band := 0
-	for order in count:
+	for order in mini(count, layout.size()):
 		var want := layout[order]
 		if want <= 0:
 			continue
 		var mat := _by_points[order]
-		var ring := pond_annulus(band, present, map.size, edge_guard) * tile
+		var ring := pond_annulus(band, present, map.size, edge_guard, band_max) * tile
 		_place_ring(map, rng, mat, want, origin, ring.x, ring.y)
 		band += 1
 
@@ -293,11 +312,14 @@ func _near_object(pos: Vector2, gap: float) -> bool:
 ## count je počet materiálů, které na mapě opravdu mají jezírka. Pásy jsou stejně široké
 ## a sousedé se jen dotýkají. Nejběžnější z nich začíná za volným kruhem, nejdražší končí
 ## u pásu skal.
-static func pond_annulus(order: int, count: int, size: int, guard: float = -1.0) -> Vector2:
+## widest omezí šířku pásu v metrech, záporné ji nechá.
+static func pond_annulus(order: int, count: int, size: int, guard: float = -1.0, widest: float = -1.0) -> Vector2:
 	var inset := guard if guard >= 0.0 else _rim_guard(size)
 	var reach := maxf(float(size) * 0.5 - inset, POND_CLEAR)
 	var bands := maxi(count, 1)
 	var width := (reach - POND_CLEAR) / float(bands)
+	if widest > 0.0:
+		width = minf(width, widest)
 	var inner := POND_CLEAR + float(clampi(order, 0, bands - 1)) * width
 	return Vector2(inner, inner + width)
 
@@ -413,6 +435,15 @@ func _surface_key() -> String:
 func _build(kind: int) -> Node2D:
 	var node := super._build(kind)
 	node.z_index = 0 if _top[kind] <= LOW else 2
+	if _is_mine(kind):
+		# Vrstvy dolu jdou pod zem: nejhlubší se kreslí první, okraj na zemi přes ně.
+		var sprites: Array[Sprite2D] = []
+		for child in node.get_children():
+			if child is Sprite2D:
+				sprites.append(child)
+		for layer in sprites.size():
+			sprites[layer].set_meta("layer", layer)
+			node.move_child(sprites[layer], 0)
 	if kind == _pond_kind:
 		var holder := Node2D.new()
 		holder.name = "Gems"
@@ -425,8 +456,62 @@ func acquire(index: int) -> Node2D:
 	var slot := _pond_slot[index] if index < _pond_slot.size() else -1
 	if slot >= 0:
 		_pond_nodes[slot] = node
+		if _is_mine(_kind[index]):
+			_paint_mine(node, _kind[index], _pond_mat[slot])
 		_sync_pond(node, slot)
 	return node
+
+
+func _is_mine(kind: int) -> bool:
+	return kind >= 0 and kind < _kinds.size() and bool(_kinds[kind].get("mine", false))
+
+
+## Vrstvy dolu mají vždycky vlastní shader: barví kameny a svítí lucernou i bez posunu výšky.
+## Tady jen okraje spritů podle posunu, materiál dostanou v _paint_mine.
+func _fit(node: Node2D, kind: int) -> void:
+	if not _is_mine(kind):
+		super._fit(node, kind)
+		return
+	var layers: Array = _kinds[kind]["layers"]
+	for child in node.get_children():
+		var sprite := child as Sprite2D
+		if sprite == null or not sprite.has_meta("layer"):
+			continue
+		var height := float(layers[int(sprite.get_meta("layer"))]["height"])
+		var rect := sprite.get_rect().grow(ObjectLayers.vertex_pad(_fitted_view, absf(height)))
+		RenderingServer.canvas_item_set_custom_rect(sprite.get_canvas_item(), true, rect)
+
+
+func _paint_mine(node: Node2D, kind: int, mat: int) -> void:
+	for child in node.get_children():
+		var sprite := child as Sprite2D
+		if sprite != null and sprite.has_meta("layer"):
+			sprite.material = _mine_material(kind, int(sprite.get_meta("layer")), mat)
+
+
+func _mine_material(kind: int, layer: int, mat: int) -> ShaderMaterial:
+	var key := Vector3i(kind, layer, mat)
+	if _mine_materials.has(key):
+		return _mine_materials[key]
+	if _mine_shader == null:
+		_mine_shader = load(MINE_SHADER) as Shader
+	var entry := _kinds[kind]
+	var layers: Array = entry["layers"]
+	var depth := 0.0
+	for info: Dictionary in layers:
+		depth = minf(depth, float(info["height"]))
+	var material := ShaderMaterial.new()
+	material.shader = _mine_shader
+	material.set_shader_parameter("height_m", float(layers[layer]["height"]))
+	material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
+	material.set_shader_parameter("pit_depth", -depth)
+	material.set_shader_parameter("rock_color", entry["rim_color"] if layer == 0 else entry["wall_color"])
+	if _crystal != null and mat >= 0:
+		material.set_shader_parameter("ore_color", _crystal.color_of(mat))
+		material.set_shader_parameter("glint_color", _crystal.glint_of(mat))
+		material.set_shader_parameter("sparkle", maxf(_crystal.sparkle_of(mat), 0.25))
+	_mine_materials[key] = material
+	return material
 
 
 ## Kameny schovaného jezírka se uvolní. Mají instanční uniformy a těch je na celou hru jen
@@ -442,7 +527,7 @@ func release(index: int, node: Node2D) -> void:
 
 
 func _scatter_kind(kind: int) -> bool:
-	return kind != _pond_kind
+	return not _lone_kinds.has(kind)
 
 
 ## Poloměr paty podle spodní vrstvy. Podle něj se odhaduje krok stěny a kruh varianty bez obrysu.
@@ -460,6 +545,12 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 	_radius.append(radius)
 	_top.append(top)
 	_mouth.append(float(info.get("mouth", 0.0)))
+	if kind_name == POND or kind_name == MINE:
+		_lone_kinds[_kinds.size()] = true
+	if bool(info.get("mine", false)):
+		entry["mine"] = true
+		entry["rim_color"] = Color.html(str(info.get("color", "7C6A54")))
+		entry["wall_color"] = Color.html(str(info.get("wall", "6E6860")))
 	_foot = maxf(_foot, radius * FOOT_MARGIN)
 	_read_outline(info, int(entry["variants"]), radius * FOOT_MARGIN)
 	return entry
@@ -953,16 +1044,32 @@ func pond_center(slot: int) -> Vector2:
 	return _pos[_pond_rock[slot]]
 
 
+## Místo, kde stojí tělo o poloměru body u okraje jezírka, na straně k from. Střed jezírka je
+## neprůchodný, cesta k němu by nevedla.
+func pond_edge(slot: int, from: Vector2, body: float) -> Vector2:
+	var index := _pond_rock[slot]
+	var away := from - _pos[index]
+	if away.length_squared() < 1.0:
+		away = Vector2.RIGHT
+	return _pos[index] + away.normalized() * (_radius[_kind[index]] + body + TOUCH_PX)
+
+
 ## Všechny kameny ve všech jezírkách na začátku levelu.
 func gem_total() -> int:
 	return _gem_total
 
 
 ## Výměna u jezírka: postava vezme nejdražší kámen, který v jezírku byl, a nesený (held, -1 je
-## prázdná ruka) v něm nechá. Bezedné jezírko si nechá jen kámen dražší, než je jeho materiál,
-## levnější zmizí. Vrátí vzatý materiál. Do prázdného jezírka se nesený kámen jen odloží
-## a vrátí se -1, s prázdnou rukou se tam nestane nic.
+## prázdná ruka) v něm nechá. Vrátí vzatý materiál. Do prázdného jezírka se nesený kámen jen
+## odloží a vrátí se -1, s prázdnou rukou se tam nestane nic.
+## Do bezedného dolu nic dát nejde: levnější kámen z ruky se vymění za materiál dolu
+## a zmizí, stejný nebo dražší zůstane v ruce a vrátí se held.
 func swap_gem(slot: int, held: int) -> int:
+	if bottomless:
+		var own := _pond_mat[slot]
+		if held >= 0 and _points[held] >= _points[own]:
+			return held
+		return own
 	var best := pond_best(slot)
 	if best < 0 and held < 0:
 		return -1
@@ -985,8 +1092,9 @@ func return_gem(slot: int, mat: int) -> void:
 	_refresh_pond(slot)
 
 
+## Bezedný důl si žádný kámen nenechá, ani ukradený, který k němu doletí zpátky.
 func _keep_gem(slot: int, mat: int) -> void:
-	if bottomless and _points[mat] <= _points[_pond_mat[slot]]:
+	if bottomless:
 		return
 	var gems := _pond_gems[slot]
 	gems.append(mat)
@@ -1034,7 +1142,8 @@ func _sync_pond(node: Node2D, slot: int) -> void:
 	if holder == null:
 		return
 	# Bezedné jezírko ukazuje GEMS_IN_POND svého materiálu a za nimi kameny vložené navíc.
-	var own := GEMS_IN_POND if bottomless else 0
+	# Důl svůj materiál ukazuje obarvenými stěnami.
+	var own := GEMS_IN_POND if bottomless and not _is_mine(_pond_kind) else 0
 	var gems := _pond_gems[slot]
 	var count := own + gems.size()
 	_match_gems(holder, count)

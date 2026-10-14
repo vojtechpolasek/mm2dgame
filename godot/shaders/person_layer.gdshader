@@ -11,7 +11,8 @@ uniform float parallax = 0.016;
 uniform float scale_per_meter = 0.01;
 global uniform float camera_zoom;
 
-// 0 hlava (R kůže, G vlasy, B oči), 1 tělo (R triko, G kůže), 2 nohy (R kalhoty, G boty, B tkaničky).
+// 0 hlava (R kůže, G vlasy, B oči), 1 tělo (R triko, G kůže), 2 nohy (R kalhoty, G boty, B tkaničky),
+// 3 dýchací přístroj (R láhve, G kov a hadice, B náústek).
 // Alfa textury je krytí, ne další materiál. Váhy jsou z tools/gen_person.py vynásobené
 // krytím a světlostí: součet vah / krytí = shade_floor + (1 - shade_floor) * světlost.
 // Import proto nesmí mít fix_alpha_border, ten by průhledným okrajům přidal barvu.
@@ -28,6 +29,9 @@ uniform vec3 shirt_color : source_color = vec3(0.125, 0.102, 0.094);
 uniform vec3 pants_color : source_color = vec3(0.784, 0.294, 0.471);
 uniform vec3 shoe_color : source_color = vec3(0.125, 0.110, 0.118);
 uniform vec3 lace_color : source_color = vec3(0.690, 0.675, 0.682);
+uniform vec3 tank_color : source_color = vec3(0.839, 0.855, 0.871);
+uniform vec3 hose_color : source_color = vec3(0.290, 0.306, 0.329);
+uniform vec3 mouth_color : source_color = vec3(0.173, 0.184, 0.200);
 
 void vertex() {
 	if (height_m > 0.0) {
@@ -50,8 +54,10 @@ void fragment() {
 	vec3 mixed = skin_color * weight.r + hair_color * weight.g + eye_color * weight.b;
 	if (slot > 0.5 && slot < 1.5) {
 		mixed = shirt_color * weight.r + skin_color * weight.g;
-	} else if (slot >= 1.5) {
+	} else if (slot >= 1.5 && slot < 2.5) {
 		mixed = pants_color * weight.r + shoe_color * weight.g + lace_color * weight.b;
+	} else if (slot >= 2.5) {
+		mixed = tank_color * weight.r + hose_color * weight.g + mouth_color * weight.b;
 	}
 	float total = weight.r + weight.g + weight.b;
 	vec3 base = mixed / max(total, 0.001);

@@ -92,7 +92,8 @@ func _process(delta: float) -> void:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var chasing: Array[Monster] = []
 	for monster in _monsters.members:
-		if is_instance_valid(monster) and monster.is_chasing() and not monster.is_flying():
+		# Chrání se jen hráči, ne vesničan, který nese kámen.
+		if is_instance_valid(monster) and monster.is_chasing() and not monster.is_flying() and monster.prey() is Person:
 			chasing.append(monster)
 	# Kolik pomocníků už má která honěná postava.
 	var guards := {}
@@ -128,6 +129,56 @@ func _process(delta: float) -> void:
 			break
 		best.help(best_monster)
 		guards[best_monster.prey()] = int(guards.get(best_monster.prey(), 0)) + 1
+
+
+# --- Skafandry ---
+
+## Venku je jedovatý vzduch: všichni zůstanou doma, dokud nedostanou skafandr. Ukazují na
+## doly materiálu, který továrně chybí, a dají se vzít s sebou. carriers sdílí s příšerami.
+func lock_inside(factory: Node2D, carriers: Array) -> void:
+	for villager in members:
+		villager.needs_suit = true
+		villager.suits = factory
+		villager.carriers = carriers
+
+
+## Hráč person vzal kámen z dolu. Kdo ho sleduje, dojde si pro stejný.
+func leader_took(slot: int, mat: int, person: Person) -> void:
+	for villager in members:
+		villager.leader_took(slot, mat, person)
+
+
+## Hráč person se dotkl továrny. Kdo ho sleduje s kamenem, jde ho tam hodit.
+func leader_touched(person: Person) -> void:
+	for villager in members:
+		villager.leader_touched(person)
+
+
+## Hráč person hodil kámen do továrny. Kdo ho sleduje s kamenem, hodí taky, bez kamene odejde.
+func leader_threw(person: Person) -> void:
+	for villager in members:
+		villager.leader_threw(person)
+
+
+## Skafandr u dveří domu house si vezme někdo, kdo v něm čeká. Vrátí, jestli se tak stalo.
+func dress(house: int) -> bool:
+	for villager in members:
+		if villager.waits_in(house):
+			villager.dress()
+			return true
+	return false
+
+
+## Vzduch je čistý. Vesničané ve skafandrech ho dojdou odložit před výstupek, ostatní vyjdou
+## ven. Vrátí, kolik skafandrů se bude odkládat. Každé odložení ohlásí signál vesničana
+## suit_returned.
+func return_suits() -> int:
+	var count := 0
+	for villager in members:
+		if villager.suited():
+			count += 1
+		villager.return_suit()
+	return count
 
 
 ## Materiál pro každého z count vesničanů. Od nejdražšího dokola, rozdané náhodně.

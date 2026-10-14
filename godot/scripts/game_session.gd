@@ -11,7 +11,9 @@ const PROGRESS := "user://progress.cfg"
 ## Typy hry v pořadí menu. Každý má pevná pravidla a vlastní postup levely.
 ## goal: points nasbírat cílový počet bodů, ponds přinést všechny kameny ze všech jezírek.
 ## timed: časový limit. Bez limitu se nedá prohrát a ukládá se nejlepší čas.
-## bottomless: jezírko nikdy nedojde. Jinak má Rocks.GEMS_IN_POND kamenů a ty ubývají.
+## goal suits: naplnit zásobníky továrny podle SUIT_LEVELS (typ hry Skafandry).
+## bottomless: místo jezírek jsou doly, které nikdy nedojdou a nic se do nich nevkládá.
+## Jinak má jezírko Rocks.GEMS_IN_POND kamenů a ty ubývají.
 const MODES: Array[Dictionary] = [
 	{
 		"id": "ponds", "title": "Vybrat jezírka", "goal": "ponds", "timed": false, "bottomless": false,
@@ -29,7 +31,42 @@ const MODES: Array[Dictionary] = [
 		"id": "world", "title": "Svět", "goal": "ponds", "timed": false, "bottomless": false,
 		"about": "Otevřený svět ze čtverců 96 × 96 m. V každém s továrnou vyber jezírka. U kraje se otevře další krajina.",
 	},
+	{
+		"id": "suits", "title": "Skafandry", "goal": "suits", "timed": false, "bottomless": true,
+		"about": "Venku je jedovatý vzduch. Naplň zásobníky továrny, ať vzduch vyčistí. Ze tří nejlevnějších kamenů vyrobíš skafandr pro vesničana. Bez limitu, počítá se nejlepší čas.",
+	},
 ]
+
+## Skafandry: mapa má vždy tuhle stranu a pás dolů každého materiálu je kolem továrny široký
+## nejvýš SUIT_BAND_M metrů, ať levné materiály jsou blízko.
+const SUIT_MAP := 128
+const SUIT_BAND_M := 8.0
+## Zásobníky levelů typu Skafandry. Dvojice [pořadí materiálu od nejlevnějšího, počet kamenů].
+## Celkem nejvýš 25 kamenů a každého materiálu nejvýš 3. Level je těžší tím, že chce víc
+## různých a dražších materiálů, ne hodně kusů jednoho. Materiál, který přibyl, chce level
+## jen jednou, víc až v dalších levelech. Nejlevnější materiál zásobníků s levelem jen
+## stoupá, levnější se už nevrátí. Od pořadí 4 (magnetit) chce každý materiál až po
+## nejdražší aspoň jednou.
+## Na mapě jsou všechny materiály od nejlevnějšího po nejdražší ze zásobníků, aspoň tři:
+## recept skafandru chce tři nejlevnější. Za posledním řádkem se opakuje poslední.
+const SUIT_LEVELS: Array = [
+	[[0, 1], [1, 1]],
+	[[0, 2], [1, 2], [2, 1]],
+	[[0, 2], [1, 2], [2, 2], [3, 1]],
+	[[0, 1], [1, 2], [2, 2], [3, 2], [4, 1]],
+	[[0, 1], [1, 2], [2, 2], [3, 2], [4, 2], [5, 1]],
+	[[1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 1]],
+	[[1, 1], [2, 2], [3, 2], [4, 2], [5, 3], [6, 2], [7, 1]],
+	[[2, 2], [3, 2], [4, 2], [5, 3], [6, 3], [7, 2], [8, 1]],
+	[[2, 1], [3, 2], [4, 2], [5, 2], [6, 3], [7, 3], [8, 2], [9, 1]],
+	[[3, 2], [4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 2], [10, 1]],
+	[[3, 1], [4, 2], [5, 2], [6, 2], [7, 3], [8, 3], [9, 3], [10, 2], [11, 1]],
+	[[4, 2], [5, 2], [6, 2], [7, 3], [8, 3], [9, 3], [10, 3], [11, 2], [12, 1]],
+	[[4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 2]],
+	[[4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3]],
+]
+## Recept skafandru: po jednom z tolika nejlevnějších materiálů.
+const SUIT_RECIPE := 3
 ## Typ hry, kterému patří postup z doby před typy hry (progress/unlocked).
 const FIRST_MODE_ID := "time_points"
 
@@ -121,7 +158,7 @@ func unlocked_level() -> int:
 ## Splněný level odemkne v tomhle typu hry další. Ukládá se hned, při příštím spuštění se
 ## pokračuje od něj.
 func unlock(at: int) -> void:
-	var next := mini(at, last_level())
+	var next := mini(at, mode_last_level())
 	if next <= unlocked_level():
 		return
 	_unlocked[rules()["id"]] = next
@@ -181,7 +218,7 @@ func _load_progress() -> void:
 		for id: String in config.get_section_keys("unlocked"):
 			_unlocked[id] = int(config.get_value("unlocked", id, 1))
 	for id: String in _unlocked:
-		_unlocked[id] = clampi(int(_unlocked[id]), 1, last_level())
+		_unlocked[id] = clampi(int(_unlocked[id]), 1, mode_last_level(id))
 	if config.has_section("records"):
 		for key: String in config.get_section_keys("records"):
 			_records[key] = float(config.get_value("records", key, -1.0))
@@ -352,6 +389,33 @@ static func material_points() -> PackedInt32Array:
 	values.sort()
 	_material_points = PackedInt32Array(values)
 	return _material_points
+
+
+## Poslední level typu hry id, bez id vybraného typu.
+func mode_last_level(id: String = "") -> int:
+	if (id if not id.is_empty() else str(rules()["id"])) == "suits":
+		return SUIT_LEVELS.size()
+	return last_level()
+
+
+## Strana mapy levelu ve vybraném typu hry.
+func mode_size(at: int) -> int:
+	return SUIT_MAP if str(rules()["id"]) == "suits" else level_size(at)
+
+
+## Počet materiálů na mapě levelu ve vybraném typu hry.
+func mode_materials(at: int) -> int:
+	if str(rules()["id"]) != "suits":
+		return level_materials(at)
+	var most := SUIT_RECIPE
+	for pair: Array in suit_lanes(at):
+		most = maxi(most, int(pair[0]) + 1)
+	return most
+
+
+## Zásobníky levelu typu Skafandry: dvojice [pořadí materiálu, počet kamenů].
+static func suit_lanes(at: int) -> Array:
+	return SUIT_LEVELS[clampi(at, 1, SUIT_LEVELS.size()) - 1]
 
 
 ## Počet dostupných materiálů, od nejlevnějšího. Každý level přidá jeden.

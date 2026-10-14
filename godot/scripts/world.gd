@@ -19,6 +19,7 @@ const Walker := preload("res://scripts/walker.gd")
 const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
 const PondLabels := preload("res://scripts/pond_labels.gd")
 const WorldBoard := preload("res://scripts/world_board.gd")
+const SuitGame := preload("res://scripts/suit_game.gd")
 
 ## Další hráči se objeví v kruhu kolem prvního, tak daleko v metrech.
 const SPAWN_RING := 1.5
@@ -79,6 +80,8 @@ var _chase_hold := 0.0
 var _leave_left := 0.0
 ## Otevřený svět. Klasické levely ho nemají a jejich smyčka běží dál sama.
 var _board: WorldBoard
+## Typ hry Skafandry, jinak null.
+var _suits: SuitGame
 
 
 func _ready() -> void:
@@ -122,8 +125,10 @@ func _ready() -> void:
 	_time_left = float(GameSession.mode_time(_level))
 	rocks.bottomless = bool(_rules["bottomless"])
 	_crystal = crystal
-	rocks.set_available(GameSession.level_materials(_level))
-	var size := maxi(GameSession.level_size(_level), 2)
+	rocks.set_available(GameSession.mode_materials(_level))
+	if _rules["goal"] == "suits":
+		_plan_suits(rocks, town)
+	var size := maxi(GameSession.mode_size(_level), 2)
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	# Příšery: mřížky cest a hranice skal se připraví ve vlákně s mapou, samotné příšery
@@ -179,6 +184,12 @@ func _ready() -> void:
 	var music_rng := RandomNumberGenerator.new()
 	music_rng.randomize()
 	Sound.play_level_music(music_rng)
+	if _rules["goal"] == "suits":
+		_suits = SuitGame.new()
+		_suits.name = "Suits"
+		add_child(_suits)
+		if not _suits.setup(town, villagers, _persons, monsters):
+			_suits = null
 	_start_level(rocks)
 	_map_ready = true
 
@@ -206,9 +217,34 @@ func _spawn_players(rocks: Rocks, forest: Forest, crystal: Crystal, props: Node2
 	_party.frame()
 
 
+## Skafandry: zásobníky továrny a recept podle levelu. Každý materiál na mapě má svůj důl,
+## materiál, kterého zásobníky chtějí tři a víc, dva. Pás dolů kolem továrny je úzký,
+## levné materiály jsou blízko.
+func _plan_suits(rocks: Rocks, town: Town) -> void:
+	var order := rocks.by_points()
+	var lanes := GameSession.suit_lanes(_level)
+	var need := {}
+	var plan: Array = []
+	for pair: Array in lanes:
+		var at := mini(int(pair[0]), order.size() - 1)
+		need[at] = int(need.get(at, 0)) + int(pair[1])
+		plan.append([order[at], int(pair[1])])
+	var mines := PackedInt32Array()
+	for at in mini(GameSession.mode_materials(_level), order.size()):
+		mines.append(2 if int(need.get(at, 0)) >= 3 else 1)
+	rocks.mine_plan = mines
+	rocks.band_max = GameSession.SUIT_BAND_M
+	town.suit_plan = plan
+	town.suit_recipe = order.slice(0, mini(GameSession.SUIT_RECIPE, order.size()))
+
+
 func _start_level(rocks: Rocks) -> void:
 	_rocks = rocks
-	if _rules["goal"] == "ponds":
+	if _suits != null:
+		_target = _suits.target()
+		_suits.progressed.connect(_on_suit_progress)
+		_suits.completed.connect(_finish.bind(true))
+	elif _rules["goal"] == "ponds":
 		_target = rocks.gem_total()
 	else:
 		_target = GameSession.level_target(_level, GameSession.players.size())
@@ -345,6 +381,14 @@ func _on_settled(mat: int, pos: Vector2) -> void:
 		_finish(true)
 
 
+## Skafandry: kámen dopadl do zásobníku továrny.
+func _on_suit_progress(done: int) -> void:
+	if not _playing:
+		return
+	_progress = done
+	_hud.set_progress(_progress)
+
+
 ## Nápis „+N“ u místa dopadu: vystoupá a zmizí. Velikost drží stejnou na
 ## obrazovce i při oddálení a dohraje i pod oknem výsledku, když tímhle kamenem level skončil.
 func _float_text(text: String, pos: Vector2) -> void:
@@ -382,7 +426,7 @@ func _finish(won: bool) -> void:
 	Sound.ui("win" if won else "lose")
 	if won:
 		GameSession.unlock(_level + 1)
-	var last := _level >= GameSession.last_level()
+	var last := _level >= GameSession.mode_last_level()
 	_hud.show_result(won, _result_note(won, last), last, not _timed())
 
 

@@ -13,6 +13,10 @@ Spodek (0 m):
   mříží. Příčky pásů v masce pro hru nejsou, kreslí je factory_layer.gdshader
   a posouvá je, když po pásu jede kámen. Náhled je má namalované.
 
+Pro typ hry Skafandry je druhý spodek, base_suits.png: místo jednoho pásu
+na každé straně dva užší zásobníky vedle sebe a středem výstupku vede ke kolu
+pás na skafandry. Zbytek je stejný.
+
 Mezikruží (výška RING_H): samostatná vrstva, střed je průhledný,
 takže sklad pod ním zůstane vidět. Obrázek je vystředěný na osu,
 kolem které se vrstva ve hře otočí. Nýtované pláty s rzí, ozubený
@@ -65,6 +69,13 @@ BELT_SHADE = 0.36
 SLAT_SHADE = 0.84
 DRUM_IN = 0.62
 DRUM_HALF = 0.13
+# Spodek pro typ hry Skafandry: na každé straně dva užší zásobníky vedle sebe.
+# LANE_OFFSET je vzdálenost osy zásobníku od osy strany, LANE_HALF jeho poloviční šířka.
+LANE_OFFSET = 0.73
+LANE_HALF = 0.44
+# Výstupkem vede ke kolu pás na skafandry, stejně úzký jako zásobníky. Končí DOCK_BELT_END
+# před koncem výstupku, tam má válec.
+DOCK_BELT_END = 0.3
 SCALE = 6.0 / (FLAT * 2.0)
 
 FLOOR, METAL, YARD_CH = 0, 1, 2
@@ -160,7 +171,7 @@ def disc(x: np.ndarray, y: np.ndarray, cx: float, cy: float, radius: float) -> n
     return (x - cx) ** 2 + (y - cy) ** 2 <= radius * radius
 
 
-def paint_base(x0: np.ndarray, y0: np.ndarray, slats: bool) -> Mask:
+def paint_base(x0: np.ndarray, y0: np.ndarray, slats: bool, lanes: int = 1) -> Mask:
     cell = int(round((x0.shape[1] / SS)))
     mask = Mask(cell)
     ap = m(FLAT)
@@ -187,8 +198,10 @@ def paint_base(x0: np.ndarray, y0: np.ndarray, slats: bool) -> Mask:
     paint_drain(mask, x0, y0)
 
     paint_manholes(mask, x0, y0, inside)
-    paint_belts(mask, x0, y0, inside, slats)
+    paint_belts(mask, x0, y0, inside, slats, lanes)
     paint_dock(mask, x0, y0, x, y)
+    if lanes == 2:
+        paint_dock_belt(mask, x0, y0, slats)
     return mask
 
 
@@ -239,9 +252,20 @@ def belt_span() -> tuple[float, float]:
     return m(RING_OUT) - m(0.18), m(FLAT) + m(0.2)
 
 
-def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray, slats: bool) -> None:
-    """Sedm pásů od ploché hrany ke kolu. Jižní hrana má místo pásu výstupek."""
-    half = m(BELT_HALF)
+def lane_offsets(lanes: int) -> list[float]:
+    """Posuny os pásů od osy strany v px. Jeden pás jde středem, dva vedle sebe."""
+    return [0.0] if lanes == 1 else [-m(LANE_OFFSET), m(LANE_OFFSET)]
+
+
+def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray, slats: bool, lanes: int = 1) -> None:
+    """Pásy od ploché hrany ke kolu, na každé straně jeden nebo dva. Jižní hrana má místo
+    pásu výstupek."""
+    for offset in lane_offsets(lanes):
+        paint_lanes(mask, x, y, inside, slats, offset, m(BELT_HALF) if lanes == 1 else m(LANE_HALF))
+
+
+def paint_lanes(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray, slats: bool, offset: float, half: float) -> None:
+    """Pás posunutý o offset px od osy každé strany."""
     rail = m(BELT_RAIL)
     inner, outer = belt_span()
     pitch = m(BELT_PITCH)
@@ -253,7 +277,7 @@ def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray, sl
         ang = k * math.pi / 4.0
         nx, ny = math.cos(ang), math.sin(ang)
         along = x * nx + y * ny
-        side = -x * ny + y * nx
+        side = -x * ny + y * nx - offset
         span = inside & (along >= inner) & (along <= outer)
         # Patky stojanu vedle pásu, po délce v pravidelném kroku.
         foot = span & (np.abs(side) > half) & (np.abs(side) <= half + m(0.12)) & (np.mod(along, m(0.9)) < m(0.16))
@@ -273,6 +297,34 @@ def paint_belts(mask: Mask, x: np.ndarray, y: np.ndarray, inside: np.ndarray, sl
         mask.fill(drum, METAL, 0.5 + 0.45 * (1.0 - np.abs(along - drum_at) / m(DRUM_HALF)))
         bolt = span & (np.abs(np.abs(side) - (half - rail * 0.5)) < m(0.04)) & (np.abs(along - drum_at) < m(0.04))
         mask.fill(bolt, METAL, 0.98)
+
+
+def dock_belt_span() -> tuple[float, float, float]:
+    """Pás výstupkem: od kola, konec a válec, vzdálenost od středu v px."""
+    inner, _outer = belt_span()
+    end = m(FLAT) + m(DOCK) - m(DOCK_BELT_END)
+    return inner, end, end - m(DRUM_IN) * 0.6
+
+
+def paint_dock_belt(mask: Mask, x: np.ndarray, y: np.ndarray, slats: bool) -> None:
+    """Pás středem výstupku ke kolu, jih je +y. Po něm jedou kameny na skafandr."""
+    half = m(LANE_HALF)
+    rail = m(BELT_RAIL)
+    inner, end, drum_at = dock_belt_span()
+    dirt = 0.82 + 0.26 * fbm(x, y, m(0.8), 423)
+    along = y
+    side = x
+    span = (along >= inner) & (along <= end)
+    belt = span & (np.abs(side) <= half)
+    center = span & (np.abs(side) <= half - rail)
+    mask.fill(belt, METAL, BELT_SHADE * dirt)
+    mask.fill(belt & ~center, METAL, 0.62 + 0.3 * smoothstep(0.0, rail * 0.6, half - np.abs(side)))
+    if slats:
+        mask.fill(center & (np.mod(along, m(BELT_PITCH)) < m(BELT_SLAT)), METAL, SLAT_SHADE * dirt)
+    drum = center & (np.abs(along - drum_at) <= m(DRUM_HALF))
+    mask.fill(drum, METAL, 0.5 + 0.45 * (1.0 - np.abs(along - drum_at) / m(DRUM_HALF)))
+    # Čelo pásu na konci výstupku.
+    mask.fill((np.abs(side) <= half) & (along > end) & (along <= end + m(0.08)), METAL, 0.7)
 
 
 def paint_dock(mask: Mask, x: np.ndarray, y: np.ndarray, wx: np.ndarray, wy: np.ndarray) -> None:
@@ -561,7 +613,7 @@ def hex_of(color: tuple[int, int, int]) -> str:
     return "%02X%02X%02X" % color
 
 
-def write_info(base: Image.Image, ring: Image.Image) -> Path:
+def write_info(base: Image.Image, ring: Image.Image, suits: Image.Image) -> Path:
     """Míry jsou v px od středu obrázku, jih (+y) je výstupek. Hra z nich staví
     neprůchodný půdorys, dráhu kamene po pásu a příčky pásů ve shaderu."""
     inner, outer = belt_span()
@@ -590,6 +642,16 @@ def write_info(base: Image.Image, ring: Image.Image) -> Path:
             "slat_gain": round(SLAT_SHADE / BELT_SHADE, 4),
             "drum_px": round(m(FLAT) - m(DRUM_IN), 2),
             "drum_half_px": round(m(DRUM_HALF), 2),
+        },
+        "suits": {
+            "file": "base_suits.png",
+            "lane_offset_px": round(m(LANE_OFFSET), 2),
+            "lane_half_px": round(m(LANE_HALF), 2),
+            "dock_belt": {
+                "outer_px": round(dock_belt_span()[1], 2),
+                "drum_px": round(dock_belt_span()[2], 2),
+            },
+            "cell": suits.width,
         },
         "shade": list(SHADE),
         "shade_floor": SHADE_FLOOR,
@@ -624,6 +686,8 @@ def main() -> None:
     x, y = grids(cell_for())
     base = crop_square(pack_mask(paint_base(x, y, slats=False)))
     shown = crop_square(pack_mask(paint_base(x, y, slats=True)))
+    suits = crop_square(pack_mask(paint_base(x, y, slats=False, lanes=2)))
+    suits_shown = crop_square(pack_mask(paint_base(x, y, slats=True, lanes=2)))
     ring = crop_square(pack_mask(paint_ring(x, y)))
     # Oba snímky musí sdílet střed otáčení. Ořez bere vzdálenost od středu,
     # takže osmiúhelník i díra zůstanou uprostřed i s výstupkem na jihu.
@@ -637,12 +701,16 @@ def main() -> None:
         return canvas
 
     base, shown, ring = padded(base), padded(shown), padded(ring)
+    suits, suits_shown = padded(suits), padded(suits_shown)
     check(base, ring)
+    if suits.size != base.size:
+        raise SystemExit("spodek se zásobníky nemá stejný rozměr jako spodek")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     base_path, ring_path = OUT_DIR / "base.png", OUT_DIR / "ring.png"
     base.save(base_path)
     ring.save(ring_path)
+    suits.save(OUT_DIR / "base_suits.png")
 
     painted_base = colorize(shown, TINTS_BASE)
     painted_ring = colorize(ring, TINTS_RING)
@@ -664,7 +732,16 @@ def main() -> None:
         PREVIEW / "tovarna.png",
     )
     save_masks(base, ring, PREVIEW / "tovarna_masky.png")
-    info = write_info(base, ring)
+    painted_suits = colorize(suits_shown, TINTS_BASE)
+    save_sheet(
+        [
+            (fit(trim(painted_suits), tile), "spodek se zásobníky"),
+            (fit(trim(compose(painted_suits, painted_ring, (0, 0))), tile), "Skafandry · spolu"),
+        ],
+        2,
+        PREVIEW / "tovarna_skafandry.png",
+    )
+    info = write_info(base, ring, suits)
     print(f"spodek {base.width} px, mezikruží {ring.width} px, výška {real(RING_H):.2f} m")
     print(f"přes plochy {real(FLAT) * 2:.1f} m, výstupek {real(DOCK):.2f} m na jih")
     print(PREVIEW / "tovarna.png")

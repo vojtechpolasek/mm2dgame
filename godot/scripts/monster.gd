@@ -78,8 +78,12 @@ var _on_path := false
 var _replan_left := 0.0
 var _sight_left := 0.0
 var _persons: Array[Person] = []
-## Postava, kterou příšera právě honí. null, když materiál nikdo nenese.
-var _prey: Person
+## Další, kdo může nést kámen (vesničané, kteří sledují hráče). Pole sdílí správce příšer,
+## každý v něm má carried(), drop_held() a position jako postava.
+var carriers: Array = []
+## Kdo nese materiál příšery a ta ho právě honí: postava, nebo kdo z carriers. null, když
+## materiál nikdo nenese.
+var _prey: Node2D
 var _camera: MapCamera
 var _rng: RandomNumberGenerator
 var _flying := false
@@ -245,19 +249,23 @@ func _chase(delta: float) -> void:
 	_bite()
 
 
-## Nejbližší postava, která nese materiál příšery. Když žádná, null.
-func _carrier() -> Person:
-	var best: Person = null
+## Nejbližší postava nebo vesničan, kdo nese materiál příšery. Když nikdo, null.
+func _carrier() -> Node2D:
+	var best: Node2D = null
 	var best_dist := INF
-	for person in _persons:
-		if person.carried() != material_index:
-			continue
-		if _walker != null and not _walker.contains(person.position):
-			continue
-		var dist := position.distance_squared_to(person.position)
-		if dist < best_dist:
-			best_dist = dist
-			best = person
+	for group: Array in [_persons, carriers]:
+		for holder: Variant in group:
+			if not is_instance_valid(holder):
+				continue
+			var body := holder as Node2D
+			if holder.carried() != material_index:
+				continue
+			if _walker != null and not _walker.contains(body.position):
+				continue
+			var dist := position.distance_squared_to(body.position)
+			if dist < best_dist:
+				best_dist = dist
+				best = body
 	return best
 
 
@@ -265,7 +273,8 @@ func _bite() -> void:
 	if _walker != null and not _walker.contains(_prey.position):
 		return
 	if position.distance_to(_prey.position) <= _touch:
-		_prey.drop_held()
+		var holder: Variant = _prey
+		holder.drop_held()
 		_calm_left = CALM_SECONDS
 		_pick_target()
 
@@ -513,7 +522,7 @@ func is_chasing() -> bool:
 
 
 ## Postava, kterou příšera honí, jinak null.
-func prey() -> Person:
+func prey() -> Node2D:
 	return _prey
 
 

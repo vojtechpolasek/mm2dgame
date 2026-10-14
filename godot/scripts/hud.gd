@@ -20,7 +20,7 @@ const DIM := Color(0.95, 0.93, 0.88, 0.55)
 const ACCENT := Color(0.86, 0.66, 0.3)
 const HURRY_COLOR := Color(0.94, 0.4, 0.32)
 ## Jednotka postupu vpravo nahoře podle cíle typu hry.
-const UNITS := {"points": "bodů", "ponds": "kamenů"}
+const UNITS := {"points": "bodů", "ponds": "kamenů", "suits": "kamenů"}
 
 signal retry_pressed
 signal menu_pressed

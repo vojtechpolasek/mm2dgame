@@ -65,7 +65,7 @@ func setup(info: Dictionary, base: Texture2D, ring: Texture2D, shader: Shader, c
 	var ring_px: Dictionary = info.get("ring_px", {})
 	_ring_reach = float(ring_px.get("teeth", 127.0))
 	_yard = float(ring_px.get("inner", 69.0))
-	_shift.resize(8)
+	_shift.resize(16)
 	var base_info: Dictionary = layers.get("base", {})
 	var ring_info: Dictionary = layers.get("ring", {})
 	_ring_height = float(ring_info.get("height", 1.6))
