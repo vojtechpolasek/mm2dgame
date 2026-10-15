@@ -18,7 +18,7 @@
       "color": "C4A56A",
       "sparkle": 0.1,
       "glint": "F0E0B8",
-      "monster": "had",
+      "monster": "had2",
       "monster_accent": "5E4022",
       "monster_speed": 1.0
     },
@@ -29,7 +29,7 @@
       "color": "D6C43A",
       "sparkle": 0.18,
       "glint": "FFF3A8",
-      "monster": "had",
+      "monster": "had2",
       "monster_accent": "4A3A18",
       "monster_speed": 1.08
     },
@@ -40,7 +40,7 @@
       "color": "6A332C",
       "sparkle": 0.24,
       "glint": "FF7848",
-      "monster": "pavouk",
+      "monster": "pavouk2",
       "monster_speed": 1.0
     },
     "grafit": {
@@ -50,7 +50,7 @@
       "color": "1A1C1E",
       "sparkle": 0.0,
       "glint": "3A3A3A",
-      "monster": "pavouk",
+      "monster": "pavouk2",
       "monster_accent": "6E767E",
       "monster_speed": 1.08
     },
@@ -61,7 +61,7 @@
       "color": "4A5158",
       "sparkle": 0.38,
       "glint": "E4E8EE",
-      "monster": "vlk",
+      "monster": "vlk2",
       "monster_speed": 1.0
     },
     "kremen": {
@@ -71,7 +71,7 @@
       "color": "E6D6B8",
       "sparkle": 0.55,
       "glint": "FFFFFF",
-      "monster": "vlk",
+      "monster": "vlk2",
       "monster_accent": "8C7458",
       "monster_speed": 1.08
     },
@@ -82,7 +82,7 @@
       "color": "A8B4C6",
       "sparkle": 1.0,
       "glint": "FFFFFF",
-      "monster": "vlk",
+      "monster": "vlk2",
       "monster_accent": "4E5A6C",
       "monster_speed": 1.15
     },
@@ -93,7 +93,7 @@
       "color": "B4621C",
       "sparkle": 0.62,
       "glint": "FFE1B0",
-      "monster": "tyranosaurus",
+      "monster": "rex2",
       "monster_accent": "5A2410",
       "monster_speed": 1.0
     },
@@ -104,7 +104,7 @@
       "color": "1E8A45",
       "sparkle": 0.8,
       "glint": "E7FFE8",
-      "monster": "tyranosaurus",
+      "monster": "rex2",
       "monster_accent": "E2B33A",
       "monster_speed": 1.08
     },
@@ -115,7 +115,7 @@
       "color": "ECC420",
       "sparkle": 0.8,
       "glint": "FFF0A8",
-      "monster": "tyranosaurus",
+      "monster": "rex2",
       "monster_accent": "B8302A",
       "monster_speed": 1.15
     },
@@ -126,7 +126,7 @@
       "color": "C42030",
       "sparkle": 0.92,
       "glint": "FFE8E0",
-      "monster": "ptakojester",
+      "monster": "ptakojester2",
       "monster_speed": 1.0
     },
     "safir": {
@@ -136,7 +136,7 @@
       "color": "2A5BD7",
       "sparkle": 1.15,
       "glint": "E4EEFF",
-      "monster": "ptakojester",
+      "monster": "ptakojester2",
       "monster_speed": 1.08
     },
     "diamant": {
@@ -146,7 +146,7 @@
       "color": "D7E7F6",
       "sparkle": 1.4,
       "glint": "FFFFFF",
-      "monster": "ptakojester",
+      "monster": "ptakojester2",
       "monster_accent": "8098B4",
       "monster_speed": 1.15
     }

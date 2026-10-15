@@ -12,7 +12,7 @@ extends Node2D
 ## a nad hlavou má svůj materiál. Když není na co ukázat, jen se k hráči otočí.
 ## Až jsou všichni hráči dál než POINT_FAR, pokračuje v tom, co dělal.
 ## Při honičce ho správce vesničanů může poslat pomáhat (help): přeruší, co dělá, z domu vyjde
-## dveřmi a běží jako hráč na místo HELP_SHARE cesty od příšery k honěné postavě. Ruku má
+## dveřmi a běží (RUN_METERS) na místo HELP_SHARE cesty od příšery k honěné postavě. Ruku má
 ## nataženou. Příšera přes něj neprojde, musí ho obejít. Po honičce jde domů.
 ## Grafika je hráčova, chodí atlasem chůze s kratším krokem, při pomoci běží atlasem běhu.
 ## Typ hry Skafandry: venku je jedovatý vzduch. Vesničan bez skafandru (needs_suit) zůstává
@@ -45,6 +45,8 @@ const SuitFactory := preload("res://scripts/suit_factory.gd")
 
 ## Chůze je poloviční rychlost běhu hráče.
 const WALK_METERS := Person.RUN_METERS * 0.5
+## Běh vesničana (při pomoci i při sledování hráče) je o pětinu pomalejší než běh hráče.
+const RUN_METERS := Person.RUN_METERS * 0.8
 const BODY := Person.BODY
 const HOUSE_PAUSE := 2.0
 const WAIT := Vector2(3.0, 5.0)
@@ -75,9 +77,9 @@ const BOB_SPEED := 2.4
 const STEP_SURFACES: PackedStringArray = ["grass", "dirt", "desert", "snow"]
 const STEP_VARIANTS := 4
 const STEP_DB := -14.0
-## Pomoc při honičce: cílové místo je tenhle díl cesty od příšery k honěné postavě. Přímá
-## cesta k němu se ověřuje po HELP_SIGHT sekundách, když nevede, běží po mřížce. U cíle stojí
-## a dívá se na příšeru.
+## Pomoc při honičce: cílové místo je tenhle díl cesty od příšery k honěné postavě. Místo se
+## přepočítá po HELP_SIGHT sekundách, ať vesničan nereaguje na každý úkrok příšery. Zároveň se
+## ověří přímá cesta k němu, když nevede, běží po mřížce. U cíle stojí a dívá se na příšeru.
 const HELP_SHARE := 0.2
 const HELP_SIGHT := 0.5
 const HELP_ARRIVE_PX := 6.0
@@ -85,10 +87,9 @@ const HELP_ARRIVE_PX := 6.0
 const HELP_REACH := 0.6
 ## Barvy kůže. Triko, kalhoty a vlasy jsou ze vzorníku menu postavy.
 const SKINS: PackedStringArray = ["F6CDB0", "EDBE98", "D9A27A", "B07850", "8A5A3C"]
-## Sledování hráče: dotyk těl s rezervou TOUCH_PX, běh o pětinu pomalejší než hráč,
+## Sledování hráče: dotyk těl s rezervou TOUCH_PX, běží rychlostí RUN_METERS,
 ## zastaví se FOLLOW_NEAR metrů od hráče. Kam běžet, se přepočítá po FOLLOW_CHECK sekundách.
 const TOUCH_PX := 6.0
-const FOLLOW_SPEED := 0.8
 const FOLLOW_NEAR := 1.5
 const FOLLOW_CHECK := 0.5
 ## Hod kamene do továrny trvá tolik sekund.
@@ -167,6 +168,7 @@ var _help_path := PackedVector2Array()
 var _help_i := 0
 var _help_on_path := false
 var _help_sight := 0.0
+var _help_goal := Vector2.ZERO
 var _fitted := Vector2.ZERO
 ## Kam vesničan patří mimo dveře. Ve dveřích je dítětem domu mezi stěnami a střechou.
 var _host: Node2D
@@ -547,29 +549,28 @@ func _step_help(delta: float) -> void:
 		stop_helping()
 		return
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	var goal := _helping.position.lerp(_helping.prey().position, HELP_SHARE)
-	var aim := goal
-	if _nav != null:
-		_help_sight -= delta
-		if _help_sight <= 0.0:
-			_help_sight = HELP_SIGHT
-			_help_on_path = false
-			if not _nav.clear_line(position, goal):
-				_help_path = _nav.path(position, goal)
-				_help_i = 0
-				_help_on_path = not _help_path.is_empty()
-		if _help_on_path:
-			while _help_i < _help_path.size() and position.distance_to(_help_path[_help_i]) < HELP_REACH * tile:
-				_help_i += 1
-			if _help_i < _help_path.size():
-				aim = _help_path[_help_i]
+	_help_sight -= delta
+	if _help_sight <= 0.0:
+		_help_sight = HELP_SIGHT
+		_help_goal = _helping.position.lerp(_helping.prey().position, HELP_SHARE)
+		_help_on_path = false
+		if _nav != null and not _nav.clear_line(position, _help_goal):
+			_help_path = _nav.path(position, _help_goal)
+			_help_i = 0
+			_help_on_path = not _help_path.is_empty()
+	var aim := _help_goal
+	if _help_on_path:
+		while _help_i < _help_path.size() and position.distance_to(_help_path[_help_i]) < HELP_REACH * tile:
+			_help_i += 1
+		if _help_i < _help_path.size():
+			aim = _help_path[_help_i]
 	var to := aim - position
 	var left := to.length()
 	if left <= HELP_ARRIVE_PX:
 		_face(_helping.position - position, delta)
 		_figure.set_frame(_figure.idle_frame)
 		return
-	var stride := minf(Person.RUN_METERS * tile * delta, left)
+	var stride := minf(RUN_METERS * tile * delta, left)
 	var next := _walker.allowed(position, position + to / left * stride, BODY, -1.0, crowd_id)
 	var moved := next.distance_to(position)
 	position = next
@@ -775,7 +776,7 @@ func _step_follow(delta: float) -> void:
 	var left := to.length()
 	if left < 0.5:
 		return
-	var stride := minf(Person.RUN_METERS * FOLLOW_SPEED * tile * delta, left)
+	var stride := minf(RUN_METERS * tile * delta, left)
 	var next := _walker.allowed(position, position + to / left * stride, BODY, -1.0, crowd_id)
 	var moved := next.distance_to(position)
 	position = next

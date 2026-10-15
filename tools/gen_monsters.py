@@ -32,6 +32,14 @@ Pavouk: vrstva 1 (nohy a makadla, 0 m), vrstva 2 (hlavohruď a zadeček, 0,5 m).
 Kořeny nohou zajíždějí pod hlavohruď, aby se vrstvy při posunu kamery neroztrhly.
 Chodí střídavě: L1 P2 L3 P4 spolu, druhá čtveřice o půl cyklu později.
 
+Kamenný golem (pavouk2) chodí jako pavouk, ale celý je z kamenů ve stylu krystalů:
+tmavý lem, zkosené plošky, plochý vrchol. Tělo jsou hromádky kamenů na tmavém jádru,
+končetiny řady protažených kamenů, svítí jen oči. Kresba jako u pavouka (pruh na hrudi,
+kříž a krokve na zadečku, proužky na noze) je vtlačená do kamenů. Semínka odlesků jsou
+ve zvláštním atlasu layer_N_spark.png (G jako u krystalu, jas je fáze bliknutí), v katalogu
+sparkle_file vrstvy. Hra ho kreslí shaderem monster_stone_layer ("shader": "stone"),
+odlesky mají barvu glint a sílu sparkle materiálu. Náhled _trpyt.gif ukazuje blikání.
+
 Vlk: vrstva 1 (nohy, 0 m), vrstva 2 (trup, ocas a hlava, 0,75 m). Klusá:
 levá přední a pravá zadní spolu, druhý pár o půl cyklu později. Srst dělají
 chomáče na obrysu, hřbet má tmavší sedlo (jen světlost R), maska, hříva a
@@ -87,6 +95,11 @@ EDGE = (480.0 * PARALLAX, 260.0 * PARALLAX)
 # Rozsah světlosti R pro barvu těla a pro barvu akcentu.
 SHADE = (0.35, 1.15)
 ACCENT_SHADE = (0.6, 1.1)
+# Blikání odlesků jako v crystal.gdshader: rychlost v rad/s, perioda a kolik cyklů chůze
+# ukáže náhled _trpyt.gif. Náhled trvá jednu periodu, aby se smyčka nezadrhla.
+SPARKLE_SPEED = 2.4
+SPARKLE_PERIOD = math.tau / SPARKLE_SPEED
+SPARKLE_CYCLES = 4
 # Krytí stínové vrstvy, kreslí se černě.
 SHADOW_ALPHA = 0.35
 # Počet soustředných pásů, ze kterých se skládá stínovaná trubice.
@@ -152,6 +165,49 @@ CROSS = (
 )
 CHEVRONS = (0.50, 0.68, 0.84)
 
+# Kamenný golem (pavouk2) má stejnou kostru a chůzi jako pavouk, ale celý je z kamenů.
+# Kameny těla: střed v poloměrech části těla a poloměr v px. Kreslí se od kraje ke středu.
+STONES: tuple[tuple[Point, float], ...] = (
+    ((-0.42, -0.5), 7.0),
+    ((0.45, -0.45), 7.4),
+    ((-0.5, 0.32), 7.6),
+    ((0.52, 0.28), 7.0),
+    ((0.0, 0.8), 6.4),
+    ((0.0, -0.05), 7.8),
+)
+PROSOMA_STONES: tuple[tuple[Point, float], ...] = (
+    ((-0.55, 0.42), 5.2),
+    ((0.55, 0.42), 5.0),
+    ((-0.5, -0.4), 5.0),
+    ((0.5, -0.42), 5.2),
+    ((0.0, 0.05), 6.6),
+)
+# Kusadla: střed a poloměr kamene pravé strany.
+FANG_STONE = ((2.7, -13.6), 3.2)
+# Kameny článku končetiny: (od, do, poloměr), od a do jako díl článku, poloměr jako násobek
+# tloušťky končetiny v místě. Kámen je protažený podél článku nejvýš o STONE_STRETCH.
+# Čtvrté číslo je podíl akcentu: obarvené kameny dělají proužky jako na noze pavouka.
+FEMUR_STONES = ((0.08, 0.5, 1.5, 0.0), (0.52, 0.94, 1.45, 0.0))
+TIBIA_STONES = ((0.06, 0.4, 1.55, 0.0), (0.42, 0.74, 1.5, 0.85), (0.76, 1.0, 1.3, 0.0))
+PALP_STONES = ((0.1, 0.9, 1.3, 0.0),)
+STONE_STRETCH = 1.5
+# Kloub v koleni, poloměr v px a podíl akcentu.
+STONE_KNEE = 3.0
+STONE_KNEE_ACCENT = 0.85
+# Světlost zkosených plošek jako násobek, od nejtmavší po nejsvětlejší. Vrchol je o kus světlejší.
+STONE_FACET = (0.28, 1.0)
+# Vrchol kamene je obrys zmenšený tímhle poměrem ke středu.
+STONE_TOP = 0.52
+# Počet rohů kamene, nejméně a nejvíc.
+STONE_SIDES = (5, 7)
+# Tmavý lem kolem kamene v px.
+STONE_RIM = 0.7
+# Odlesky: takový díl kamenů těla a končetin má semínko třpytu. Semínko je v G jako u krystalu,
+# jeho jas je fáze bliknutí. Poloměr semínka je v px výsledného obrázku.
+SPARK_BODY = 0.7
+SPARK_LEG = 0.25
+SPARK_RADIUS = 1.35
+
 # Vlk, asi 2 m od čenichu po špičku ocasu. Střed plátna je uprostřed trupu.
 WOLF_CANVAS = 176
 # Vlk se kreslí v rozměrech výše a do atlasu se zmenší tímhle poměrem.
@@ -212,6 +268,32 @@ WOLF_CHEEK = ((9.2, -32.5), (8.8, -40.0), 2.0, 0.55)
 # Ucho pravé strany: vnitřní a vnější kraj kořene, špička. Sedí v zadním rohu lebky a míří dozadu ven.
 # Tmavý lem ho oddělí od hlavy i u světlých materiálů.
 WOLF_EAR: tuple[Point, ...] = ((3.6, -35.5), (9.4, -38.5), (10.6, -29.0))
+
+# Řady kamenů podél těla (stone_band, kamenný vlk a tyranosaurus). Užší místo než BAND_STONE_ACROSS[0] px
+# má jeden kámen vedle sebe, užší než [1] dva, jinak tři, každá druhá řada o kámen míň.
+# Kámen má poloměr BAND_STONE_SIZE šířky na jeden kámen, krajní sedí na BAND_STONE_SPREAD
+# šířky od páteře podle počtu, rozestup řad je BAND_STONE_STEP poloměru.
+BAND_STONE_ACROSS = (7.0, 13.5)
+BAND_STONE_SIZE = 0.95
+BAND_STONE_SPREAD = {2: 0.45, 3: 0.62}
+BAND_STONE_STEP = 1.2
+BAND_STONE_STRETCH = 1.1
+# Kámen se posune o tolik dílu šířky do strany a dílu poloměru podél, ať řady nejsou rovné.
+BAND_STONE_JITTER = 0.18
+# Hřbet kamenného vlka (vlk2) v sedle má tolik světlosti, ke krajům se zesvětlí.
+WOLF_STONE_SADDLE = 0.6
+# Kameny nohy jako FEMUR_STONES: od, do, poloměr a akcent.
+WOLF_LEG_STONES = ((0.05, 0.5, 1.05, 0.0), (0.5, 0.95, 1.0, 0.0))
+# Kameny hlavy: střed (pravá strana, x 0 je na ose), poloměr a akcent. Od týla k čenichu.
+WOLF_HEAD_STONES = (
+    ((0.0, -28.0), 8.0, 0.0),
+    ((0.0, -33.5), 7.5, 0.0),
+    ((5.2, -38.5), 5.2, 0.0),
+    ((8.6, -35.5), 3.2, 0.55),
+    ((0.0, -42.5), 6.2, 0.0),
+    ((0.0, -50.0), 4.6, 0.55),
+    ((0.0, -56.5), 3.6, 0.55),
+)
 
 # Ptakoještěr, rozpětí asi 3,2 m. Střed plátna je mezi rameny a kyčlemi.
 PTERO_CANVAS = 240
@@ -274,6 +356,17 @@ PTERO_EYE_RIM = 0.45
 # Noha pravé strany: kyčel, koleno, chodidlo. Kreslí se pod blánu a trup, vykukuje jen holeň a prsty.
 PTERO_LEG: tuple[Point, ...] = ((2.5, 14.0), (4.0, 21.0), (4.6, 28.0))
 
+# Kamenný ptakoještěr (ptakojester2). Kameny blány mají poloměr kolem PTERO_WING_STONE px,
+# nejméně PTERO_WING_STONE_MIN. Kosti křídla a nohy jako FEMUR_STONES: od, do, poloměr a akcent.
+PTERO_WING_STONE = 5.0
+PTERO_WING_STONE_MIN = 1.6
+PTERO_BONE_STONES = ((0.05, 0.95, 1.2, 0.0),)
+PTERO_FINGER_STONES = ((0.03, 0.35, 1.2, 0.0), (0.37, 0.68, 1.2, 0.0), (0.7, 1.0, 1.2, 0.0))
+# Kameny hlavy po ose: Y a poloměr, od týla po špičku zobáku.
+PTERO_HEAD_STONES = ((-24.5, 5.0), (-29.0, 6.2), (-35.0, 4.6), (-41.0, 3.2), (-47.0, 2.2), (-52.5, 1.4))
+# Kamenný ptakoještěr je o pětinu větší než původní.
+PTERO_STONE_ZOOM = 1.2
+
 # Tyranosaurus, asi 3,2 m od čenichu po špičku ocasu. Kyčle jsou ve středu plátna.
 REX_CANVAS = 256
 # Páteř trupu od šíje po špičku ocasu: Y a poloviční šířka v px.
@@ -326,6 +419,20 @@ REX_ARM: tuple[Point, ...] = ((14.0, -36.0), (24.5, -39.0), (21.0, -48.0))
 REX_EYE = ((12.0, -74.0), 2.2)
 REX_HORN = ((10.0, -78.0), (11.8, -82.0))
 REX_NOSTRIL = ((3.6, -100.0), 1.1)
+# Kamenný tyranosaurus (rex2). Kameny článků jako FEMUR_STONES: od, do, poloměr a akcent.
+REX_LEG_STONES = ((0.05, 0.55, 1.0, 0.0), (0.5, 0.97, 0.95, 0.0))
+REX_THIGH_STONES = ((0.0, 1.0, 1.0, 0.0),)
+REX_TOE_STONES = ((0.1, 0.55, 1.0, 0.0), (0.55, 1.0, 1.0, 0.0))
+REX_ARM_STONES = ((0.05, 0.95, 1.1, 0.0),)
+# Kameny hlavy: střed (pravá strana, x 0 je na ose) a poloměr. Od zátylku k čenichu.
+REX_HEAD_STONES = (
+    ((0.0, -64.0), 12.0),
+    ((9.0, -71.0), 8.5),
+    ((0.0, -76.0), 11.0),
+    ((6.5, -86.0), 7.0),
+    ((0.0, -92.0), 8.5),
+    ((0.0, -99.5), 6.0),
+)
 
 # Had, asi 1,6 m od čenichu po špičku ocasu. Délka s se měří po páteři od čenichu, v px.
 SNAKE_CANVAS = 128
@@ -373,6 +480,14 @@ SNAKE_EYE = (6.0, 0.7, 1.15)
 SNAKE_NOSTRIL = (1.6, 0.5, 0.45)
 # Jazyk: délka před rozeklání, délka a rozevření hrotů ve stupních. Vymrští se dvakrát za cyklus.
 SNAKE_TONGUE = (6.0, 2.6, 24.0)
+# Kamenný had (had2): kameny těla mají poloměr SNAKE_STONE_SIZE šířky, střídavě vybočují
+# o SNAKE_STONE_SWAY šířky do stran. Rozestup je větší z px a násobku šířky.
+SNAKE_STONE_SIZE = 1.05
+SNAKE_STONE_SWAY = 0.2
+SNAKE_STONE_STEP = (1.8, 1.3)
+SNAKE_STONE_STRETCH = 1.25
+# Kameny hlavy a krku od krku k čenichu: s a poloměr jako díl šířky.
+SNAKE_HEAD_STONES = ((20.0, 1.1), (15.5, 1.15), (10.5, 1.0), (6.5, 0.95), (2.6, 0.95))
 
 # Druhy. Materiály druhu a jejich barvy jsou v gen_crystal.MATERIALS.
 # preview_shadow je obdélník elipsy stínu jen v náhledech, ve hře se nekreslí.
@@ -385,9 +500,11 @@ SNAKE_TONGUE = (6.0, 2.6, 24.0)
 # přeskočí, když skočí aspoň tak vysoko (postava a vesničan měří 1,8 m). jump_meters je výška
 # překážky nebo tvora, přes kterou druh skočí, 0 neskáče.
 MONSTERS = {
+    # Původní had. Ve hře ho nahradil had2, žádný materiál ho nemá, náhledy kreslí v preview_materials.
     "had": {
         "canvas": SNAKE_CANVAS,
         "preview_shadow": ((-16.0, -44.0), (16.0, 40.0)),
+        "preview_materials": ("piskovec", "sira"),
         "layers": {
             1: {"height": 0.0, "file": "layer_1.png"},
             2: {"height": SNAKE_HEIGHT, "file": "layer_2.png"},
@@ -401,9 +518,30 @@ MONSTERS = {
         "height_meters": 0.3,
         "eye": "FF5A3C",
     },
+    # Kamenný had místo hada. Zvuky má hadí. preview_materials ukážou třpyt i na lesklejších kamenech.
+    "had2": {
+        "canvas": SNAKE_CANVAS,
+        "preview_shadow": ((-16.0, -44.0), (16.0, 40.0)),
+        "preview_materials": ("kremen", "zlato"),
+        "info": {"shader": "stone", "sound": "had"},
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": SNAKE_HEIGHT, "file": "layer_2.png"},
+        },
+        "cycle_meters": SNAKE_WAVE / PX_PER_METER,
+        "frames": 16,
+        "preview_cycle_ms": 900,
+        "wander_meters": 0.8,
+        "chase_meters": 3.7,
+        "body_meters": 0.4,
+        "height_meters": 0.3,
+        "eye": "FF5A3C",
+    },
+    # Původní pavouk. Ve hře ho nahradil pavouk2, žádný materiál ho nemá, náhledy kreslí v preview_materials.
     "pavouk": {
         "canvas": SPIDER_CANVAS,
         "preview_shadow": ((-15.0, -12.0), (15.0, 40.0)),
+        "preview_materials": ("lavovy", "grafit"),
         "layers": {
             1: {"height": 0.0, "file": "layer_1.png"},
             2: {"height": 0.5, "file": "layer_2.png"},
@@ -416,8 +554,29 @@ MONSTERS = {
         "height_meters": 0.5,
         "eye": "F04A2C",
     },
+    # Kamenný golem místo pavouka. Semínka třpytu jsou ve zvláštním atlasu, hra ho kreslí
+    # shaderem stone. Zvuky má pavoukovy. preview_materials ukážou třpyt i na lesklejších kamenech.
+    "pavouk2": {
+        "canvas": SPIDER_CANVAS,
+        "preview_shadow": ((-15.0, -12.0), (15.0, 40.0)),
+        "preview_materials": ("lavovy", "grafit", "magnetit", "stribro", "diamant"),
+        "info": {"shader": "stone", "sound": "pavouk"},
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": 0.5, "file": "layer_2.png"},
+        },
+        "cycle_meters": 2.0 * STRIDE / PX_PER_METER,
+        "frames": 8,
+        "wander_meters": 0.8,
+        "chase_meters": 4.1,
+        "body_meters": 0.45,
+        "height_meters": 0.5,
+        "eye": "F04A2C",
+    },
+    # Původní vlk. Ve hře ho nahradil vlk2, žádný materiál ho nemá, náhledy kreslí v preview_materials.
     "vlk": {
         "canvas": WOLF_CANVAS,
+        "preview_materials": ("magnetit", "kremen", "stribro"),
         "preview_shadow": ((-17.0, -46.0), (17.0, 30.0)),
         "layers": {
             1: {"height": 0.0, "file": "layer_1.png"},
@@ -433,8 +592,29 @@ MONSTERS = {
         "jump_meters": 2.1,
         "eye": "FFD23A",
     },
+    # Kamenný vlk místo vlka. Zvuky má vlčí.
+    "vlk2": {
+        "canvas": WOLF_CANVAS,
+        "info": {"shader": "stone", "sound": "vlk"},
+        "preview_shadow": ((-17.0, -46.0), (17.0, 30.0)),
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": round(0.75 * WOLF_ZOOM, 3), "file": "layer_2.png"},
+        },
+        "zoom": WOLF_ZOOM,
+        "cycle_meters": 2.0 * WOLF_STRIDE * WOLF_ZOOM / PX_PER_METER,
+        "frames": 8,
+        "wander_meters": 1.0,
+        "chase_meters": 4.5,
+        "body_meters": round(0.45 * WOLF_ZOOM, 3),
+        "height_meters": 0.7,
+        "jump_meters": 2.1,
+        "eye": "FFD23A",
+    },
+    # Původní ptakoještěr. Ve hře ho nahradil ptakojester2, žádný materiál ho nemá, náhledy kreslí v preview_materials.
     "ptakojester": {
         "canvas": PTERO_CANVAS,
+        "preview_materials": ("rubin", "safir", "diamant"),
         "preview_shadow": None,
         "layers": {
             1: {"height": 0.0, "file": "layer_1.png", "shadow": True},
@@ -450,8 +630,47 @@ MONSTERS = {
         "height_meters": 1.0,
         "eye": "7DF2FF",
     },
+    # Kamenný ptakoještěr místo ptakoještěra, o pětinu větší. Zvuky má ptakoještěří.
+    "ptakojester2": {
+        "canvas": PTERO_CANVAS,
+        "zoom": PTERO_STONE_ZOOM,
+        "preview_shadow": None,
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png", "shadow": True},
+            2: {"height": PTERO_HEIGHT, "file": "layer_2.png"},
+        },
+        "cycle_meters": PTERO_CYCLE * PTERO_STONE_ZOOM,
+        "frames": PTERO_FRAMES,
+        "info": {"flying": True, "glide_frame": PTERO_GLIDE_FRAME, "shader": "stone", "sound": "ptakojester"},
+        "preview_cycle_ms": 1600,
+        "wander_meters": 1.5,
+        "chase_meters": 5.0,
+        "body_meters": round(0.8 * PTERO_STONE_ZOOM, 3),
+        "height_meters": 1.0,
+        "eye": "7DF2FF",
+    },
+    # Původní tyranosaurus. Ve hře ho nahradil rex2, žádný materiál ho nemá, náhledy kreslí v preview_materials.
     "tyranosaurus": {
         "canvas": REX_CANVAS,
+        "preview_materials": ("jantar", "smaragd", "zlato"),
+        "preview_shadow": ((-28.0, -72.0), (28.0, 70.0)),
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": 1.2, "file": "layer_2.png"},
+        },
+        "cycle_meters": 2.0 * REX_STRIDE / PX_PER_METER,
+        "frames": 16,
+        "wander_meters": 0.8,
+        "chase_meters": 5.3,
+        "body_meters": 0.55,
+        "height_meters": 3.0,
+        "jump_meters": 4.1,
+        "eye": "FFC21A",
+    },
+    # Kamenný tyranosaurus místo tyranosaura. Zvuky má tyranosauří.
+    "rex2": {
+        "canvas": REX_CANVAS,
+        "info": {"shader": "stone", "sound": "tyranosaurus"},
         "preview_shadow": ((-28.0, -72.0), (28.0, 70.0)),
         "layers": {
             1: {"height": 0.0, "file": "layer_1.png"},
@@ -508,6 +727,9 @@ class Layer:
         size = canvas * SS
         self.channels = [Image.new("L", (size, size), 0) for _ in range(4)]
         self.draws = [ImageDraw.Draw(channel) for channel in self.channels]
+        # Semínka odlesků kamenné příšery (jas = fáze), jdou do zvláštního atlasu.
+        self.spark = Image.new("L", (size, size), 0)
+        self.spark_draw = ImageDraw.Draw(self.spark)
 
     def px(self, point: Point) -> Point:
         return ((self.canvas / 2 + point[0]) * SS, (self.canvas / 2 + point[1]) * SS)
@@ -516,6 +738,8 @@ class Layer:
         for draw, value in zip(self.draws, (shade, accent, eye, 1.0)):
             if value is not None:
                 yield draw, byte(value)
+        # Tvar zakryje semínka pod sebou.
+        yield self.spark_draw, 0
 
     def polygon(self, points: list[Point], shade: float | None, accent: float | None = 0.0, eye: float | None = 0.0) -> None:
         outline = [self.px(point) for point in points]
@@ -560,6 +784,7 @@ class Layer:
         x0, x1 = max(0, math.floor(cx - reach)), min(limit, math.ceil(cx + reach))
         y0, y1 = max(0, math.floor(cy - reach)), min(limit, math.ceil(cy + reach))
         shade, accent, eye, alpha = (channel.load() for channel in self.channels)
+        spark = self.spark.load()
         for py in range(y0, y1):
             dy = py + 0.5 - cy
             for px in range(x0, x1):
@@ -573,6 +798,7 @@ class Layer:
                 accent[px, py] = 0
                 eye[px, py] = 0
                 alpha[px, py] = 255
+                spark[px, py] = 0
 
     def tube(
         self,
@@ -698,6 +924,18 @@ def abdomen_point(center: Point, angle: float, local: Point) -> Point:
     return (center[0] + offset[0], center[1] + offset[1])
 
 
+def paint_abdomen_marks(layer: Layer, center: Point, sway: float) -> None:
+    """Kříž a krokve na zadečku. Světlost nechá, jak je, takže na kamenech zůstanou plošky."""
+    for local, radius, weight in CROSS:
+        layer.disk(abdomen_point(center, sway, local), radius, None, weight)
+    for along in CHEVRONS:
+        width = 0.5 * (1.0 - along * 0.45)
+        tip = abdomen_point(center, sway, (0.0, along + 0.07))
+        for side in (-1.0, 1.0):
+            arm = abdomen_point(center, sway, (side * width, along - 0.07))
+            layer.capsule(arm, tip, 0.9, 0.9, None, 0.6)
+
+
 def paint_spider_body(layer: Layer, t: float) -> None:
     for side in (-1.0, 1.0):
         layer.dome((side * 2.6, -13.2), (2.3, 3.2), 0.0, 0.15, 0.45)
@@ -712,14 +950,7 @@ def paint_spider_body(layer: Layer, t: float) -> None:
     offset = rotate((ABDOMEN[0] - PEDICEL[0], ABDOMEN[1] - PEDICEL[1]), sway)
     center = (PEDICEL[0] + offset[0], PEDICEL[1] + offset[1])
     layer.dome(center, ABDOMEN_R, sway, 0.22, 1.0)
-    for local, radius, weight in CROSS:
-        layer.disk(abdomen_point(center, sway, local), radius, None, weight)
-    for along in CHEVRONS:
-        width = 0.5 * (1.0 - along * 0.45)
-        tip = abdomen_point(center, sway, (0.0, along + 0.07))
-        for side in (-1.0, 1.0):
-            arm = abdomen_point(center, sway, (side * width, along - 0.07))
-            layer.capsule(arm, tip, 0.9, 0.9, None, 0.6)
+    paint_abdomen_marks(layer, center, sway)
 
 
 def spider_layers(t: float) -> dict[int, Layer]:
@@ -730,6 +961,157 @@ def spider_layers(t: float) -> dict[int, Layer]:
     for side in (-1.0, 1.0):
         paint_palp(legs, side, t)
     paint_spider_body(body, t)
+    return {1: legs, 2: body}
+
+
+def facet_factor(cell: int, facet: int) -> float:
+    """Pevná náhodná hodnota 0 až 1 pro plošku kamene, stejná ve všech snímcích."""
+    value = math.sin(cell * 12.9898 + facet * 78.233) * 43758.5453
+    return value - math.floor(value)
+
+
+def stone_outline(
+    center: Point, radius: float, angle: float, cell: int, grow: float = 0.0, stretch: float = 1.0
+) -> list[Point]:
+    """Obrys kamene: nepravidelný mnohoúhelník, poloměr vrcholů kolísá podle cell.
+
+    stretch protáhne kámen podél směru angle, grow ho zvětší o tolik px.
+    """
+    sides = STONE_SIDES[0] + cell % (STONE_SIDES[1] - STONE_SIDES[0] + 1)
+    turn = facet_factor(cell, 11) * math.tau
+    c, s = math.cos(angle), math.sin(angle)
+    points = []
+    for corner in range(sides):
+        a = turn + math.tau * (corner + 0.35 * (facet_factor(cell, 20 + corner) - 0.5)) / sides
+        r = radius * (0.78 + 0.3 * facet_factor(cell, 40 + corner))
+        u = math.cos(a) * (r * stretch + grow)
+        v = math.sin(a) * (r + grow)
+        points.append((center[0] + u * c - v * s, center[1] + u * s + v * c))
+    return points
+
+
+def paint_stone(
+    layer: Layer,
+    center: Point,
+    radius: float,
+    angle: float,
+    cell: int,
+    light: float,
+    spark: float = 0.0,
+    stretch: float = 1.0,
+    accent: float = 0.0,
+) -> None:
+    """Kámen shora jako krystaly ve hře: tmavý lem, zkosené plošky po obvodu, plochý vrchol.
+
+    spark je šance, že kámen dostane semínko třpytu na vrcholové plošce. accent obarví
+    plošky barvou kresby, světlost plošek zůstane.
+    """
+    outer = stone_outline(center, radius, angle, cell, stretch=stretch)
+    inner = [lerp(center, point, STONE_TOP) for point in outer]
+    layer.polygon(stone_outline(center, radius, angle, cell, STONE_RIM, stretch), 0.05)
+    for index in range(len(outer)):
+        following = (index + 1) % len(outer)
+        facet = STONE_FACET[0] + (STONE_FACET[1] - STONE_FACET[0]) * facet_factor(cell, index)
+        layer.polygon([outer[index], outer[following], inner[following], inner[index]], light * facet, accent)
+    layer.polygon(inner, min(1.0, light * 1.1), accent)
+    if facet_factor(cell, 77) < spark:
+        x, y = layer.px(lerp(center, outer[cell % len(outer)], 0.35))
+        r = SPARK_RADIUS * SS
+        # Fáze 0,1 až 1. Pod 0,045 ji shader nebere jako semínko.
+        layer.spark_draw.ellipse((x - r, y - r, x + r, y + r), fill=byte(0.1 + 0.9 * facet_factor(cell, 78)))
+
+
+def paint_stone_heap(
+    layer: Layer,
+    stones: tuple[tuple[Point, float], ...],
+    center: Point,
+    radii: Point,
+    angle: float,
+    first_cell: int,
+) -> None:
+    """Část těla z kamenů. Pod nimi je tmavé jádro, které prosvítá mezerami.
+
+    Polohy jsou v poloměrech části, takže se kameny s ní otáčejí jako jeden kus.
+    """
+    layer.dome(center, (radii[0] * 0.92, radii[1] * 0.92), angle, 0.04, 0.16)
+    order = sorted(range(len(stones)), key=lambda index: -math.hypot(*stones[index][0]))
+    for index in order:
+        local, radius = stones[index]
+        offset = rotate((local[0] * radii[0], local[1] * radii[1]), angle)
+        lit = 1.0 - min(1.0, local[0] ** 2 + local[1] ** 2)
+        point = (center[0] + offset[0], center[1] + offset[1])
+        paint_stone(layer, point, radius, angle, first_cell + index, 0.6 + 0.4 * lit ** 0.4, SPARK_BODY)
+
+
+def stone_segment(
+    layer: Layer,
+    start: Point,
+    end: Point,
+    z0: float,
+    z1: float,
+    r0: float,
+    r1: float,
+    stones: tuple[tuple[float, float, float, float], ...],
+    cell: int,
+) -> None:
+    """Článek končetiny jako řada protažených kamenů na tmavém jádru."""
+    layer.capsule(start, end, r0 * 0.6, r1 * 0.6, 0.05)
+    angle = math.atan2(end[1] - start[1], end[0] - start[0])
+    length = math.dist(start, end)
+    for piece, (t0, t1, size, accent) in enumerate(stones):
+        mid = (t0 + t1) * 0.5
+        radius = (r0 + (r1 - r0) * mid) * size
+        stretch = max(1.0, min(STONE_STRETCH, (t1 - t0) * length * 0.5 / radius))
+        light = height_shade(z0 + (z1 - z0) * mid) * 1.15
+        paint_stone(layer, lerp(start, end, mid), radius, angle, cell * 7 + piece, light, SPARK_LEG, stretch, accent)
+
+
+def paint_golem_leg(layer: Layer, index: int, side: float, t: float) -> None:
+    hip_r, rest_r, bend = LEGS[index]
+    hip, rest = mirror(hip_r, side), mirror(rest_r, side)
+    reach = math.dist(hip, rest)
+    foot, lift = foot_at(hip, rest, leg_phase(index, side, t), STRIDE, PULL)
+    knee, knee_z = knee_of(hip, foot, LIFT * lift, reach * FEMUR, reach * TIBIA, bend)
+    r_hip, r_knee, r_tip = LEG_RADIUS
+    cell = 100 + index * 2 + (1 if side > 0 else 0)
+    layer.capsule(lerp(hip, PROSOMA, TUCK), hip, r_hip, r_hip, 0.05)
+    stone_segment(layer, hip, knee, HIP_Z, knee_z, r_hip, r_knee, FEMUR_STONES, cell)
+    stone_segment(layer, knee, foot, knee_z, LIFT * lift, r_knee, r_tip, TIBIA_STONES, cell + 20)
+    paint_stone(layer, knee, STONE_KNEE, 0.0, 300 + cell, height_shade(knee_z) * 1.15, accent=STONE_KNEE_ACCENT)
+
+
+def paint_golem_palp(layer: Layer, side: float, t: float) -> None:
+    points = [mirror(point, side) for point in PALP]
+    wiggle = PALP_WIGGLE * math.sin(math.tau * t + (0.0 if side > 0 else math.pi))
+    points[3] = (points[3][0], points[3][1] + wiggle)
+    points[2] = (points[2][0], points[2][1] + wiggle * 0.5)
+    r_hip, r_knee, r_tip = PALP_RADIUS
+    cell = 200 + (1 if side > 0 else 0)
+    stone_segment(layer, points[1], points[2], PALP_Z[1], PALP_Z[2], r_hip, r_knee, PALP_STONES, cell)
+    stone_segment(layer, points[2], points[3], PALP_Z[2], PALP_Z[3], r_knee, r_tip, PALP_STONES, cell + 2)
+
+
+def golem_layers(t: float) -> dict[int, Layer]:
+    """Kamenný golem: všechno z kamenů, jen oči svítí mezi nimi."""
+    legs, body = Layer(SPIDER_CANVAS), Layer(SPIDER_CANVAS)
+    for index in reversed(range(len(LEGS))):
+        for side in (-1.0, 1.0):
+            paint_golem_leg(legs, index, side, t)
+    for side in (-1.0, 1.0):
+        paint_golem_palp(legs, side, t)
+    for side in (-1.0, 1.0):
+        center, radius = FANG_STONE
+        paint_stone(body, mirror(center, side), radius, math.pi / 2, 400 + (1 if side > 0 else 0), 0.55)
+    paint_stone_heap(body, PROSOMA_STONES, PROSOMA, PROSOMA_R, 0.0, 500)
+    body.capsule((0.0, -4.5), (0.0, 7.5), 1.5, 1.0, None, 0.65)
+    for side in (-1.0, 1.0):
+        for center, radius in EYES:
+            body.disk(mirror(center, side), radius, None, 0.0, 1.0)
+    sway = math.radians(SWAY) * math.sin(math.tau * t)
+    offset = rotate((ABDOMEN[0] - PEDICEL[0], ABDOMEN[1] - PEDICEL[1]), sway)
+    center = (PEDICEL[0] + offset[0], PEDICEL[1] + offset[1])
+    paint_stone_heap(body, STONES, center, ABDOMEN_R, sway, 600)
+    paint_abdomen_marks(body, center, sway)
     return {1: legs, 2: body}
 
 
@@ -884,6 +1266,154 @@ def wolf_layers(t: float) -> dict[int, Layer]:
         saddle_w = [w * ratio for w in widths[first : last + 1]]
         body.tube(saddle, saddle_w, 0.2 * dim, dim, depth=ratio)
     wolf_head(body, t, flex(WOLF_NECK))
+    return {1: legs, 2: body}
+
+
+def stone_band(
+    layer: Layer,
+    spine: list[Point],
+    widths: list[float],
+    first_cell: int,
+    light: Callable[[int, float], float],
+    accent: Callable[[int], float] = lambda index: 0.0,
+    spark: float = SPARK_BODY,
+) -> None:
+    """Část těla podél páteře jako řady kamenů na tmavém jádru. Široké místo má víc kamenů vedle sebe.
+
+    Řady sedí na pevných indexech páteře, takže se kameny s tělem jen posouvají. light dostane
+    index páteře a vzdálenost od ní (díl šířky), accent index páteře.
+    """
+    layer.tube(spine, [w * 0.85 for w in widths], 0.04, 0.16)
+    normals = spine_normals(spine)
+    stones = []
+    index, row = 0, 0
+    while index < len(spine):
+        width = widths[index]
+        count = 1 if width < BAND_STONE_ACROSS[0] else 2 if width < BAND_STONE_ACROSS[1] else 3
+        # Každá druhá řada má o kámen míň, spáry se střídají jako ve zdivu.
+        if row % 2 and count > 1:
+            count -= 1
+        radius = max(1.2, width / max(count, 1.6) * BAND_STONE_SIZE)
+        a = spine[max(0, index - 1)]
+        b = spine[min(len(spine) - 1, index + 1)]
+        angle = math.atan2(b[1] - a[1], b[0] - a[0])
+        (px, py), (nx, ny) = spine[index], normals[index]
+        tx, ty = -ny, nx
+        for k in range(count):
+            cell = first_cell + row * 3 + k
+            across = 0.0 if count == 1 else (k / (count - 1) * 2.0 - 1.0) * BAND_STONE_SPREAD[count]
+            across += BAND_STONE_JITTER * (facet_factor(cell, 60) - 0.5)
+            along = radius * BAND_STONE_JITTER * (facet_factor(cell, 61) - 0.5)
+            center = (px + nx * width * across + tx * along, py + ny * width * across + ty * along)
+            size = radius * (0.85 + 0.25 * facet_factor(cell, 62))
+            stones.append((abs(across), row, center, size, angle, cell, index, across))
+        step = max(1, round(radius * BAND_STONE_STEP / max(0.1, math.dist(a, b) / 2.0)))
+        index += step
+        row += 1
+    # Kraje první, hřbet navrch. Vzadu první, přední kámen leží na zadním.
+    for _across, _row, center, radius, angle, cell, at, across in sorted(stones, key=lambda item: (-item[0], -item[1])):
+        paint_stone(layer, center, radius, angle, cell, light(at, across), spark, BAND_STONE_STRETCH, accent(at))
+
+
+def stone_wolf_leg(layer: Layer, index: int, side: float, t: float, flex: Callable[[float], float]) -> None:
+    joint_r, rest_r = WOLF_LEGS[index]
+    joint = mirror(joint_r, side)
+    joint = (joint[0] + flex(joint[1]), joint[1])
+    paw, lift = foot_at(joint, mirror(rest_r, side), leg_phase(index, side, t), WOLF_STRIDE, WOLF_PULL)
+    bend = lerp(joint, paw, 0.5)
+    bend = (bend[0] + side * 1.0, bend[1] + 4.0) if index else (bend[0] + side * 1.5, bend[1])
+    cell = 1000 + index * 2 + (1 if side > 0 else 0)
+    z = 9.0 + 9.0 * lift
+    stone_segment(layer, joint, bend, z + 6.0, z + 3.0, 5.0, 4.2, WOLF_LEG_STONES, cell)
+    stone_segment(layer, bend, paw, z + 3.0, z, 3.9, 3.2, WOLF_LEG_STONES, cell + 10)
+    raise_by = 0.25 * lift
+    paint_stone(layer, paw, 3.8, 0.0, 1100 + cell, 0.7 + raise_by, SPARK_LEG)
+    for toe, angle in enumerate(WOLF_TOES):
+        direction = rotate((0.0, -1.0), math.radians(angle))
+        spot = (paw[0] + direction[0] * 4.4, paw[1] + direction[1] * 4.6)
+        paint_stone(layer, spot, 1.5, math.radians(angle), 1200 + cell * 4 + toe, 0.8 + raise_by)
+
+
+def stone_wolf_tail(layer: Layer, t: float, base_x: float) -> None:
+    dense = profile(WOLF_TAIL)
+    first_y = WOLF_TAIL[0][0]
+    length = WOLF_TAIL[-1][0] - first_y
+    spine = []
+    for y, _w in dense:
+        u = (y - first_y) / length
+        spine.append((base_x + WOLF_TAIL_WAVE * u**1.3 * math.sin(math.tau * t - 1.2 * math.pi * u), y))
+    widths = [w for _y, w in dense]
+    tip = round((len(spine) - 1) * WOLF_TAIL_TIP)
+    last = len(spine) - 1
+    fringe(layer, spine, widths, 0, tip, 14, 2.0, 0.38, lean=0.9)
+    fringe(layer, spine, widths, tip, last, 6, 2.0, 0.38, 0.8, lean=0.9)
+    stone_band(
+        layer, spine, widths, 1300,
+        lambda at, across: 0.8 - 0.25 * abs(across),
+        lambda at: 0.8 if at >= tip else 0.0,
+    )
+
+
+def stone_wolf_head(layer: Layer, t: float, neck_x: float) -> None:
+    yaw = math.radians(WOLF_HEAD_YAW) * math.sin(math.tau * t + math.pi / 2)
+
+    def place(point: Point) -> Point:
+        turned = rotate((point[0], point[1] - WOLF_NECK), yaw)
+        return (neck_x + turned[0], WOLF_NECK + turned[1])
+
+    dense = profile(WOLF_HEAD)
+    spine = [place((0.0, y)) for y, _w in dense]
+    widths = [w for _y, w in dense]
+    fringe(layer, spine, widths, nearest(dense, -30.0), nearest(dense, -41.0), 5, 3.0, 0.4, 0.55, lean=0.8)
+    layer.tube(spine, [w * 0.85 for w in widths], 0.04, 0.16)
+    for index, (center, radius, accent) in enumerate(WOLF_HEAD_STONES):
+        for side in ((1.0,) if center[0] == 0.0 else (-1.0, 1.0)):
+            spot = place(mirror(center, side))
+            light = 0.95 - 0.004 * index
+            paint_stone(layer, spot, radius, -math.pi / 2 + yaw, 1400 + index * 2 + (1 if side > 0 else 0), light, SPARK_BODY, 1.15, accent)
+    for side in (-1.0, 1.0):
+        center, radius = WOLF_EYE
+        layer.disk(place(mirror(center, side)), radius + 0.4, 0.06)
+        layer.disk(place(mirror(center, side)), radius, None, 0.0, 1.0)
+        ear = [place(mirror(point, side)) for point in WOLF_EAR]
+        middle = ((ear[0][0] + ear[1][0] + ear[2][0]) / 3, (ear[0][1] + ear[1][1] + ear[2][1]) / 3)
+        layer.polygon([lerp(middle, point, 1.3) for point in ear], 0.3)
+        layer.polygon(ear, 0.92)
+        layer.polygon([lerp(middle, point, 0.5) for point in ear], 0.6)
+    layer.disk(place((0.0, -61.0)), 2.2, 0.06)
+
+
+def stone_wolf_layers(t: float) -> dict[int, Layer]:
+    """Kamenný vlk: trup, ocas, hlava i nohy z kamenů, hřbet tmavší jako sedlo, svítí oči.
+
+    Srst na obrysu zůstala jako ostré úlomky. Čenich, líce a špička ocasu jsou v akcentu.
+    """
+    sway = WOLF_FLEX * math.sin(math.tau * t)
+
+    def flex(y: float) -> float:
+        return sway * -y / 30.0
+
+    legs, body = Layer(WOLF_CANVAS), Layer(WOLF_CANVAS)
+    for index in (1, 0):
+        for side in (-1.0, 1.0):
+            stone_wolf_leg(legs, index, side, t, flex)
+
+    stone_wolf_tail(body, t, flex(WOLF_TAIL[0][0]))
+    dense = profile(WOLF_BODY)
+    spine = [(flex(y), y) for y, _w in dense]
+    widths = [w for _y, w in dense]
+    fringe(body, spine, widths, nearest(dense, -31.0), nearest(dense, -11.0), 10, 3.4, 0.4, 0.45)
+    fringe(body, spine, widths, nearest(dense, -9.0), nearest(dense, 24.0), 12, 1.4, 0.36)
+    first, last = (nearest(dense, y) for y in WOLF_SADDLE_Y)
+
+    def light(at: int, across: float) -> float:
+        base = 0.62 + 0.38 * (1.0 - across * across)
+        if first <= at <= last:
+            base *= WOLF_STONE_SADDLE + (1.0 - WOLF_STONE_SADDLE) * min(1.0, abs(across) / 0.6)
+        return base
+
+    stone_band(body, spine, widths, 1500, light)
+    stone_wolf_head(body, t, flex(WOLF_NECK))
     return {1: legs, 2: body}
 
 
@@ -1042,6 +1572,118 @@ def ptero_layers(t: float) -> dict[int, Layer]:
     return {1: body.shadow(), 2: body}
 
 
+def ptero_edges(t: float, side: float) -> tuple[list[Point], list[Point], list[Point], float]:
+    """Náběžná a odtoková hrana křídla po PTERO_SAMPLES bodech, klouby a náklon."""
+    lead, trail, joints, tilt = ptero_wing(t)
+    lead = [mirror(point, side) for point in resample(smooth(lead), PTERO_SAMPLES)]
+    trail = [mirror(point, side) for point in resample(smooth(trail), PTERO_SAMPLES)]
+    return lead, trail, [mirror(point, side) for point in joints], tilt
+
+
+def ptero_wing_stones() -> tuple[tuple[int, float, float, int], ...]:
+    """Kameny blány: (index podél rozpětí, díl cesty od náběžné k odtokové hraně, poloměr, číslo).
+
+    Rozložení se spočítá z roztaženého křídla a pak už se nemění, kameny s blánou jen
+    jedou a nepřeskakují. Kolik jich je vedle sebe, určí hloubka blány v místě.
+    """
+    lead, trail, _joints, _tilt = ptero_edges(PTERO_GLIDE_FRAME / PTERO_FRAMES, 1.0)
+    stones = []
+    index, row = 1, 0
+    while index < PTERO_SAMPLES - 1:
+        chord = math.dist(lead[index], trail[index])
+        count = max(1, round(chord / (2.0 * PTERO_WING_STONE)))
+        radius = max(PTERO_WING_STONE_MIN, chord / count * 0.5 * BAND_STONE_SIZE * 1.15)
+        for k in range(count):
+            cell = 3000 + row * 8 + k
+            v = (k + 0.5 + BAND_STONE_JITTER * (facet_factor(cell, 60) - 0.5)) / count
+            stones.append((index, v, radius * (0.85 + 0.25 * facet_factor(cell, 62)), cell))
+        span = math.dist(lead[index], lead[min(index + 1, PTERO_SAMPLES - 1)]) or 1.0
+        index += max(1, round(radius * BAND_STONE_STEP / span))
+        row += 1
+    return tuple(stones)
+
+
+def stone_ptero_wing(layer: Layer, t: float, side: float) -> None:
+    lead, trail, joints, tilt = ptero_edges(t, side)
+    shoulder, elbow, wrist, tip = joints
+    bright = 0.7 + 0.3 * math.cos(tilt) + 0.08 * math.sin(tilt)
+    # Tmavá blána pod kameny prosvítá spárami.
+    layer.polygon(lead + trail[::-1], 0.06)
+    last = len(lead) - 1
+    start, _steps, weight = PTERO_TIP
+    cell_side = 0 if side > 0 else 500
+    for index, v, radius, cell in PTERO_WING_STONES:
+        a, b = lead[index], trail[index]
+        nxt = min(index + 1, last)
+        angle = math.atan2(lead[nxt][1] - a[1], lead[nxt][0] - a[0])
+        along = index / last
+        accent = weight * min(1.0, max(0.0, (along - start) / (1.0 - start)) * 1.6) if along >= start else 0.0
+        light = bright * (0.95 - 0.35 * v)
+        paint_stone(layer, lerp(a, b, v), radius, angle, cell + cell_side, light, SPARK_BODY, 1.2, accent)
+    stone_segment(layer, shoulder, elbow, 30.0, 30.0, 3.6, 2.9, PTERO_BONE_STONES, 3500 + cell_side)
+    stone_segment(layer, elbow, wrist, 30.0, 30.0, 2.9, 2.4, PTERO_BONE_STONES, 3510 + cell_side)
+    stone_segment(layer, wrist, tip, 30.0, 26.0, 2.4, 1.0, PTERO_FINGER_STONES, 3520 + cell_side)
+    for spread in (-10.0, 10.0, 30.0):
+        direction = rotate((0.0, -1.0), math.radians(side * spread))
+        claw = (wrist[0] + direction[0] * 4.0, wrist[1] + direction[1] * 4.0)
+        layer.capsule(wrist, claw, 0.9, 0.5, 0.4)
+        layer.disk(claw, 0.55, 0.06)
+
+
+def stone_ptero_head(layer: Layer, t: float) -> None:
+    yaw = math.radians(PTERO_HEAD_YAW) * math.sin(math.tau * t)
+    pivot = PTERO_NECK[-1][0]
+
+    def place(point: Point) -> Point:
+        turned = rotate((point[0], point[1] - pivot), yaw)
+        return (turned[0], pivot + turned[1])
+
+    dense = profile(PTERO_HEAD)
+    layer.tube([place((0.0, y)) for y, _w in dense], [w * 0.85 for _y, w in dense], 0.04, 0.16)
+    for index, (y, radius) in enumerate(PTERO_HEAD_STONES):
+        paint_stone(layer, place((0.0, y)), radius, -math.pi / 2 + yaw, 3600 + index, 0.95, SPARK_BODY, 1.3)
+    center, radius = PTERO_EYE
+    for side in (-1.0, 1.0):
+        eye = place(mirror(center, side))
+        layer.disk(eye, radius + PTERO_EYE_RIM, 0.06)
+        layer.disk(eye, radius, None, 0.0, 1.0)
+
+
+def stone_ptero_layers(t: float) -> dict[int, Layer]:
+    """Kamenný ptakoještěr: blána poskládaná z plochých kamenů, kosti křídla, trup a hlava z kamenů."""
+    body = Layer(PTERO_CANVAS)
+    for side in (-1.0, 1.0):
+        hip, knee, foot = (mirror(point, side) for point in PTERO_LEG)
+        foot = (foot[0], foot[1] + 0.8 * math.sin(math.tau * t))
+        for spread in (-15.0, 0.0, 15.0):
+            direction = rotate((0.0, 1.0), math.radians(side * spread))
+            body.capsule(foot, (foot[0] + direction[0] * 2.6, foot[1] + direction[1] * 2.6), 0.6, 0.35, 0.08)
+        stone_segment(body, hip, knee, 20.0, 20.0, 1.9, 1.6, PTERO_BONE_STONES, 3700 + (1 if side > 0 else 0))
+        stone_segment(body, knee, foot, 20.0, 16.0, 1.6, 1.2, PTERO_BONE_STONES, 3710 + (1 if side > 0 else 0))
+    for side in (-1.0, 1.0):
+        stone_ptero_wing(body, t, side)
+    neck = profile(PTERO_NECK)
+    stone_band(body, [(0.0, y) for y, _w in neck], [w for _y, w in neck], 3800, lambda at, across: 0.85)
+    dense = profile(PTERO_BODY)
+    spine = [(0.0, y) for y, _w in dense]
+    widths = [w for _y, w in dense]
+    fringe(body, spine, widths, 0, len(spine) - 1, 10, 1.3, 0.35)
+    first, last = (nearest(dense, y) for y in PTERO_SADDLE_Y)
+
+    def light(at: int, across: float) -> float:
+        base = 0.62 + 0.38 * (1.0 - across * across)
+        if first <= at <= last:
+            base *= WOLF_STONE_SADDLE + (1.0 - WOLF_STONE_SADDLE) * min(1.0, abs(across) / 0.6)
+        return base
+
+    stone_band(body, spine, widths, 3900, light)
+    center, _radii = PTERO_SHOULDER_DOME
+    for side in (-1.0, 1.0):
+        paint_stone(body, mirror(center, side), 4.6, 0.0, 3950 + (1 if side > 0 else 0), 0.95, SPARK_BODY)
+    stone_ptero_head(body, t)
+    return {1: body.shadow(), 2: body}
+
+
 def rex_spine_x(y: float, t: float, hips: float) -> float:
     if y < REX_NECK_FROM:
         bend = min(1.0, (REX_NECK_FROM - y) / (REX_NECK_FROM - REX_NECK))
@@ -1149,6 +1791,85 @@ def rex_layers(t: float) -> dict[int, Layer]:
     return {1: legs, 2: body}
 
 
+def stone_rex_foot(layer: Layer, heel: Point, side: float, lift: float, cell: int) -> None:
+    pad = (heel[0], heel[1] - 3.0)
+    curl = 1.0 - 0.3 * lift
+    raise_by = 0.25 * lift
+    for toe, (angle, length) in enumerate(REX_TOES):
+        heading = math.radians(side * (angle + REX_TOE_OUT))
+        direction = rotate((0.0, -1.0), heading)
+        tip = (pad[0] + direction[0] * length * curl, pad[1] + direction[1] * length * curl)
+        claw = (tip[0] + direction[0] * 4.5, tip[1] + direction[1] * 4.5)
+        layer.capsule(tip, claw, 1.6, 0.6, 0.06)
+        stone_segment(layer, pad, tip, 6.0 + 8.0 * lift, 3.0 + 8.0 * lift, 4.2, 2.6, REX_TOE_STONES, cell * 4 + toe)
+    paint_stone(layer, pad, 7.0, 0.0, 2000 + cell, 0.7 + raise_by, SPARK_LEG)
+
+
+def stone_rex_head(layer: Layer, t: float, hips: float) -> None:
+    yaw = math.radians(REX_HEAD_YAW) * math.sin(math.tau * t)
+    neck = (rex_spine_x(REX_NECK, t, hips), REX_NECK)
+
+    def place(point: Point) -> Point:
+        turned = rotate((point[0], point[1] - REX_NECK), yaw)
+        return (neck[0] + turned[0], neck[1] + turned[1])
+
+    dense = profile(REX_HEAD)
+    layer.tube([place((0.0, y)) for y, _w in dense], [w * 0.85 for _y, w in dense], 0.04, 0.16)
+    for index, (center, radius) in enumerate(REX_HEAD_STONES):
+        for side in ((1.0,) if center[0] == 0.0 else (-1.0, 1.0)):
+            spot = place(mirror(center, side))
+            cell = 2100 + index * 2 + (1 if side > 0 else 0)
+            paint_stone(layer, spot, radius, -math.pi / 2 + yaw, cell, 0.95 - 0.03 * abs(center[0]) / 10.0, SPARK_BODY, 1.15)
+    for side in (-1.0, 1.0):
+        horn_from, horn_to = (mirror(point, side) for point in REX_HORN)
+        layer.capsule(place(horn_from), place(horn_to), 1.3, 0.8, None, 0.9)
+        center, radius = REX_EYE
+        layer.disk(place(mirror(center, side)), radius + 0.5, 0.06)
+        layer.disk(place(mirror(center, side)), radius, None, 0.0, 1.0)
+        center, radius = REX_NOSTRIL
+        layer.disk(place(mirror(center, side)), radius, 0.06)
+
+
+def stone_rex_arm(layer: Layer, side: float, t: float, hips: float) -> None:
+    swing = 1.2 * math.sin(math.tau * t + (0.0 if side > 0 else math.pi))
+    shoulder, elbow, hand = (mirror(point, side) for point in REX_ARM)
+    shift = rex_spine_x(shoulder[1], t, hips)
+    shoulder = (shoulder[0] + shift, shoulder[1])
+    elbow = (elbow[0] + shift, elbow[1] + swing * 0.5)
+    hand = (hand[0] + shift, hand[1] + swing)
+    cell = 2200 + (1 if side > 0 else 0)
+    for spread in (-12.0, 12.0):
+        direction = rotate((0.0, -1.0), math.radians(side * spread))
+        layer.capsule(hand, (hand[0] + direction[0] * 3.2, hand[1] + direction[1] * 3.2), 0.9, 0.4, 0.08)
+    stone_segment(layer, shoulder, elbow, 14.0, 14.0, 3.6, 3.3, REX_ARM_STONES, cell)
+    stone_segment(layer, elbow, hand, 14.0, 12.0, 3.0, 2.4, REX_ARM_STONES, cell + 2)
+
+
+def stone_rex_layers(t: float) -> dict[int, Layer]:
+    """Kamenný tyranosaurus: trup, ocas, hlava i nohy z kamenů, pruhy vtlačené do kamenů."""
+    hips = -REX_SWAY * math.sin(math.tau * t)
+    legs, body = Layer(REX_CANVAS), Layer(REX_CANVAS)
+
+    for side in (-1.0, 1.0):
+        hip, knee, heel, lift = rex_leg(side, t, hips)
+        cell = 2300 + (1 if side > 0 else 0) * 10
+        z = 10.0 + 10.0 * lift
+        stone_segment(legs, hip, knee, z + 14.0, z + 8.0, 10.0, 7.5, REX_LEG_STONES, cell)
+        stone_segment(legs, knee, heel, z + 8.0, z, 7.0, 5.0, REX_LEG_STONES, cell + 1)
+        stone_rex_foot(legs, heel, side, lift, cell + 2)
+        thigh = lerp(hip, heel, 0.32)
+        stone_segment(body, hip, (thigh[0] + side * 5.0, thigh[1]), 26.0, 24.0, 13.0, 9.5, REX_THIGH_STONES, cell + 3)
+        stone_rex_arm(body, side, t, hips)
+
+    dense = profile(REX_BODY)
+    spine = [(rex_spine_x(y, t, hips), y) for y, _w in dense]
+    widths = [w for _y, w in dense]
+    stone_band(body, spine, widths, 2400, lambda at, across: 0.62 + 0.38 * (1.0 - across * across))
+    rex_stripes(body, spine, widths)
+    stone_rex_head(body, t, hips)
+    return {1: legs, 2: body}
+
+
 def snake_wave_x(y: float, t: float) -> float:
     """Vybočení páteře za krkem. Vlna je pevná vůči zemi, ve hře se nehýbe, had po ní klouže."""
     behind = y - (SNAKE_SNOUT + SNAKE_NECK)
@@ -1185,79 +1906,163 @@ def snake_spine(t: float) -> tuple[list[Point], list[float], list[float]]:
     return spine, [w for _s, w in dense], [s for s, _w in dense]
 
 
-def snake_layers(t: float) -> dict[int, Layer]:
-    spine, widths, lengths = snake_spine(t)
-    normals = spine_normals(spine)
+class SnakeShape:
+    """Had ve fázi t: páteř, šířky, délky s a body na hřbetě."""
 
-    def index_of(s: float) -> int:
-        return min(bisect.bisect_left(lengths, s), len(lengths) - 1)
+    def __init__(self, t: float) -> None:
+        self.spine, self.widths, self.lengths = snake_spine(t)
+        self.normals = spine_normals(self.spine)
 
-    def at(s: float, across: float) -> Point:
+    def index_of(self, s: float) -> int:
+        return min(bisect.bisect_left(self.lengths, s), len(self.lengths) - 1)
+
+    def at(self, s: float, across: float) -> Point:
         """Bod na hřbetě: across je díl poloviční šířky od páteře, kladný vpravo."""
-        index = index_of(s)
-        (px, py), (nx, ny), width = spine[index], normals[index], widths[index]
+        index = self.index_of(s)
+        (px, py), (nx, ny), width = self.spine[index], self.normals[index], self.widths[index]
         return (px - nx * width * across, py - ny * width * across)
 
-    body, head = Layer(SNAKE_CANVAS), Layer(SNAKE_CANVAS)
-    tuck, raise_ = index_of(SNAKE_TUCK), index_of(SNAKE_RAISE)
-    body.tube(spine[tuck:], widths[tuck:], 0.2, 1.0)
-    first, last, gap, half_length, half_width = SNAKE_DIAMONDS
-    spot_across, spot_radius, spot_accent = SNAKE_SPOTS
+    def angle(self, s: float) -> float:
+        """Směr páteře v místě s, od čenichu k ocasu."""
+        index = self.index_of(s)
+        a = self.spine[max(0, index - 2)]
+        b = self.spine[min(len(self.spine) - 1, index + 2)]
+        return math.atan2(b[1] - a[1], b[0] - a[0])
 
-    def diamond(layer: Layer, center: float, shrink: float, across: float) -> None:
+    def diamond(self, layer: Layer, center: float, shrink: float, across: float, rim: float | None = 0.16) -> None:
+        """Kosočtverec na hřbetě. rim None vynechá tmavý lem a nechá světlost pod kresbou."""
+        _first, _last, _gap, half_length, _half_width = SNAKE_DIAMONDS
         corners = [
-            at(center - half_length * shrink, 0.0),
-            at(center, across),
-            at(center + half_length * shrink, 0.0),
-            at(center, -across),
+            self.at(center - half_length * shrink, 0.0),
+            self.at(center, across),
+            self.at(center + half_length * shrink, 0.0),
+            self.at(center, -across),
         ]
-        for a, b in zip(corners, corners[1:] + corners[:1]):
-            layer.capsule(a, b, SNAKE_RIM, SNAKE_RIM, 0.16)
-        middle = at(center, 0.0)
+        if rim is not None:
+            for a, b in zip(corners, corners[1:] + corners[:1]):
+                layer.capsule(a, b, SNAKE_RIM, SNAKE_RIM, rim)
+        middle = self.at(center, 0.0)
         layer.polygon([lerp(middle, corner, 0.82) for corner in corners], None, 0.9)
 
-    center = first
-    while center <= last + 0.01:
-        shrink = min(1.0, widths[index_of(center)] / SNAKE_WIDE)
-        diamond(body, center, shrink, half_width)
-        for side in (-1.0, 1.0):
-            body.disk(at(center + gap / 2, side * spot_across), spot_radius * shrink, None, spot_accent)
-        center += gap
+    def markings(self, layer: Layer, rim: float | None = 0.16) -> None:
+        """Kosočtverce na hřbetě a skvrny na bocích mezi nimi."""
+        first, last, gap, _half_length, half_width = SNAKE_DIAMONDS
+        spot_across, spot_radius, spot_accent = SNAKE_SPOTS
+        center = first
+        while center <= last + 0.01:
+            shrink = min(1.0, self.widths[self.index_of(center)] / SNAKE_WIDE)
+            self.diamond(layer, center, shrink, half_width, rim)
+            for side in (-1.0, 1.0):
+                layer.disk(self.at(center + gap / 2, side * spot_across), spot_radius * shrink, None, spot_accent)
+            center += gap
 
-    # Jazyk je pod hlavou, vyjede z tlamy a zase zajede.
-    out = max(0.0, math.sin(math.tau * 2.0 * t)) ** 0.6
-    if out > 0.05:
+    def tongue(self, layer: Layer, t: float) -> None:
+        """Jazyk je pod hlavou, vyjede z tlamy a zase zajede. Dvakrát za cyklus."""
+        out = max(0.0, math.sin(math.tau * 2.0 * t)) ** 0.6
+        if out <= 0.05:
+            return
+        spine = self.spine
         reach, fork, spread = SNAKE_TONGUE
         tip = spine[0]
         dx, dy = tip[0] - spine[4][0], tip[1] - spine[4][1]
         norm = math.hypot(dx, dy) or 1.0
         forward = (dx / norm, dy / norm)
         split = (tip[0] + forward[0] * reach * out, tip[1] + forward[1] * reach * out)
-        head.capsule(spine[2], split, 0.45, 0.4, 0.3, 0.0, 1.0)
+        layer.capsule(spine[2], split, 0.45, 0.4, 0.3, 0.0, 1.0)
         for side in (-1.0, 1.0):
             prong = rotate(forward, math.radians(side * spread))
             end = (split[0] + prong[0] * fork * out, split[1] + prong[1] * fork * out)
-            head.capsule(split, end, 0.4, 0.25, 0.3, 0.0, 1.0)
+            layer.capsule(split, end, 0.4, 0.25, 0.3, 0.0, 1.0)
+
+    def eyes(self, layer: Layer) -> None:
+        for side in (-1.0, 1.0):
+            s, across, radius = SNAKE_EYE
+            eye = self.at(s, side * across)
+            layer.disk(eye, radius + 0.45, 0.1)
+            layer.disk(eye, radius, None, 0.0, 1.0)
+            s, across, radius = SNAKE_NOSTRIL
+            layer.disk(self.at(s, side * across), radius, 0.08)
+
+
+def snake_layers(t: float) -> dict[int, Layer]:
+    shape = SnakeShape(t)
+    spine, widths = shape.spine, shape.widths
+    body, head = Layer(SNAKE_CANVAS), Layer(SNAKE_CANVAS)
+    tuck, raise_ = shape.index_of(SNAKE_TUCK), shape.index_of(SNAKE_RAISE)
+    body.tube(spine[tuck:], widths[tuck:], 0.2, 1.0)
+    shape.markings(body)
+    shape.tongue(head, t)
     head.tube(spine[: raise_ + 1], widths[: raise_ + 1], 0.24, 1.0)
     # Na temeni je menší kosočtverec, kresba těla tak začíná už na hlavě.
-    diamond(head, SNAKE_CROWN, 0.75, 0.42)
-    for side in (-1.0, 1.0):
-        s, across, radius = SNAKE_EYE
-        eye = at(s, side * across)
-        head.disk(eye, radius + 0.45, 0.1)
-        head.disk(eye, radius, None, 0.0, 1.0)
-        s, across, radius = SNAKE_NOSTRIL
-        head.disk(at(s, side * across), radius, 0.08)
+    shape.diamond(head, SNAKE_CROWN, 0.75, 0.42)
+    shape.eyes(head)
     return {1: body, 2: head}
+
+
+def stone_snake_layers(t: float) -> dict[int, Layer]:
+    """Kamenný had: řada kamenů podél páteře na tmavém jádru, kresba vtlačená do kamenů.
+
+    Kameny sedí na pevných místech s, takže s hadem klouzají a nepřeskakují.
+    """
+    shape = SnakeShape(t)
+    spine, widths = shape.spine, shape.widths
+    body, head = Layer(SNAKE_CANVAS), Layer(SNAKE_CANVAS)
+    tuck, raise_ = shape.index_of(SNAKE_TUCK), shape.index_of(SNAKE_RAISE)
+    body.tube(spine[tuck:], [w * 0.8 for w in widths[tuck:]], 0.04, 0.16)
+    # Od ocasu k hlavě, přední kámen leží na zadním jako šupina.
+    for index, (s, across, size) in reversed(list(enumerate(SNAKE_STONES))):
+        width = widths[shape.index_of(s)]
+        paint_stone(body, shape.at(s, across), width * size, shape.angle(s), 700 + index, 0.85, SPARK_BODY, SNAKE_STONE_STRETCH)
+    shape.markings(body, None)
+    shape.tongue(head, t)
+    head.tube(spine[: raise_ + 1], [w * 0.8 for w in widths[: raise_ + 1]], 0.04, 0.16)
+    for index, (s, size) in enumerate(SNAKE_HEAD_STONES):
+        width = widths[shape.index_of(s)]
+        paint_stone(head, shape.at(s, 0.0), width * size, shape.angle(s), 900 + index, 0.95, SPARK_BODY, SNAKE_STONE_STRETCH)
+    shape.diamond(head, SNAKE_CROWN, 0.75, 0.42, None)
+    shape.eyes(head)
+    return {1: body, 2: head}
+
+
+def snake_width(s: float) -> float:
+    """Poloviční šířka hada v místě s, lineárně mezi body SNAKE_WIDTH."""
+    for (s0, w0), (s1, w1) in zip(SNAKE_WIDTH, SNAKE_WIDTH[1:]):
+        if s <= s1:
+            return w0 + (w1 - w0) * max(0.0, (s - s0) / (s1 - s0))
+    return SNAKE_WIDTH[-1][1]
+
+
+def snake_stones() -> tuple[tuple[float, float, float], ...]:
+    """Kameny těla: (s, díl šířky do strany, poloměr jako díl šířky). Rozestup roste se šířkou."""
+    stones = []
+    s = SNAKE_TUCK + 1.0
+    side = 1.0
+    while s < SNAKE_LENGTH - 1.5:
+        width = snake_width(s)
+        stones.append((s, side * SNAKE_STONE_SWAY, SNAKE_STONE_SIZE))
+        s += max(SNAKE_STONE_STEP[0], width * SNAKE_STONE_STEP[1])
+        side = -side
+    return tuple(stones)
+
+
+SNAKE_STONES = snake_stones()
+
+
+PTERO_WING_STONES = ptero_wing_stones()
 
 
 # Kreslení druhu dostane fázi cyklu 0 až 1, ne číslo snímku.
 RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
     "had": snake_layers,
+    "had2": stone_snake_layers,
     "pavouk": spider_layers,
+    "pavouk2": golem_layers,
     "vlk": wolf_layers,
+    "vlk2": stone_wolf_layers,
     "ptakojester": ptero_layers,
+    "ptakojester2": stone_ptero_layers,
     "tyranosaurus": rex_layers,
+    "rex2": stone_rex_layers,
 }
 
 
@@ -1287,6 +2092,24 @@ def pack(layer: Layer, zoom: float = 1.0) -> Image.Image:
     return out
 
 
+def pack_spark(layer: Layer, mask: Image.Image) -> Image.Image:
+    """Semínka odlesků zmenšená jako ostatní masky: G je jas semínka, alfa je z masky vrstvy,
+    aby se atlas ořízl stejně."""
+    _shade, _accent, _eye, alpha = layer.channels
+    size = mask.size
+    cover = alpha.convert("F").resize(size, Image.Resampling.BOX).load()
+    total = ImageChops.multiply(layer.spark, alpha).convert("F").resize(size, Image.Resampling.BOX).load()
+    out = Image.new("RGBA", size)
+    target = out.load()
+    opaque = mask.getchannel("A").load()
+    for y in range(size[1]):
+        for x in range(size[0]):
+            a = cover[x, y]
+            g = 0 if a <= 0.0 else min(255, round(total[x, y] * 255.0 / a))
+            target[x, y] = (0, g, 0, opaque[x, y])
+    return out
+
+
 def colorize(
     mask: Image.Image,
     body: tuple[int, int, int],
@@ -1312,6 +2135,71 @@ def colorize(
                 skin = base + (accent[channel] * glint - base) * mix_g
                 rgb.append(max(0, min(255, round(skin + (eye[channel] - skin) * mix_b))))
             target[x, y] = (rgb[0], rgb[1], rgb[2], a)
+    return out
+
+
+def glint_star(dx: float, dy: float) -> float:
+    """Odlesk jako v crystal.gdshader: jádro a šest tenkých paprsků. dx, dy v px."""
+    r2 = dx * dx + dy * dy
+    core = math.exp(-r2 * 2.2)
+    halo = math.exp(-r2 * 0.45) * 0.18
+    rays = 0.0
+    for ray in range(6):
+        c, s = math.cos(ray * math.pi / 3), math.sin(ray * math.pi / 3)
+        along = dx * c + dy * s
+        across = abs(-dx * s + dy * c)
+        arm = math.exp(-across * across * 5.5) * math.exp(-max(along, 0.0) * 0.55)
+        edge = max(0.0, min(1.0, (along - 0.25) / 0.6))
+        rays = max(rays, arm * edge * edge * (3.0 - 2.0 * edge))
+    return core + halo + rays * 1.15
+
+
+def sparkle(
+    image: Image.Image,
+    mask: Image.Image,
+    glint: tuple[int, int, int],
+    amount: float,
+    clock: float,
+) -> Image.Image:
+    """Přičte odlesky k obarvené vrstvě v čase clock sekund. Semínka jsou vrcholy G v mask."""
+    if amount <= 0.0:
+        return image
+    seeds = mask.getchannel("G").load()
+    alpha = mask.getchannel("A").load()
+    out = image.copy()
+    pixels = out.load()
+    width, height = mask.size
+    reach = 6
+    for y in range(height):
+        for x in range(width):
+            value = seeds[x, y]
+            if value < 12 or alpha[x, y] < 128:
+                continue
+            around = [
+                seeds[x + i, y + j]
+                for j in (-1, 0, 1)
+                for i in (-1, 0, 1)
+                if 0 <= x + i < width and 0 <= y + j < height
+            ]
+            if value < max(around):
+                continue
+            wave = math.sin(clock * SPARKLE_SPEED + value / 255.0 * math.tau)
+            flash = max(wave, 0.0) ** 14 * amount
+            if flash < 0.02:
+                continue
+            for j in range(-reach, reach + 1):
+                for i in range(-reach, reach + 1):
+                    px, py = x + i, y + j
+                    if not (0 <= px < width and 0 <= py < height) or alpha[px, py] == 0:
+                        continue
+                    light = flash * glint_star(i, j)
+                    r, g, b, a = pixels[px, py]
+                    pixels[px, py] = (
+                        min(255, round(r + glint[0] * light)),
+                        min(255, round(g + glint[1] * light)),
+                        min(255, round(b + glint[2] * light)),
+                        a,
+                    )
     return out
 
 
@@ -1373,8 +2261,11 @@ def side_by_side(images: list[Image.Image]) -> Image.Image:
 
 
 def materials_of(name: str) -> list[str]:
-    """Materiály druhu od nejlevnějšího."""
+    """Materiály druhu a k nim preview_materials, od nejlevnějšího."""
     owned = [material for material, info in MATERIALS.items() if info.get("monster") == name]
+    for material in MONSTERS[name].get("preview_materials", ()):
+        if material not in owned:
+            owned.append(material)
     return sorted(owned, key=lambda material: MATERIALS[material]["points"])
 
 
@@ -1405,11 +2296,15 @@ def generate(name: str, preset: dict) -> dict:
     render = RENDERERS[name]
     layers = preset["layers"]
     count = preset["frames"]
+    stone = preset.get("info", {}).get("shader") == "stone"
     frames = {key: [] for key in layers}
+    sparks = {key: [] for key in layers}
     for index in range(count):
         rendered = render(index / count)
         for key in layers:
             frames[key].append(pack(rendered[key], preset.get("zoom", 1.0)))
+            if stone:
+                sparks[key].append(pack_spark(rendered[key], frames[key][-1]))
     folder = OUT_DIR / name
     folder.mkdir(parents=True, exist_ok=True)
     entry = {}
@@ -1425,7 +2320,12 @@ def generate(name: str, preset: dict) -> dict:
         }
         if info.get("shadow"):
             entry[str(key)]["shadow"] = True
-    write_previews(name, preset, frames)
+        if stone:
+            sparks[key] = crop_square(sparks[key])
+            spark_file = info["file"].replace(".png", "_spark.png")
+            pack_atlas(sparks[key], COLUMNS).save(folder / spark_file)
+            entry[str(key)]["sparkle_file"] = f"{name}/{spark_file}"
+    write_previews(name, preset, frames, sparks)
     return {
         "cycle_meters": round(preset["cycle_meters"], 4),
         "frames": count,
@@ -1441,7 +2341,12 @@ def generate(name: str, preset: dict) -> dict:
     }
 
 
-def write_previews(name: str, preset: dict, frames: dict[int, list[Image.Image]]) -> None:
+def write_previews(
+    name: str,
+    preset: dict,
+    frames: dict[int, list[Image.Image]],
+    sparks: dict[int, list[Image.Image]] | None = None,
+) -> None:
     layers = preset["layers"]
     heights = {key: info["height"] for key, info in layers.items()}
     materials = materials_of(name)
@@ -1457,8 +2362,12 @@ def write_previews(name: str, preset: dict, frames: dict[int, list[Image.Image]]
         box = tuple((x * zoom, y * zoom) for x, y in box)
     under = preview_shadow(size + size % 2, box)
 
+    stone = preset.get("info", {}).get("shader") == "stone"
+
     def tint(key: int, mask: Image.Image, colors: tuple[tuple[int, int, int], ...]) -> Image.Image:
-        return darken(mask) if layers[key].get("shadow") else colorize(mask, *colors)
+        if layers[key].get("shadow"):
+            return darken(mask)
+        return colorize(mask, *colors)
 
     def walk(material: str, shift: Point = (0.0, 0.0)) -> list[Image.Image]:
         colors = palette(preset, material)
@@ -1466,6 +2375,22 @@ def write_previews(name: str, preset: dict, frames: dict[int, list[Image.Image]]
             compose({key: tint(key, frames[key][index], colors) for key in frames}, heights, under, shift)
             for index in range(count)
         ]
+
+    def twinkle(material: str) -> list[Image.Image]:
+        """SPARKLE_CYCLES cyklů chůze s blikáním odlesků, jak ho kreslí monster_stone_layer."""
+        colors = palette(preset, material)
+        info = MATERIALS[material]
+        glint, amount = parse_hex(info["glint"]), float(info["sparkle"])
+        total = count * SPARKLE_CYCLES
+        out = []
+        for index in range(total):
+            clock = index / total * SPARKLE_PERIOD
+            sprites = {
+                key: sparkle(tint(key, frames[key][index % count], colors), sparks[key][index % count], glint, amount, clock)
+                for key in frames
+            }
+            out.append(compose(sprites, heights, under))
+        return out
 
     walks = {material: crop_square(walk(material)) for material in materials}
     first = walks[materials[0]]
@@ -1501,6 +2426,10 @@ def write_previews(name: str, preset: dict, frames: dict[int, list[Image.Image]]
     )
     strips = [side_by_side([walks[material][index] for material in materials]) for index in range(count)]
     save_gif(strips, PREVIEW / f"{name}_materialy.gif", small, ms)
+    if stone:
+        shining = {material: crop_square(twinkle(material)) for material in materials}
+        strips = [side_by_side([shining[material][index] for material in materials]) for index in range(count * SPARKLE_CYCLES)]
+        save_gif(strips, PREVIEW / f"{name}_trpyt.gif", small, ms)
 
 
 def write_info(species: dict) -> Path:

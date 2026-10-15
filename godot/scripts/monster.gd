@@ -65,7 +65,8 @@ const ESCAPE_STEP := 8.0
 
 ## Materiál příšery. Honí postavu, která ho nese.
 var material_index := -1
-## Druh příšery (pavouk, vlk, ...), podle něj zní kroky a zařvání. Nastaví správce příšer.
+## Zvuky příšery (pavouk, vlk, ...): podle nich zní kroky a zařvání. Obvykle je to druh,
+## katalog ho může přepsat klíčem sound. Nastaví správce příšer.
 var kind_name := ""
 ## Číslo mezi tvory, kteří nechodí přes sebe. Nastaví správce příšer.
 var crowd_id := -1
@@ -124,6 +125,8 @@ var _in_view := false
 
 
 ## info je druh z monsters.json, textures vrstvy podle pořadí klíčů, colors klíče body, accent, eye.
+## Kamenná příšera má v colors navíc glint a sparkle materiálu a sparkle_maps, atlasy
+## semínek odlesků podle pořadí vrstev.
 ## speed násobí rychlost honičky druhu, dražší materiál má rychlejší příšeru.
 func setup(
 	info: Dictionary,
@@ -157,6 +160,8 @@ func setup(
 	# Chodící mezi postavou a vysokými skalami, létající nad vším.
 	z_index = 4 if _flying else 1
 	var columns := maxi(int(info.get("atlas_columns", _frames)), 1)
+	# Stejná fáze pro obě vrstvy, ať odlesk na zadečku a na nohou patří k jedné příšeře.
+	var sparkle_phase := _rng.randf() * TAU
 	var listed: Dictionary = info.get("layers", {})
 	var keys: Array = listed.keys()
 	keys.sort_custom(func(a: Variant, b: Variant) -> bool: return int(a) < int(b))
@@ -176,6 +181,13 @@ func setup(
 		material.set_shader_parameter("body_color", colors["body"])
 		material.set_shader_parameter("accent_color", colors["accent"])
 		material.set_shader_parameter("eye_color", colors["eye"])
+		if colors.has("sparkle"):
+			material.set_shader_parameter("glint_color", colors["glint"])
+			material.set_shader_parameter("sparkle", colors["sparkle"])
+			material.set_shader_parameter("phase", sparkle_phase)
+			var maps: Array = colors.get("sparkle_maps", [])
+			if i < maps.size() and maps[i] != null:
+				material.set_shader_parameter("sparkle_map", maps[i])
 		if bool(layer.get("shadow", false)):
 			material.set_shader_parameter("shadow_alpha", shadow_alpha)
 			# Stín leží na zemi pod postavou, i když tvor letí nad vším.

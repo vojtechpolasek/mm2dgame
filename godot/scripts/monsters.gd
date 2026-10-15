@@ -19,6 +19,8 @@ const Crowd := preload("res://scripts/crowd.gd")
 
 const CATALOG := "res://graphics/characters/monsters/monsters.json"
 const SHADER := "res://shaders/monster_layer.gdshader"
+## Druhy s "shader": "stone" v katalogu: kamenné příšery s odlesky podle materiálu.
+const STONE_SHADER := "res://shaders/monster_stone_layer.gdshader"
 ## Kde se příšery objeví: mezikruží kolem středu mapy. Vnější okraj je SPAWN_NEAR metrů od okraje
 ## mapy (stěna skal končí asi 7 m od okraje), ale nejdál SPAWN_REACH metrů od středu. Mezikruží
 ## je široké SPAWN_FAR - SPAWN_NEAR metrů. Chodící musí mít z místa cestu ke středu mapy, ať
@@ -95,6 +97,7 @@ func spawn(
 	shared.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
 	shared.set_shader_parameter("accent_shade", Vector2(float(accent_shade[0]), float(accent_shade[1])))
 	var shadow_alpha := float(catalog.get("shadow_alpha", 0.35))
+	var stone_shared: ShaderMaterial = null
 	var species: Dictionary = catalog.get("species", {})
 	var root := CATALOG.get_base_dir()
 	for mat in materials:
@@ -112,18 +115,31 @@ func spawn(
 			"accent": crystal.monster_accent(mat),
 			"eye": Color.html(str(eye.get("eye", "FFFFFF"))),
 		}
+		var layer_material := shared
+		if str(info.get("shader", "")) == "stone":
+			if stone_shared == null:
+				stone_shared = ShaderMaterial.new()
+				stone_shared.shader = load(STONE_SHADER) as Shader
+				stone_shared.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
+				stone_shared.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
+				stone_shared.set_shader_parameter("accent_shade", Vector2(float(accent_shade[0]), float(accent_shade[1])))
+			layer_material = stone_shared
+			colors["glint"] = crystal.glint_of(mat)
+			colors["sparkle"] = crystal.sparkle_of(mat)
+			colors["sparkle_maps"] = _sparkle_textures(root, info)
 		var speed := crystal.monster_speed(mat)
 		var flying := bool(info.get("flying", false))
 		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE)
 		var monster := Monster.new()
 		monster.name = "Monster_%s_%d" % [kind, mat]
 		monster.material_index = mat
-		monster.kind_name = kind
+		# Zvuky druhu, druh v katalogu je může půjčit od jiného ("sound").
+		monster.kind_name = str(info.get("sound", kind))
 		host.add_child(monster)
 		var jump := float(info.get("jump_meters", 0.0))
 		var nav: NavGrid = null if flying else _nav_for(body, jump, walker, rocks, forest)
 		var at := _spawn_point(walker, nav, body, flying, rng)
-		monster.setup(info, textures, shared, colors, speed, shadow_alpha, walker, nav, persons, camera, rng, at)
+		monster.setup(info, textures, layer_material, colors, speed, shadow_alpha, walker, nav, persons, camera, rng, at)
 		monster.carriers = carriers
 		members.append(monster)
 		if not flying and walker.crowd != null:
@@ -197,6 +213,18 @@ func _layer_textures(root: String, info: Dictionary) -> Array[Texture2D]:
 			push_error("Chybí vrstva příšery %s." % path)
 			return []
 		out.append(texture)
+	return out
+
+
+## Atlasy semínek odlesků podle pořadí vrstev, null u vrstvy bez sparkle_file.
+func _sparkle_textures(root: String, info: Dictionary) -> Array:
+	var listed: Dictionary = info.get("layers", {})
+	var keys: Array = listed.keys()
+	keys.sort_custom(func(a: Variant, b: Variant) -> bool: return int(a) < int(b))
+	var out: Array = []
+	for key: Variant in keys:
+		var file := str((listed[key] as Dictionary).get("sparkle_file", ""))
+		out.append(null if file.is_empty() else _texture_from("%s/%s" % [root, file]))
 	return out
 
 

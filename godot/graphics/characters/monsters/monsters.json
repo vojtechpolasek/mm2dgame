@@ -44,6 +44,37 @@
         "eye": "FF5A3C"
       }
     },
+    "had2": {
+      "cycle_meters": 0.7812,
+      "frames": 16,
+      "atlas_columns": 8,
+      "wander_meters": 0.8,
+      "chase_meters": 3.7,
+      "body_meters": 0.4,
+      "height_meters": 0.3,
+      "jump_meters": 0.0,
+      "shader": "stone",
+      "sound": "had",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "had2/layer_1.png",
+          "cell": 82,
+          "center": 41,
+          "sparkle_file": "had2/layer_1_spark.png"
+        },
+        "2": {
+          "height": 0.35,
+          "file": "had2/layer_2.png",
+          "cell": 106,
+          "center": 53,
+          "sparkle_file": "had2/layer_2_spark.png"
+        }
+      },
+      "colors": {
+        "eye": "FF5A3C"
+      }
+    },
     "pavouk": {
       "cycle_meters": 0.5,
       "frames": 8,
@@ -71,6 +102,37 @@
         "eye": "F04A2C"
       }
     },
+    "pavouk2": {
+      "cycle_meters": 0.5,
+      "frames": 8,
+      "atlas_columns": 8,
+      "wander_meters": 0.8,
+      "chase_meters": 4.1,
+      "body_meters": 0.45,
+      "height_meters": 0.5,
+      "jump_meters": 0.0,
+      "shader": "stone",
+      "sound": "pavouk",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "pavouk2/layer_1.png",
+          "cell": 102,
+          "center": 51,
+          "sparkle_file": "pavouk2/layer_1_spark.png"
+        },
+        "2": {
+          "height": 0.5,
+          "file": "pavouk2/layer_2.png",
+          "cell": 94,
+          "center": 47,
+          "sparkle_file": "pavouk2/layer_2_spark.png"
+        }
+      },
+      "colors": {
+        "eye": "F04A2C"
+      }
+    },
     "vlk": {
       "cycle_meters": 1.0625,
       "frames": 8,
@@ -92,6 +154,37 @@
           "file": "vlk/layer_2.png",
           "cell": 128,
           "center": 64
+        }
+      },
+      "colors": {
+        "eye": "FFD23A"
+      }
+    },
+    "vlk2": {
+      "cycle_meters": 1.0625,
+      "frames": 8,
+      "atlas_columns": 8,
+      "wander_meters": 1.0,
+      "chase_meters": 4.5,
+      "body_meters": 0.383,
+      "height_meters": 0.7,
+      "jump_meters": 2.1,
+      "shader": "stone",
+      "sound": "vlk",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "vlk2/layer_1.png",
+          "cell": 78,
+          "center": 39,
+          "sparkle_file": "vlk2/layer_1_spark.png"
+        },
+        "2": {
+          "height": 0.637,
+          "file": "vlk2/layer_2.png",
+          "cell": 128,
+          "center": 64,
+          "sparkle_file": "vlk2/layer_2_spark.png"
         }
       },
       "colors": {
@@ -128,6 +221,40 @@
         "eye": "7DF2FF"
       }
     },
+    "ptakojester2": {
+      "cycle_meters": 3.0,
+      "frames": 24,
+      "atlas_columns": 8,
+      "wander_meters": 1.5,
+      "chase_meters": 5.0,
+      "body_meters": 0.96,
+      "height_meters": 1.0,
+      "jump_meters": 0.0,
+      "flying": true,
+      "glide_frame": 6,
+      "shader": "stone",
+      "sound": "ptakojester",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "ptakojester2/layer_1.png",
+          "cell": 248,
+          "center": 124,
+          "shadow": true,
+          "sparkle_file": "ptakojester2/layer_1_spark.png"
+        },
+        "2": {
+          "height": 4.0,
+          "file": "ptakojester2/layer_2.png",
+          "cell": 242,
+          "center": 121,
+          "sparkle_file": "ptakojester2/layer_2_spark.png"
+        }
+      },
+      "colors": {
+        "eye": "7DF2FF"
+      }
+    },
     "tyranosaurus": {
       "cycle_meters": 2.1875,
       "frames": 16,
@@ -149,6 +276,37 @@
           "file": "tyranosaurus/layer_2.png",
           "cell": 222,
           "center": 111
+        }
+      },
+      "colors": {
+        "eye": "FFC21A"
+      }
+    },
+    "rex2": {
+      "cycle_meters": 2.1875,
+      "frames": 16,
+      "atlas_columns": 8,
+      "wander_meters": 0.8,
+      "chase_meters": 5.3,
+      "body_meters": 0.55,
+      "height_meters": 3.0,
+      "jump_meters": 4.1,
+      "shader": "stone",
+      "sound": "tyranosaurus",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "rex2/layer_1.png",
+          "cell": 124,
+          "center": 62,
+          "sparkle_file": "rex2/layer_1_spark.png"
+        },
+        "2": {
+          "height": 1.2,
+          "file": "rex2/layer_2.png",
+          "cell": 220,
+          "center": 110,
+          "sparkle_file": "rex2/layer_2_spark.png"
         }
       },
       "colors": {
