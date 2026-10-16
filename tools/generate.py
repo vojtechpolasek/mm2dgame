@@ -30,7 +30,7 @@ TERRAINS = {
         "contrast": 28.0,
         "coarseness": 1.0,
         "shore": "sand",
-        "forest": {"strom1": 0.091, "strom2": 0.052, "strom3": 0.04, "ker1": 0.11, "strom_suchy": 0.065},
+        "forest": {"strom1": 0.091, "strom2": 0.052, "strom3": 0.0294, "ker1": 0.11, "strom_suchy": 0.065},
         "rocks": {"balvan1": 0.01},
     },
     "dirt": {
@@ -40,7 +40,7 @@ TERRAINS = {
         "contrast": 22.0,
         "coarseness": 1.4,
         "shore": "sand",
-        "forest": {"strom1": 1.15, "strom2": 1.0, "strom3": 0.02, "ker1": 0.015, "strom_suchy": 0.55},
+        "forest": {"strom1": 1.15, "strom2": 1.0, "strom3": 0.045, "ker1": 0.042, "strom_suchy": 0.55},
     },
     "desert": {
         "name": "desert",
@@ -50,7 +50,7 @@ TERRAINS = {
         "coarseness": 2.0,
         "shore": "sand",
         "forest": {"strom_suchy": 0.02},
-        "rocks": {"skala1": 0.002, "skala2": 0.0015, "skala10": 0.001, "skala15": 0.0008, "balvan1": 0.0003},
+        "rocks": {"skala1": 0.01, "skala2": 0.0075, "skala10": 0.005, "skala15": 0.004, "balvan1": 0.0015},
     },
     "snow": {
         "name": "snow",

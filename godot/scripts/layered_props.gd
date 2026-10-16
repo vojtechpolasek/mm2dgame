@@ -274,46 +274,50 @@ func _keep_shaped(kind: int, pos: Vector2, variant: int, turn: float) -> void:
 	_turn.append(turn)
 
 
-## Druh, který potřebuje víc místa, se sází dřív, ať menší objekty zaplní mezery.
-## Šance v terénu je počet pokusů na dlaždici. Každý druh prochází jen dlaždice, kde roste.
+## Šance v terénu je počet pokusů na dlaždici. Pokusy všech druhů se promíchají dohromady,
+## žádný druh nemá přednost, takže poměr vyrostlých druhů sleduje poměr šancí. Pokus, který
+## by stál moc blízko jiného objektu, se zahodí.
 ## Na kraji porostu se objekt drží středu dlaždice, ať nepřečuhuje do cizího terénu.
 func _scatter(map: MapData, rng: RandomNumberGenerator) -> void:
 	var size := map.size
 	var terrain := map.terrain
 	var grows := _grow_map
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	for kind in _kind_order():
+	var kinds := _kinds.size()
+	# Pokus je číslo dlaždice * kinds + druh.
+	var attempts := PackedInt32Array()
+	for kind in kinds:
 		if not _scatter_kind(kind):
 			continue
 		var weight_of := PackedFloat32Array()
 		weight_of.resize(_chances.size())
 		for id in _chances.size():
 			weight_of[id] = _chances[id][kind]
-		var order := PackedInt32Array()
 		for index in terrain.size():
-			if weight_of[terrain[index]] > 0.0:
-				order.append(index)
-		_shuffle(order, rng)
-		for index in order:
 			var weight := weight_of[terrain[index]]
-			var attempts := int(weight)
-			if rng.randf() < weight - float(attempts):
-				attempts += 1
-			if attempts == 0:
+			if weight <= 0.0:
 				continue
-			var x := index % size
-			var y := index / size
-			var min_x := 0.0 if _side_grows(map, grows, x, y, -1, 0) else 0.45
-			var max_x := 1.0 if _side_grows(map, grows, x, y, 1, 0) else 0.55
-			var min_y := 0.0 if _side_grows(map, grows, x, y, 0, -1) else 0.45
-			var max_y := 1.0 if _side_grows(map, grows, x, y, 0, 1) else 0.55
-			for _attempt in attempts:
-				var pos := Vector2(
-					(float(x) + rng.randf_range(min_x, max_x)) * tile,
-					(float(y) + rng.randf_range(min_y, max_y)) * tile,
-				)
-				if _fits(pos, kind, map):
-					_keep(kind, pos, rng)
+			var count := int(weight)
+			if rng.randf() < weight - float(count):
+				count += 1
+			for _attempt in count:
+				attempts.append(index * kinds + kind)
+	_shuffle(attempts, rng)
+	for code in attempts:
+		var index := code / kinds
+		var kind := code % kinds
+		var x := index % size
+		var y := index / size
+		var min_x := 0.0 if _side_grows(map, grows, x, y, -1, 0) else 0.45
+		var max_x := 1.0 if _side_grows(map, grows, x, y, 1, 0) else 0.55
+		var min_y := 0.0 if _side_grows(map, grows, x, y, 0, -1) else 0.45
+		var max_y := 1.0 if _side_grows(map, grows, x, y, 0, 1) else 0.55
+		var pos := Vector2(
+			(float(x) + rng.randf_range(min_x, max_x)) * tile,
+			(float(y) + rng.randf_range(min_y, max_y)) * tile,
+		)
+		if _fits(pos, kind, map):
+			_keep(kind, pos, rng)
 
 
 ## Stojí v rozestupu od pos jiný objekt? Prohledá buňku mřížky a osm sousedních.
@@ -449,17 +453,6 @@ func _layer(path: String, height: float) -> Dictionary:
 		material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
 		_material_for_height[key] = material
 	return {"path": path, "texture": null, "height": height, "material": _material_for_height[key]}
-
-
-func _kind_order() -> Array[int]:
-	var order: Array[int] = []
-	for kind in _kinds.size():
-		order.append(kind)
-	var count := _kinds.size()
-	order.sort_custom(func(a: int, b: int) -> bool:
-		return _gaps[a * count + a] > _gaps[b * count + b]
-	)
-	return order
 
 
 ## Největší rozestup ze všech pravidel. Podle něj je velká buňka mřížky sousedů.
