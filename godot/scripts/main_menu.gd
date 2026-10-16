@@ -20,7 +20,7 @@ func _ready() -> void:
 
 
 func _on_play() -> void:
-	get_tree().change_scene_to_file("res://scenes/game_mode_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/suit_menu.tscn")
 
 
 func _on_settings() -> void:

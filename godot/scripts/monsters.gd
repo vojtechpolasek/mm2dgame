@@ -1,6 +1,6 @@
 extends Node
 
-## Příšery levelu: jedna za každý materiál, který má na mapě jezírka. Druh a barvy určuje
+## Příšery čtverce: jedna za každý materiál, který má na mapě důl. Druh a barvy určuje
 ## materiál v katalogu krystalu, vzhled a pohyb druhu jsou v monsters.json.
 ## Objeví se náhodně v mezikruží kolem středu mapy: u okraje, uvnitř stěny skal, ale nejdál
 ## SPAWN_REACH metrů od středu, ať na velké mapě nezačínají stovky metrů daleko.

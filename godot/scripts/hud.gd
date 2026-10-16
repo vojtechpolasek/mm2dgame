@@ -1,9 +1,8 @@
 extends Control
 
-## Údaje hry v horních rozích a okno s výsledkem levelu. Sám nic nepočítá, svět mu říká, co ukázat.
-## Vlevo co nese každý hráč (ruka v barvě jeho trika), uprostřed zbývající čas (bez limitu
-## uběhlý), vpravo level a postup k cíli: body nebo donesené kameny. Okno výsledku
-## běží i v pauze, zbytek stojí se hrou.
+## Údaje hry v horních rozích a okno na konci hry. Sám nic nepočítá, svět mu říká, co ukázat.
+## Vlevo co nese každý hráč (ruka v barvě jeho trika), uprostřed čas hry, vpravo level a kolik
+## kamenů je v zásobnících továrny. Okno konce hry běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
 const THEME := preload("res://themes/menu.tres")
@@ -14,20 +13,15 @@ const ARROW_TOP := 120.0
 ## Blikání šipky u kraje čtverce za sekundu, výrazné je rychlejší.
 const BLINK_HZ := 2.0
 const BLINK_STRONG_HZ := 4.5
-## Pod tolik sekund zčervená čas.
-const HURRY := 10.0
 const EDGE := 20.0
 const GEM_SCALE := 2.2
 const TEXT := Color(0.95, 0.93, 0.88)
 const DIM := Color(0.95, 0.93, 0.88, 0.55)
 const ACCENT := Color(0.86, 0.66, 0.3)
-const HURRY_COLOR := Color(0.94, 0.4, 0.32)
-## Jednotka postupu vpravo nahoře podle cíle typu hry.
-const UNITS := {"points": "bodů", "ponds": "kamenů", "suits": "kamenů"}
+## Výrazně blikající šipka je červená.
+const ALARM_COLOR := Color(0.94, 0.4, 0.32)
 
-signal retry_pressed
 signal menu_pressed
-signal next_pressed
 
 var _crystal: Crystal
 var _held_rows: GridContainer
@@ -43,9 +37,6 @@ var _score: Label
 var _unit: Label
 var _bar: ProgressBar
 var _time: Label
-## Rekord levelu pod stopkami, jen bez limitu a když rekord je.
-var _record: Label
-var _timed := true
 var _target := 1
 var _shown_seconds := -1
 var _arrow: FactoryArrow
@@ -77,20 +68,14 @@ func _ready() -> void:
 
 
 ## players jsou záznamy z GameSession.players. Každý dostane řádek s rukou v barvě trika.
-## goal je cíl typu hry (points, ponds), target kolik ho je potřeba. timed říká, jestli čas
-## odpočítává limit.
-func setup(crystal: Crystal, level: int, goal: String, target: int, timed: bool, players: Array[Dictionary]) -> void:
+## Nadpis a cíl vpravo nahoře nastaví set_goal.
+func setup(crystal: Crystal, players: Array[Dictionary]) -> void:
 	_crystal = crystal
-	_timed = timed
 	# Po třech vedle sebe, ať panel zůstane nízký a postavy pod ním jsou vidět.
 	_held_rows.columns = clampi(players.size(), 1, 3)
 	for player: Dictionary in players:
 		_add_held_row(Color.html(str(player.get("shirt", "E8E2D2"))))
-	_target = maxi(target, 1)
-	_level.text = "Level %d" % level
-	_unit.text = str(UNITS.get(goal, ""))
-	_bar.max_value = _target
-	set_progress(0)
+	_unit.text = "kamenů"
 	for i in _gems.size():
 		set_held(-1, i)
 
@@ -112,7 +97,7 @@ func set_held(mat: int, player: int = 0) -> void:
 	_pop(_held_points[player])
 
 
-## Postup k cíli: body, nebo počet donesených kamenů.
+## Postup k cíli: kolik kamenů je v zásobnících.
 func set_progress(done: int) -> void:
 	_score.text = "%d / %d" % [done, _target]
 	_bar.value = mini(done, _target)
@@ -120,17 +105,13 @@ func set_progress(done: int) -> void:
 		_pop(_score)
 
 
-## S limitem zbývající čas, bez limitu uběhlý.
+## Uběhlý čas hry.
 func set_time(seconds: float) -> void:
-	var whole := maxi(ceili(seconds) if _timed else floori(seconds), 0)
+	var whole := maxi(floori(seconds), 0)
 	if whole == _shown_seconds:
 		return
 	_shown_seconds = whole
 	_time.text = "%d:%02d" % [whole / 60, whole % 60]
-	var hurry := _timed and seconds <= HURRY
-	_time.add_theme_color_override("font_color", HURRY_COLOR if hurry else TEXT)
-	if hurry and whole > 0:
-		_pop(_time)
 
 
 ## Šipka na kraji obrazovky na spojnici postava (from) – továrna (to), obojí v souřadnicích
@@ -160,26 +141,13 @@ func point_factory(from: Vector2, to: Vector2) -> void:
 	_arrow.visible = true
 
 
-## note je řádek pod nadpisem, skládá ho svět podle typu hry. last je poslední level hry,
-## po jeho splnění už další level není. replay nabídne i po výhře hrát level znovu (o rekord).
-## title nahradí nadpis okna.
-func show_result(won: bool, note: String, last: bool, replay: bool, title: String = "") -> void:
+## Okno konce hry: nadpis title, pod ním řádek note a návrat do menu.
+func show_result(title: String, note: String) -> void:
 	for child in _result_buttons.get_children():
 		child.queue_free()
-	_result_title.text = title if title != "" else "Výborně" if won else "Nesplnil jsi cíl"
+	_result_title.text = title
 	_result_note.text = note
-	if won and last:
-		_result_button("Návrat do menu", menu_pressed).grab_focus()
-		if replay:
-			_result_button("Hrát znovu", retry_pressed)
-	elif won:
-		_result_button("Další level", next_pressed).grab_focus()
-		if replay:
-			_result_button("Hrát znovu", retry_pressed)
-		_result_button("Návrat do menu", menu_pressed)
-	else:
-		_result_button("Hrát znovu", retry_pressed).grab_focus()
-		_result_button("Návrat do menu", menu_pressed)
+	_result_button("Návrat do menu", menu_pressed).grab_focus()
 	_arrow.visible = false
 	hide_notice()
 	_result.visible = true
@@ -255,17 +223,6 @@ func _build_time() -> void:
 	_time.custom_minimum_size = Vector2(110, 0)
 	_time.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_time)
-	_record = _label(14, DIM)
-	_record.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_record.visible = false
-	column.add_child(_record)
-
-
-## Rekord levelu pro tolik hráčů, kolik jich hraje. Záporný (rekord není) řádek skryje.
-func show_record(seconds: float) -> void:
-	_record.visible = seconds >= 0.0
-	if _record.visible:
-		_record.text = "rekord %s" % GameSession.clock(seconds)
 
 
 func _build_score() -> void:
@@ -305,36 +262,12 @@ func hide_notice() -> void:
 	_notice_left = 0.0
 
 
-func hide_clock() -> void:
-	_time.visible = false
-	if _record != null:
-		_record.visible = false
-
-
 ## Nový cíl: nadpis vpravo nahoře a kolik je potřeba. Postup začne od nuly.
 func set_goal(title: String, target: int) -> void:
 	_level.text = title
 	_target = maxi(target, 1)
 	_bar.max_value = _target
 	set_progress(0)
-
-
-## Úkol čtverce, na kterém stojí první hráč. total 0 je čtverec bez kamenů.
-func show_square(title: String, delivered: int, total: int) -> void:
-	_level.text = title
-	if total <= 0:
-		_score.text = "—"
-		_unit.text = ""
-		_bar.value = 0
-		return
-	_score.text = "%d / %d" % [delivered, total]
-	_unit.text = str(UNITS["ponds"])
-	_bar.max_value = total
-	_bar.value = mini(delivered, total)
-
-
-func set_edge_blink(on: bool) -> void:
-	set_edge_alarm(1 if on else 0)
 
 
 ## 0 šipka nebliká, 1 bliká, 2 bliká výrazně: rychleji, je větší a červená.
@@ -353,7 +286,7 @@ func _process(delta: float) -> void:
 		var strong := _blink >= 2
 		_blink_age += delta
 		var wave := 0.5 + 0.5 * sin(_blink_age * TAU * (BLINK_STRONG_HZ if strong else BLINK_HZ))
-		_arrow.modulate = HURRY_COLOR if strong else Color.WHITE
+		_arrow.modulate = ALARM_COLOR if strong else Color.WHITE
 		_arrow.modulate.a = lerpf(0.1 if strong else 0.25, 1.0, wave)
 		_arrow.scale = Vector2.ONE * (lerpf(1.2, 1.6, wave) if strong else 1.0)
 	else:

@@ -59,7 +59,7 @@ horizontal_alignment = 1
 [node name="Body" type="Label" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(460, 0)
 layout_mode = 2
-text = "Svět z povrchů, skal a materiálů. Hrát otevře volbu velikosti mapy a potom barvu postavy. Kalhoty, triko a vlasy se vybírají z připravených barev.\n\nZatím hraje jeden hráč."
+text = "Venku je jedovatý vzduch. Noste kameny z dolů do továrny, ať vzduch vyčistí, a vyrobte skafandry pro vesničany. Každý splněný level otevře cestu k další továrně, cílem je 15. level.\n\nHrát otevře menu hry: pokračovat v uložené hře, nebo začít novou. Potom se připojí hráči, až šest, a vyberou si barvy oblečení."
 autowrap_mode = 3
 horizontal_alignment = 1
 

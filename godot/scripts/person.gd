@@ -18,7 +18,7 @@ const Figure := preload("res://scripts/figure.gd")
 
 ## Co postava drží. -1 je prázdná ruka.
 signal held_changed(mat: int)
-## Postava vzala kámen mat z jezírka slot.
+## Postava vzala kámen mat z dolu slot.
 signal took_gem(slot: int, mat: int)
 ## Postava hodila kámen do továrny.
 signal threw_gem
@@ -55,9 +55,9 @@ const IDLE_CHECK := 0.2
 ## Dlaň z tools/gen_person.py, HOLD_PALM. Záporné Y je dopředu, jako v atlasu.
 const PALM := Vector2(16.0, -16.0)
 const THROW_TIME := 0.45
-## Ukradený kámen odletí za tolik sekund zpátky do jezírka, ze kterého ho postava vzala.
+## Kámen ukradený z ruky odletí za tolik sekund zpátky na plochu skladu, ze které ho postava vzala.
 const RETURN_TIME := 0.7
-## Dotek jezírka vymění kámen hned. Když postava u jezírka zůstane, vymění znovu po tolika
+## Dotek dolu nebo skladu vymění kámen hned. Když postava u něj zůstane, vymění znovu po tolika
 ## sekundách, dokud neodejde.
 const SWAP_REPEAT := 1.0
 const RETURN_ARC := 48.0
@@ -71,10 +71,7 @@ const SUIT_REACH := 30.0
 ## Skafandr v ruce je trochu menší než na zemi.
 const SUIT_SCALE := 0.8
 
-## Typ hry Skafandry: ukradený kámen zmizí, neletí zpátky do dolu. Kámen ze skladu se ale
-## vrátí na svou plochu. Nastaví svět.
-var stolen_vanish := false
-## Typ hry Skafandry: zavolá se s polohou postavy, která nese skafandr. Vrátí true, když ho
+## Zavolá se s polohou postavy, která nese skafandr. Vrátí true, když ho
 ## u dveří domu převzal vesničan. Nastaví svět.
 var deliver_suit: Callable
 
@@ -108,14 +105,12 @@ var _rng := RandomNumberGenerator.new()
 var _hand_height := 1.2
 var _held: Sprite2D
 var _held_mat := -1
-## Jezírko, ze kterého je kámen v ruce. Tam se vrátí, když ho příšera ukradne.
-var _held_slot := -1
 ## Plocha skladu (Town.store_bay), ze které je kámen v ruce, nebo -1. Tam se vrátí po krádeži.
 var _held_bay := -1
-## Jezírko, kterého se postava právě dotýká, a za kolik sekund u něj vymění znovu.
+## Důl, kterého se postava právě dotýká, a za kolik sekund u něj vymění znovu.
 var _touch_slot := -1
 var _touch_left := 0.0
-## Plocha skladu, které se postava právě dotýká. Odpočet sdílí s jezírkem.
+## Plocha skladu, které se postava právě dotýká. Odpočet sdílí s dolem.
 var _touch_bay := -1
 var _flyer: Sprite2D
 var _fly_from := Vector2.ZERO
@@ -369,9 +364,9 @@ func _attach_hand() -> void:
 	add_child(_held)
 
 
-## Továrna vezme nesený kámen. Jezírko ho vymění za svůj nejdražší kámen, prázdné jezírko si ho
-## nechá a ruka zůstane prázdná. Hned při doteku a potom každých SWAP_REPEAT sekund, dokud
-## postava u jezírka stojí, takže u prázdného jezírka se kámen střídavě odloží a vezme.
+## Továrna vezme nesený kámen do zásobníku. Důl dá svůj materiál, když v ruce není stejný
+## nebo dražší kámen. Hned při doteku a potom každých SWAP_REPEAT sekund, dokud postava u dolu
+## stojí.
 func _carry(delta: float) -> void:
 	if _flyer != null or _crystal == null or _crystal.count() == 0 or _held == null:
 		return
@@ -390,9 +385,6 @@ func _carry(delta: float) -> void:
 		return
 	if _held_mat >= 0 and _town != null and _town.touches_factory(position, BODY):
 		_touch_slot = -1
-		if _town.suit_factory() == null:
-			_throw()
-			return
 		# Zásobník na straně, u které postava stojí. Když tu kámen nikdo nechce, zůstane v ruce,
 		# ať ho postava donese na správnou stranu. Když ho nechce nikdo v celé továrně, odletí
 		# na nejbližší zásobník a rozplyne se.
@@ -404,7 +396,7 @@ func _carry(delta: float) -> void:
 		return
 	if _touch_store(delta):
 		return
-	var slot := _rocks.pond_at(position, BODY, _held_mat >= 0)
+	var slot := _rocks.pond_at(position, BODY)
 	if slot < 0:
 		_touch_slot = -1
 		return
@@ -414,15 +406,10 @@ func _carry(delta: float) -> void:
 			return
 	_touch_slot = slot
 	_touch_left = SWAP_REPEAT
-	var held := _held_mat
-	var mat := _rocks.swap_gem(slot, held)
-	if mat >= 0:
-		_take(slot, mat)
-	elif held >= 0:
-		_put_down()
+	_take(slot, _rocks.swap_gem(slot, _held_mat))
 
 
-## Plocha skladu se chová jako jezírko, jen drží jediný kámen. Vrátí true, když se postava
+## Plocha skladu drží jediný kámen: prázdná si nesený vezme, plná ho vymění. Vrátí true, když se postava
 ## nějaké plochy dotýká.
 func _touch_store(delta: float) -> bool:
 	var bay := _town.store_bay(position, BODY) if _town != null else -1
@@ -494,11 +481,10 @@ func _drop_suit() -> void:
 	Sound.at("sfx/pickup", global_position, -3.0)
 
 
-## Kámen zůstal v prázdném jezírku, ruka je prázdná.
+## Kámen zůstal na prázdné ploše skladu, ruka je prázdná.
 func _put_down() -> void:
 	_held.visible = false
 	_held_mat = -1
-	_held_slot = -1
 	_held_bay = -1
 	_set_hold(false)
 	held_changed.emit(-1)
@@ -527,39 +513,31 @@ func carried() -> int:
 	return _held_mat
 
 
-## Příšera kámen sebrala. Odletí zpátky do svého jezírka, ruka je prázdná.
+## Příšera kámen sebrala, ruka je prázdná. Kámen z dolu zmizí, kámen ze skladu odletí zpátky.
 func drop_held() -> void:
 	if _held_mat < 0:
 		return
 	Sound.at("sfx/steal", global_position)
-	if stolen_vanish and _held_bay < 0:
-		_held.visible = false
-		_held_mat = -1
-		_held_slot = -1
-		_held_bay = -1
-		_set_hold(false)
-		held_changed.emit(-1)
-		return
 	_send_back()
 
 
-## Kámen z ruky odletí obloukem do jezírka nebo na plochu skladu, odkud ho postava vzala.
-## Až dopadne, jezírku přibude, plocha ho zase drží.
+## Kámen z ruky odletí obloukem na plochu skladu, odkud ho postava vzala, a plocha ho zase
+## drží. Kámen z dolu jen zmizí, důl si nic nenechá.
 func _send_back() -> void:
 	var mat := _held_mat
-	var slot := _held_slot
 	var bay := _held_bay
 	var town := _town
 	var start := _held.global_position
 	_held.visible = false
 	_held_mat = -1
-	_held_slot = -1
 	_held_bay = -1
 	_set_hold(false)
 	held_changed.emit(-1)
+	if bay < 0 or town == null:
+		return
 	var host := get_parent() as Node2D
-	if host == null or (slot < 0 and bay < 0):
-		_land_home(null, slot, mat, bay, town)
+	if host == null:
+		_land_home(null, mat, bay, town)
 		return
 	var gem := _crystal.make_sprite()
 	host.add_child(gem)
@@ -569,9 +547,8 @@ func _send_back() -> void:
 	_pad_gem(gem, _hand_height)
 	var spin := (-1.0 if _rng.randf() < 0.5 else 1.0) * TAU * _rng.randf_range(0.75, 1.6)
 	var tween := gem.create_tween()
-	var home := town.bay_home(bay) if bay >= 0 else _rocks.gem_home(slot)
-	tween.tween_method(_fly_home.bind(gem, gem.position, home, spin), 0.0, 1.0, RETURN_TIME)
-	tween.tween_callback(_land_home.bind(gem, slot, mat, bay, town))
+	tween.tween_method(_fly_home.bind(gem, gem.position, town.bay_home(bay), spin), 0.0, 1.0, RETURN_TIME)
+	tween.tween_callback(_land_home.bind(gem, mat, bay, town))
 
 
 func _fly_home(t: float, gem: Sprite2D, from: Vector2, to: Vector2, spin: float) -> void:
@@ -585,19 +562,15 @@ func _fly_home(t: float, gem: Sprite2D, from: Vector2, to: Vector2, spin: float)
 	_pad_gem(gem, lerpf(_hand_height, 0.0, eased))
 
 
-func _land_home(gem: Sprite2D, slot: int, mat: int, bay: int, town: Town) -> void:
+func _land_home(gem: Sprite2D, mat: int, bay: int, town: Town) -> void:
 	if gem != null:
 		gem.queue_free()
-	if bay >= 0 and town != null:
+	if is_instance_valid(town):
 		town.store_gem(bay, mat)
-	else:
-		_rocks.return_gem(slot, mat)
 
 
-## V ruce je kámen mat z jezírka slot. Stejný kámen jako předtím jen změní jezírko, kam se
-## vrátí po krádeži, a nezazní.
+## V ruce je kámen mat z dolu slot, -1 je ze skladu. Stejný kámen jako předtím nezazní.
 func _take(slot: int, mat: int) -> void:
-	_held_slot = slot
 	_held_bay = -1
 	if mat == _held_mat:
 		return
@@ -616,13 +589,10 @@ func _take(slot: int, mat: int) -> void:
 func leave_square() -> void:
 	if _held_mat >= 0 and _held_bay >= 0 and _town != null:
 		_town.store_gem(_held_bay, _held_mat)
-	elif _held_mat >= 0 and _rocks != null:
-		_rocks.return_gem(_held_slot, _held_mat)
 	if _held_mat >= 0:
 		if _held != null:
 			_held.visible = false
 		_held_mat = -1
-		_held_slot = -1
 		_held_bay = -1
 		_set_hold(false)
 		held_changed.emit(-1)
@@ -631,7 +601,7 @@ func leave_square() -> void:
 	_touch_left = 0.0
 
 
-## Jezírka a továrna čtverce, na který postava právě přišla.
+## Doly a továrna čtverce, na který postava právě přišla.
 func use_square(rocks: Rocks, town: Town, origin: Vector2, span: float) -> void:
 	_rocks = rocks
 	_town = town
@@ -646,8 +616,8 @@ func _inside_square() -> bool:
 	return local.x >= 0.0 and local.y >= 0.0 and local.x < _square_span and local.y < _square_span
 
 
-## lane je zásobník továrny Skafandrů, -1 obyčejný pás.
-func _throw(lane: int = -1, discard: bool = false) -> void:
+## Hod kamene do zásobníku lane. S discard se kámen nikam nevejde a rozplyne se.
+func _throw(lane: int, discard: bool = false) -> void:
 	var host := get_parent() as Node2D
 	if host == null or _held == null or _held_mat < 0 or _town == null or _town.center() == Vector2.INF:
 		return
@@ -656,7 +626,6 @@ func _throw(lane: int = -1, discard: bool = false) -> void:
 	var rot := _held.global_rotation
 	_held.visible = false
 	_held_mat = -1
-	_held_slot = -1
 	_held_bay = -1
 	_set_hold(false)
 	held_changed.emit(-1)
@@ -672,7 +641,7 @@ func _throw(lane: int = -1, discard: bool = false) -> void:
 	_fly_town = _town
 	_fly_lane = lane
 	_fly_discard = discard
-	_fly_to = _fly_town.lane_drop(lane, _rng) if lane >= 0 else _fly_town.drop_spot(position, _rng)
+	_fly_to = _fly_town.lane_drop(lane, _rng)
 	_fly_rot = flyer.rotation
 	_fly_spin = sign * TAU * _rng.randf_range(0.75, 1.6)
 	_fly_age = 0.0

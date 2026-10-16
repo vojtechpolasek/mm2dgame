@@ -1,6 +1,6 @@
 extends Control
 
-## Menu typu hry Skafandry. Hraje se vždy od prvního levelu a hra se ukládá sama (SuitSaves).
+## Menu hry. Hraje se vždy od prvního levelu a hra se ukládá sama (SuitSaves).
 ## Pokračovat načte naposledy hranou hru, Nová hra se zeptá, kdo hraje, Uložené hry ukážou
 ## všechny rozehrané hry (jde je načíst i smazat) a Výkony tabulku podle počtu hráčů.
 ## Rozehranou hru musí dohrát stejný počet hráčů, kolik ji začalo. Esc nebo B vrací zpět.
@@ -37,7 +37,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 	Sound.ui("back")
 	if _page == "main":
-		get_tree().change_scene_to_file("res://scenes/game_mode_menu.tscn")
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 	else:
 		_show_main()
 
@@ -47,7 +47,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _show_main() -> void:
 	_clear("main")
 	_title("Skafandry")
-	_note(str(GameSession.rules()["about"]), 15)
+	_note(GameSession.ABOUT, 15)
 	var last := SuitSaves.last_game()
 	var focus: Button
 	if not last.is_empty():
@@ -61,7 +61,7 @@ func _show_main() -> void:
 	_button("Výkony", _show_results)
 	_button("Zpět", func() -> void:
 		Sound.ui("back")
-		get_tree().change_scene_to_file("res://scenes/game_mode_menu.tscn"))
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn"))
 	focus.grab_focus()
 
 

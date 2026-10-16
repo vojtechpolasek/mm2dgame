@@ -1,8 +1,6 @@
 extends Node
 
-## Vesničané: v každém domě PER_HOUSE. Každý dostane jeden materiál z jezírek levelu, od
-## nejdražšího. Když je vesničanů víc než materiálů, další kolo začne zase od nejdražšího.
-## Který vesničan dostane který materiál, se vylosuje. Materiál ukazuje u bezedných jezírek.
+## Vesničané: v každém domě PER_HOUSE.
 ## Při honičce pošle každé honěné postavě na pomoc nejvýš HELPERS vesničanů: ty, kdo jsou
 ## příšeře, která ji honí, nejblíž, nejdál HELP_NEAR metrů. Vesničan v domě se měří ode dveří. Pomoc skončí, když příšera
 ## přestane honit nebo je od pomocníka dál než HELP_FAR metrů. Létající příšeře se do cesty
@@ -64,15 +62,12 @@ func spawn(
 		return
 	# Uložená hra: stejní vesničané ve stejných domech (Villager.origin).
 	var homes := PackedInt32Array()
-	var mats := PackedInt32Array()
 	for entry: Dictionary in saved:
 		homes.append(clampi(int(entry.get("home", 0)), 0, houses - 1))
-		mats.append(int(entry.get("mat", -1)))
 	if saved.is_empty():
 		for house in houses:
 			for _i in rng.randi_range(PER_HOUSE.x, PER_HOUSE.y):
 				homes.append(house)
-		mats = _materials(rocks, crystal, homes.size(), rng)
 	var taken := PackedStringArray()
 	for person in persons:
 		taken.append(str(GameSession.player_colors(person.player_index).get("shirt", "")))
@@ -85,7 +80,7 @@ func spawn(
 		var colors: Dictionary = saved[i].get("colors", {}) if not saved.is_empty() else Villager.outfit(rng, taken)
 		if colors.is_empty():
 			colors = Villager.outfit(rng, taken)
-		if not villager.setup(walker, _nav, town, rocks, crystal, camera, persons, host, homes[i], mats[i], colors, rng):
+		if not villager.setup(walker, _nav, town, rocks, crystal, camera, persons, host, homes[i], colors, rng):
 			villager.queue_free()
 			continue
 		members.append(villager)
@@ -205,25 +200,3 @@ func return_suits() -> int:
 			count += 1
 		villager.return_suit()
 	return count
-
-
-## Materiál pro každého z count vesničanů. Od nejdražšího dokola, rozdané náhodně.
-static func _materials(rocks: Rocks, crystal: Crystal, count: int, rng: RandomNumberGenerator) -> PackedInt32Array:
-	var out := PackedInt32Array()
-	out.resize(count)
-	out.fill(-1)
-	var levels := rocks.pond_materials()
-	if levels.is_empty() or crystal == null:
-		return out
-	var order: Array[int] = []
-	for mat in levels:
-		order.append(mat)
-	order.sort_custom(func(a: int, b: int) -> bool: return crystal.points_of(a) > crystal.points_of(b))
-	for i in count:
-		out[i] = order[i % order.size()]
-	for i in range(count - 1, 0, -1):
-		var swap := rng.randi_range(0, i)
-		var saved := out[i]
-		out[i] = out[swap]
-		out[swap] = saved
-	return out

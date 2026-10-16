@@ -4,7 +4,7 @@ extends Control
 ## ovladači (šipky, WASD, gamepady) ho obsadí a objeví se další prázdné místo, až do šesti hráčů.
 ## Připojený hráč svým ovladačem vybírá řádek (nahoru, dolů) a barvu (doleva, doprava),
 ## podržením skoku se odpojí. Enter nebo Start na gamepadu spustí hru, Esc nebo B vrátí zpět.
-## Pokračující hru Skafandrů (GameSession.suit_outfits) musí hrát stejný počet hráčů, kolik ji
+## Pokračující hru (GameSession.suit_outfits) musí hrát stejný počet hráčů, kolik ji
 ## začalo. Připojený hráč dostane oblečení ze hry podle pořadí a víc míst než hráčů hry není.
 
 const PersonPreview := preload("res://scripts/person_preview.gd")
@@ -39,9 +39,9 @@ func _ready() -> void:
 	_rebuild()
 
 
-## Kolik hráčů musí hrát pokračující hru Skafandrů, jinak 0.
+## Kolik hráčů musí hrát pokračující hru, u nové 0.
 func _required() -> int:
-	if str(GameSession.rules()["id"]) != "suits" or GameSession.suit_resume.is_empty():
+	if GameSession.suit_resume.is_empty():
 		return 0
 	return GameSession.suit_outfits.size()
 
@@ -156,8 +156,7 @@ func _start() -> void:
 
 func _back() -> void:
 	Sound.ui("back")
-	var suits := str(GameSession.rules()["id"]) == "suits"
-	get_tree().change_scene_to_file("res://scenes/suit_menu.tscn" if suits else "res://scenes/new_game_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/suit_menu.tscn")
 
 
 # --- Karty ---

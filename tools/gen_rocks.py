@@ -138,19 +138,7 @@ ROCKS = {
         "variants": 9,
         "spacing": 5.0,
     },
-    "jezirko": {
-        "layers": 2,
-        "widths": {1: 128, 2: 112},
-        "height": {1: 0.0, 2: 0.7},
-        "color": "A8A092",
-        "rough": 0.08,
-        "round": True,
-        "pond": "3DCFC6",
-        "pond_ratio": 0.5,
-        "variants": 9,
-        "spacing": 1.7,
-    },
-    # Důl místo bezedného jezírka, o pětinu větší. Kreslí ho gen_mine.py: vrstva 1 je okraj
+    # Důl, o pětinu větší než dřívější jezírko. Kreslí ho gen_mine.py: vrstva 1 je okraj
     # na zemi, další jsou pod zemí. color je hlína okraje, wall hornina stěn.
     "dul": {
         "mine": True,

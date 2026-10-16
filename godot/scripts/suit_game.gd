@@ -1,6 +1,6 @@
 extends Node
 
-## Úkol jednoho čtverce typu hry Skafandry. Venku je jedovatý vzduch: hráči mají dýchací
+## Úkol jednoho čtverce s továrnou. Venku je jedovatý vzduch: hráči mají dýchací
 ## přístroj, vesničané zůstávají doma. Úkolem je naplnit zásobníky továrny (SuitFactory).
 ## Prázdný skafandr z výstupku továrny donese hráč ke dveřím domu a jeden obyvatel v něm vyjde
 ## ven. Až továrna vyčistí vzduch, vesničané ve skafandrech je odnesou na výstupek, ostatní

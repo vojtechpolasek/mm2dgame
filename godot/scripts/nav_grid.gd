@@ -1,7 +1,7 @@
 extends RefCounted
 
 ## Mřížka průchodnosti pro honičku. Buňka je jedna dlaždice. Neprůchodná je voda, paty skal
-## a jezírek podle obrysu, keře a kmeny, továrna a domy, vše rozšířené o tělo příšery, ať cesta nevede
+## a dolů podle obrysu, keře a kmeny, továrna a domy, vše rozšířené o tělo příšery, ať cesta nevede
 ## škvírou, kterou neprojde. Příšera se podle ní řídí, když se přímá honička zasekne.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")

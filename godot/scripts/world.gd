@@ -1,39 +1,17 @@
 extends Node2D
 
-const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
-const MapGenerator := preload("res://scripts/map_generator.gd")
-const MapData := preload("res://scripts/map_data.gd")
-const Forest := preload("res://scripts/forest.gd")
-const Rocks := preload("res://scripts/rocks.gd")
-const Town := preload("res://scripts/town.gd")
-const PropChunks := preload("res://scripts/prop_chunks.gd")
+## Scéna hry. Svět ze čtverců staví a řídí WorldBoard, tady je jen terén prvního čtverce,
+## kamera, nápisy a odchod do menu.
+
+const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
-const Crystal := preload("res://scripts/crystal.gd")
 const Hud := preload("res://scripts/hud.gd")
-const Monsters := preload("res://scripts/monsters.gd")
-const Villagers := preload("res://scripts/villagers.gd")
-const Crowd := preload("res://scripts/crowd.gd")
 const Party := preload("res://scripts/party.gd")
-const Walker := preload("res://scripts/walker.gd")
-const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
-const PondLabels := preload("res://scripts/pond_labels.gd")
 const WorldBoard := preload("res://scripts/world_board.gd")
-const SuitBoard := preload("res://scripts/suit_board.gd")
 
-## Další hráči se objeví v kruhu kolem prvního, tak daleko v metrech.
-const SPAWN_RING := 1.5
-## Šumění vody: mapa vzdálenosti k vodě po buňkách tolika dlaždic. Do WATER_HEAR metrů od vody
-## šumí, u vody nejvíc.
-const WATER_CELL := 4
-const WATER_HEAR := 14.0
 ## Odchod do menu chce dva stisky Esc nebo Startu do tolika sekund, ať se neodejde omylem.
 const LEAVE_WINDOW := 3.0
-## Body za kámen vystoupají od místa dopadu o tolik pixelů obrazovky a za tolik sekund zmizí.
-const POINTS_RISE := 70.0
-const POINTS_TIME := 1.1
-## Posledních tolik sekund limitu tiká.
-const TICK_FROM := 10
 
 ## Terén po chuncích předpečených z corner_map katalogu, voda se vlní nad nimi.
 @onready var ground: TerrainChunks = $Ground
@@ -42,37 +20,13 @@ const TICK_FROM := 10
 ## Snímky za sekundu vpravo dole. Engine je přepočítává jednou za sekundu.
 @onready var fps: Label = $Hint/Hud/Fps
 
-## Vygenerovaná mapa. Zůstává i po vygenerování, hra z ní čte povrch dlaždic.
-var map: MapData
-
+## Svět je hotový a hraje se. Nastaví WorldBoard.
 var _map_ready := false
-var _task := -1
-var _painted := {}
-var _crystal: Crystal
 var _hud: Hud
-## Level, pravidla typu hry (GameSession.MODES) a cíl. Čas běží, až je mapa hotová.
-## S limitem odpočítává _time_left, bez limitu přibývá _elapsed.
-## _progress je postup k cíli: body, nebo donesené kameny, podle typu hry.
-var _level := 1
-var _rules := {}
-var _target := 0
-var _time_left := 0.0
-var _elapsed := 0.0
-var _score := 0
-var _progress := 0
-var _playing := false
-var _rocks: Rocks
-var _town: Town
 var _persons: Array[Person] = []
 var _party: Party
-var _monsters: Monsters
-## Vzdálenost k vodě v buňkách WATER_CELL dlaždic, po řádcích. Bez vody je pole prázdné.
-var _water_far := PackedInt32Array()
-var _water_side := 0
-var _ticked := -1
 ## Kolik sekund ještě druhý stisk Esc nebo Startu opustí hru. 0 je bez prvního stisku.
 var _leave_left := 0.0
-## Otevřený svět (Svět a Skafandry). Klasické levely ho nemají a jejich smyčka běží dál sama.
 var _board: WorldBoard
 var _fps_shown := -1.0
 
@@ -82,156 +36,10 @@ func _ready() -> void:
 	process_priority = 10
 	Sound.settings_changed.connect(_on_sound_settings)
 	await get_tree().process_frame
-	var mode_id := str(GameSession.rules().get("id", ""))
-	if mode_id == "world" or mode_id == "suits":
-		_board = SuitBoard.new() if mode_id == "suits" else WorldBoard.new()
-		_board.name = "Board"
-		add_child(_board)
-		_board.start(self)
-		return
-	var catalog := TerrainCatalog.new()
-	catalog.load_assets()
-	if catalog.names.is_empty():
-		status.text = "Chybí terén."
-		push_error("Ve složce terénu nejsou žádné povrchy.")
-		return
-	var rocks := Rocks.new()
-	rocks.name = "Rocks"
-	add_child(rocks)
-	var forest := Forest.new()
-	forest.name = "Trees"
-	add_child(forest)
-	var town := Town.new()
-	town.name = "Town"
-	add_child(town)
-	_town = town
-	# Textury se načítají tady, generování pak běží ve vlákně a hra mezitím nestojí.
-	rocks.load_catalog(catalog.names, catalog.surfaces)
-	forest.load_catalog(catalog.names, catalog.surfaces)
-	if town.load_assets():
-		rocks.town = town
-		forest.town = town
-	var crystal := Crystal.new()
-	if not crystal.load_catalog():
-		push_error("Chybí materiály krystalu.")
-	rocks.bind_crystal(crystal)
-	_level = maxi(GameSession.level, 1)
-	_rules = GameSession.rules()
-	_time_left = float(GameSession.mode_time(_level))
-	rocks.bottomless = bool(_rules["bottomless"])
-	_crystal = crystal
-	rocks.set_available(GameSession.mode_materials(_level))
-	var size := maxi(GameSession.mode_size(_level), 2)
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	# Příšery: mřížky cest a hranice skal se připraví ve vlákně s mapou, samotné příšery
-	# vzniknou až potom.
-	var monsters := Monsters.new()
-	monsters.name = "Monsters"
-	add_child(monsters)
-	_monsters = monsters
-	var villagers := Villagers.new()
-	villagers.name = "Villagers"
-	add_child(villagers)
-	_task = WorkerThreadPool.add_task(_generate.bind(size, catalog, rng, town, rocks, forest, crystal, monsters, villagers), true, "Generování mapy")
-	while not WorkerThreadPool.is_task_completed(_task):
-		await get_tree().process_frame
-	WorkerThreadPool.wait_for_task_completion(_task)
-	_task = -1
-
-	var pixels := float(size * TerrainCatalog.TILE_SIZE)
-	catalog.set_map(size, _painted["corners"], _painted["variants"])
-	# Cesta leží na terénu pod všemi objekty.
-	var road := Node2D.new()
-	road.name = "Road"
-	add_child(road)
-	move_child(road, ground.get_index() + 1)
-	var props := Node2D.new()
-	props.name = "Props"
-	props.y_sort_enabled = true
-	add_child(props)
-	move_child(props, road.get_index() + 1)
-	camera.setup(Vector2(pixels, pixels))
-	ground.setup(catalog, size, _painted["corners"], camera)
-	_painted.clear()
-	var chunks := PropChunks.new()
-	chunks.name = "PropChunks"
-	chunks.setup(camera)
-	add_child(chunks)
-	town.spawn(camera, road, props, crystal)
-	rocks.spawn(camera, props, chunks)
-	forest.spawn(camera, props, chunks)
-	chunks.refresh()
-	_spawn_players(rocks, forest, crystal, props)
-	var monster_rng := RandomNumberGenerator.new()
-	monster_rng.randomize()
-	monsters.spawn(rocks.pond_materials(), crystal, _persons[0].walker, rocks, forest, _persons, camera, props, monster_rng)
-	var villager_rng := RandomNumberGenerator.new()
-	villager_rng.randomize()
-	villagers.spawn(town, rocks, crystal, _persons[0].walker, _persons, camera, props, monsters, villager_rng)
-	var labels := PondLabels.new()
-	labels.name = "PondLabels"
-	add_child(labels)
-	labels.setup(rocks.pond_spots(), crystal, _persons, camera, rocks)
-	status.visible = false
-	var music_rng := RandomNumberGenerator.new()
-	music_rng.randomize()
-	Sound.play_level_music(music_rng)
-	_start_level(rocks)
-	_map_ready = true
-
-
-## Postava za každého hráče. První stojí u středu mapy, další v kruhu kolem ní. Postavy
-## a chodící příšery nechodí přes sebe a skupina drží všechny na obrazovce.
-func _spawn_players(rocks: Rocks, forest: Forest, crystal: Crystal, props: Node2D) -> void:
-	var crowd := Crowd.new()
-	_party = Party.new(camera)
-	for i in maxi(GameSession.players.size(), 1):
-		var person := Person.new()
-		person.name = "Person%d" % (i + 1)
-		props.add_child(person)
-		person.setup(rocks, forest, _town, camera, map, crystal, i)
-		person.walker.crowd = crowd
-		person.crowd_id = crowd.join(person)
-		person.party = _party
-		_persons.append(person)
-		_party.members.append(person)
-	var first := _persons[0].position
-	var tile := float(TerrainCatalog.TILE_SIZE)
-	for i in range(1, _persons.size()):
-		var angle := TAU * float(i - 1) / float(maxi(_persons.size() - 1, 1))
-		_persons[i].position = _persons[i]._free_spot(first + Vector2.from_angle(angle) * SPAWN_RING * tile)
-	_party.frame()
-
-
-func _start_level(rocks: Rocks) -> void:
-	_rocks = rocks
-	if _rules["goal"] == "ponds":
-		_target = rocks.gem_total()
-	else:
-		_target = GameSession.level_target(_level, GameSession.players.size())
-	_target = maxi(_target, 1)
-	_hud = Hud.new()
-	_hud.name = "Game"
-	$Hint.add_child(_hud)
-	_hud.setup(_crystal, _level, str(_rules["goal"]), _target, _timed(), GameSession.players)
-	_hud.set_time(_time_left if _timed() else 0.0)
-	if not _timed():
-		_hud.show_record(GameSession.record(_level, GameSession.players.size()))
-	_hud.retry_pressed.connect(_restart)
-	_hud.menu_pressed.connect(_to_menu)
-	_hud.next_pressed.connect(_next_level)
-	for person in _persons:
-		person.held_changed.connect(_hud.set_held.bind(person.player_index))
-	_town.settled.connect(_on_settled)
-	_score = 0
-	_progress = 0
-	_elapsed = 0.0
-	_playing = true
-
-
-func _timed() -> bool:
-	return bool(_rules.get("timed", true))
+	_board = WorldBoard.new()
+	_board.name = "Board"
+	add_child(_board)
+	_board.start(self)
 
 
 func _process(delta: float) -> void:
@@ -241,218 +49,15 @@ func _process(delta: float) -> void:
 		_fps_shown = rate
 		fps.text = "%d FPS" % rate
 	_leave_left = maxf(_leave_left - delta, 0.0)
-	if _board != null:
-		if _party != null:
-			_party.frame()
-		_board.tick(delta)
-		return
 	if _party != null:
 		_party.frame()
-	if not _playing:
-		return
-	_point_factory()
-	_update_sound(delta)
-	if not _timed():
-		_elapsed += delta
-		_hud.set_time(_elapsed)
-		return
-	_time_left -= delta
-	_hud.set_time(_time_left)
-	var whole := ceili(_time_left)
-	if whole <= TICK_FROM and whole > 0 and whole != _ticked:
-		_ticked = whole
-		Sound.ui("tick")
-	if _time_left <= 0.0:
-		_finish(false)
-
-
-## Kámen v ruce kohokoli přepne na hudbu při honičce, blízkost vody řídí šumění.
-func _update_sound(_delta: float) -> void:
-	Sound.set_chase(Monsters.anyone_carrying(_persons, _monsters.carriers if _monsters != null else []))
-	if _water_far.is_empty():
-		Sound.set_water(0.0)
-		return
-	var center := camera.get_screen_center_position()
-	var tile := float(TerrainCatalog.TILE_SIZE)
-	var cx := clampi(int(center.x / tile) / WATER_CELL, 0, _water_side - 1)
-	var cy := clampi(int(center.y / tile) / WATER_CELL, 0, _water_side - 1)
-	var meters := float(_water_far[cy * _water_side + cx] * WATER_CELL)
-	Sound.set_water(1.0 - meters / WATER_HEAR)
-
-
-## Vzdálenost k vodě po hrubých buňkách: vlna z buněk s vodou do okolí. Jednou při startu,
-## ve vlákně s generováním mapy.
-func _build_water_map(grown: MapData) -> void:
-	var water := grown.names.find("water")
-	if water < 0:
-		return
-	_water_side = ceili(float(grown.size) / float(WATER_CELL))
-	_water_far.resize(_water_side * _water_side)
-	_water_far.fill(-1)
-	var queue := PackedInt32Array()
-	for index in grown.terrain.size():
-		if grown.terrain[index] != water:
-			continue
-		var cell := (index / grown.size) / WATER_CELL * _water_side + (index % grown.size) / WATER_CELL
-		if _water_far[cell] < 0:
-			_water_far[cell] = 0
-			queue.append(cell)
-	if queue.is_empty():
-		_water_far = PackedInt32Array()
-		return
-	var head := 0
-	while head < queue.size():
-		var cell := queue[head]
-		head += 1
-		var x := cell % _water_side
-		var y := cell / _water_side
-		for side: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-			var nx := x + side.x
-			var ny := y + side.y
-			if nx < 0 or ny < 0 or nx >= _water_side or ny >= _water_side:
-				continue
-			var next := ny * _water_side + nx
-			if _water_far[next] < 0:
-				_water_far[next] = _water_far[cell] + 1
-				queue.append(next)
-
-
-## Šipka v HUD ze středu pohledu k továrně, v souřadnicích obrazovky.
-func _point_factory() -> void:
-	var factory := _town.center()
-	if factory == Vector2.INF:
-		_hud.point_factory(Vector2.ZERO, Vector2.INF)
-		return
-	var to_screen := get_viewport().get_canvas_transform()
-	_hud.point_factory(to_screen * camera.get_screen_center_position(), to_screen * factory)
-
-
-## Kámen dojel v továrně pod mezikruží. Podle cíle přidá body, nebo jeden kámen.
-func _on_settled(mat: int, pos: Vector2) -> void:
-	if not _playing or _crystal == null:
-		return
-	_score += _crystal.points_of(mat)
-	if _rules["goal"] == "ponds":
-		_progress += 1
-		_float_text("+1", pos)
-	else:
-		_progress = _score
-		_float_text("+%d" % _crystal.points_of(mat), pos)
-	_hud.set_progress(_progress)
-	if _progress >= _target:
-		_finish(true)
-
-
-## Nápis „+N“ u místa dopadu: vystoupá a zmizí. Velikost drží stejnou na
-## obrazovce i při oddálení a dohraje i pod oknem výsledku, když tímhle kamenem level skončil.
-func _float_text(text: String, pos: Vector2) -> void:
-	var holder := Node2D.new()
-	holder.position = pos
-	holder.z_index = 20
-	holder.process_mode = Node.PROCESS_MODE_ALWAYS
-	var zoom := camera.zoom.x
-	holder.scale = Vector2.ONE / zoom
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_size_override("font_size", 30)
-	label.add_theme_color_override("font_color", Color(0.98, 0.82, 0.4))
-	label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.04))
-	label.add_theme_constant_override("outline_size", 8)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.size = Vector2(160, 44)
-	label.position = -label.size * 0.5
-	holder.add_child(label)
-	add_child(holder)
-	var tween := holder.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(holder, "position:y", pos.y - POINTS_RISE / zoom, POINTS_TIME).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_property(holder, "modulate:a", 0.0, POINTS_TIME * 0.6).set_delay(POINTS_TIME * 0.4)
-	tween.chain().tween_callback(holder.queue_free)
-
-
-## Hra stojí, běží jen okno s výsledkem.
-func _finish(won: bool) -> void:
-	_playing = false
-	get_tree().paused = true
-	Sound.duck_music()
-	Sound.stop_ambient()
-	Sound.ui("win" if won else "lose")
-	if won:
-		GameSession.unlock(_level + 1)
-	var last := _level >= GameSession.mode_last_level()
-	_hud.show_result(won, _result_note(won, last), last, not _timed())
-
-
-## Řádek pod nadpisem okna výsledku. Bez limitu je v něm čas a rekord, který se tady uloží.
-func _result_note(won: bool, last: bool) -> String:
-	var goal := str(_rules["goal"])
-	if not won:
-		return "Level %d · %d / %d %s" % [_level, _progress, _target, Hud.UNITS.get(goal, "")]
-	var done := "Dohrál jsi všechny levely" if last else "Level %d splněn" % _level
-	if goal == "points":
-		return "%s · %d bodů" % [done, _score]
-	if _timed():
-		return done
-	# První dohrání je rovnou rekord, nový rekord se hlásí až při překonání starého.
-	var players := GameSession.players.size()
-	var before := GameSession.record(_level, players)
-	var time := GameSession.clock(_elapsed)
-	if not GameSession.offer_record(_level, players, _elapsed):
-		return "%s · čas %s · rekord %s" % [done, time, GameSession.clock(before)]
-	if before >= 0.0:
-		return "%s · čas %s · nový rekord" % [done, time]
-	return "%s · čas %s" % [done, time]
-
-
-func _restart() -> void:
-	get_tree().paused = false
-	get_tree().reload_current_scene()
-
-
-func _next_level() -> void:
-	GameSession.level = _level + 1
-	get_tree().paused = false
-	get_tree().reload_current_scene()
+	if _board != null:
+		_board.tick(delta)
 
 
 func _to_menu() -> void:
 	get_tree().paused = false
-	get_tree().change_scene_to_file(_menu_scene())
-
-
-## Skafandry se vracejí do svého menu, kde je vidět uložená hra a výkony.
-func _menu_scene() -> String:
-	if str(GameSession.rules().get("id", "")) == "suits":
-		return "res://scenes/suit_menu.tscn"
-	return "res://scenes/main_menu.tscn"
-
-
-## Běží ve vlákně. Nesahá na strom scény, jen počítá data.
-func _generate(
-	size: int,
-	catalog: TerrainCatalog,
-	rng: RandomNumberGenerator,
-	town: Town,
-	rocks: Rocks,
-	forest: Forest,
-	crystal: Crystal,
-	monsters: Monsters,
-	villagers: Villagers,
-) -> void:
-	var grown := MapGenerator.grow(size, catalog.names, rng, catalog.max_distance, catalog.max_share)
-	grown.surfaces = catalog.surfaces
-	_painted = MapGenerator.corner_data(grown, rng, catalog.variant_count)
-	town.plan(grown, rng)
-	rocks.plant(grown, rng)
-	forest.plant(grown, rng, rocks)
-	# Mřížky cest, hranice skal a mapa vody by jinak zasekly hru na konci načítání.
-	var walker := Walker.new(rocks, forest, town, grown)
-	monsters.prepare(rocks.pond_materials(), crystal, walker, rocks, forest)
-	villagers.prepare(walker, rocks, forest)
-	rocks.prepare_bounds(Person.BODY)
-	_build_water_map(grown)
-	map = grown
+	get_tree().change_scene_to_file("res://scenes/suit_menu.tscn")
 
 
 func _exit_tree() -> void:
@@ -460,9 +65,6 @@ func _exit_tree() -> void:
 	Sound.stop_ambient()
 	if _board != null:
 		_board.shutdown()
-	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
-		_task = -1
 
 
 ## Hudba nebo zvuky se přepnuly (M, N, LB, RB). Hláška řekne, jak jsou teď.
@@ -481,7 +83,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 	if _leave_left > 0.0:
 		Sound.ui("back")
-		get_tree().change_scene_to_file(_menu_scene())
+		_to_menu()
 		return
 	_leave_left = LEAVE_WINDOW
 	if _hud != null:

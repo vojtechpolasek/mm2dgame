@@ -1,8 +1,8 @@
 extends Node2D
 
-## Továrna uprostřed mapy. Spodek leží na zemi, mezikruží nad ním se celou hru pomalu otáčí.
-## Hozený kámen dopadne na vnější konec nejbližšího pásu, pás ho odveze pod mezikruží a tam se
-## kámen započítá a zmizí. Uprostřed zůstane létat prach v barvě materiálu. Každý materiál
+## Základ továrny uprostřed vesnice. Spodek leží na zemi, mezikruží nad ním se celou hru pomalu
+## otáčí. Zásobníky a pásy má SuitFactory. Kámen, který dojede pod mezikruží, tam zmizí
+## a uprostřed po něm zůstane létat prach v barvě materiálu. Každý materiál
 ## má své řídké mračno, třpytivý k tomu pár jisker. Míry z tovarna.json jsou v px od středu
 ## obrázku, jih (+y) je výstupek.
 ## Spodek s pásy, kameny a prachem je na plošině (_deck). Ve výšce nula leží na zemi, zvednutá
@@ -12,9 +12,6 @@ const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
 const Crystal := preload("res://scripts/crystal.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
-
-## Kámen dojel pod mezikruží. world je místo, kde zmizel.
-signal counted(mat: int, world: Vector2)
 
 ## Jedna otáčka mezikruží za tolik sekund.
 const RING_PERIOD := 60.0
@@ -42,16 +39,12 @@ var _deck: Node2D
 var _deck_height := 0.0
 var _base_material: ShaderMaterial
 var _ring_height := 0.0
-var _belts := PackedInt32Array()
-var _belt_inner := 0.0
 var _belt_half := 0.0
 var _drum := 0.0
 var _ring_reach := 0.0
 var _yard := 0.0
 ## Posun příček každého pásu v px. Roste jen u pásu, po kterém zrovna jede kámen.
 var _shift := PackedFloat32Array()
-## Kameny na pásech: [sprite, pás, vzdálenost od středu, zbývající čekání, materiál].
-var _rides: Array = []
 var _speck: Texture2D
 ## Materiály, jejichž prach už ve dvoře létá.
 var _dust_mats := {}
@@ -62,9 +55,6 @@ func setup(info: Dictionary, base: Texture2D, ring: Texture2D, shader: Shader, c
 	_camera = camera
 	var layers: Dictionary = info.get("layers", {})
 	var belts: Dictionary = info.get("conveyors", {})
-	for angle: Variant in belts.get("angles", []):
-		_belts.append(int(angle))
-	_belt_inner = float(belts.get("inner_px", 115.0))
 	_belt_half = float(belts.get("half_px", 19.0))
 	_drum = float(belts.get("drum_px", 171.0))
 	var ring_px: Dictionary = info.get("ring_px", {})
@@ -77,7 +67,7 @@ func setup(info: Dictionary, base: Texture2D, ring: Texture2D, shader: Shader, c
 	_base_material = _material(shader, info, base_info, 0.0)
 	_base_material.set_shader_parameter("belts", true)
 	_base_material.set_shader_parameter("cell_px", float(base.get_width()))
-	_base_material.set_shader_parameter("belt_inner", _belt_inner)
+	_base_material.set_shader_parameter("belt_inner", float(belts.get("inner_px", 115.0)))
 	_base_material.set_shader_parameter("belt_outer", float(belts.get("outer_px", 199.0)))
 	_base_material.set_shader_parameter("belt_half", _belt_half)
 	_base_material.set_shader_parameter("belt_rail", float(belts.get("rail_px", 3.0)))
@@ -104,74 +94,8 @@ func setup(info: Dictionary, base: Texture2D, ring: Texture2D, shader: Shader, c
 
 
 func _process(delta: float) -> void:
-	if _ring == null:
-		return
-	_ring.rotation = fposmod(_ring.rotation + TAU / RING_PERIOD * delta, TAU)
-	if _rides.is_empty():
-		return
-	var speed := BELT_METERS * float(TerrainCatalog.TILE_SIZE) * delta
-	var moving := {}
-	var end := _ring_reach - _crystal.radius()
-	for i in range(_rides.size() - 1, -1, -1):
-		var ride: Array = _rides[i]
-		var wait := float(ride[3])
-		if wait > 0.0:
-			ride[3] = wait - delta
-			continue
-		var belt := int(ride[1])
-		moving[belt] = true
-		var along := float(ride[2]) - speed
-		ride[2] = along
-		var sprite := ride[0] as Sprite2D
-		var dir := _belt_dir(belt)
-		sprite.position = dir * along + dir.orthogonal() * dir.orthogonal().dot(sprite.position)
-		if along <= end:
-			_rides.remove_at(i)
-			var world := to_global(sprite.position)
-			sprite.queue_free()
-			_swirl(int(ride[4]))
-			counted.emit(int(ride[4]), world)
-	if moving.is_empty():
-		return
-	for belt: int in moving:
-		_shift[belt] = fposmod(_shift[belt] + speed, 4096.0)
-	_base_material.set_shader_parameter("belt_shift", _shift)
-
-
-## Místo ve světě, kam dopadne kámen hozený od from: vnější konec nejbližšího pásu.
-func belt_drop(from: Vector2, rng: RandomNumberGenerator) -> Vector2:
-	var belt := _nearest_belt(to_local(from))
-	var dir := _belt_dir(belt)
-	var side := rng.randf_range(-1.0, 1.0) * maxf(_belt_half * 0.3, 1.0)
-	return to_global(dir * (_drum + DROP_PAST_DRUM) + dir.orthogonal() * side)
-
-
-## Kámen dopadl na pás. Odjede pod mezikruží, tam se započítá.
-func receive(mat: int, world: Vector2, rot: float) -> void:
-	var local := to_local(world)
-	var belt := _nearest_belt(local)
-	var sprite := _crystal.make_sprite()
-	_riders.add_child(sprite)
-	sprite.position = local
-	sprite.rotation = rot - global_rotation
-	_crystal.paint(sprite, mat, 0.0, rot)
-	_rides.append([sprite, belt, local.dot(_belt_dir(belt)), BELT_DELAY, mat])
-
-
-func _belt_dir(belt: int) -> Vector2:
-	return Vector2.from_angle(float(belt) * PI * 0.25)
-
-
-## Pás nejblíž směru local od středu. Výstupek pás nemá, bere se bližší soused.
-func _nearest_belt(local: Vector2) -> int:
-	var best := _belts[0] if not _belts.is_empty() else 0
-	var best_gap := INF
-	for belt in _belts:
-		var gap := absf(angle_difference(local.angle(), float(belt) * PI * 0.25))
-		if gap < best_gap:
-			best_gap = gap
-			best = belt
-	return best
+	if _ring != null:
+		_ring.rotation = fposmod(_ring.rotation + TAU / RING_PERIOD * delta, TAU)
 
 
 ## Prach v barvě materiálu zůstane kroužit uprostřed. Další hod téhož materiálu už mračno

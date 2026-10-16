@@ -1,6 +1,6 @@
 extends RefCounted
 
-## Uložené hry a výkony typu hry Skafandry. Každá hra má při založení svůj identifikátor
+## Uložené hry a výkony. Každá hra má při založení svůj identifikátor
 ## a jeden soubor uložení, který se přepisuje vždy posledním stavem. Vedle něj leží malá
 ## hlavička pro menu (jméno, hráči, level, čas, datum), ať se seznam her nemusí číst z celých map.
 ## Výkony jsou jedna tabulka: řádek podle identifikátoru hry, zůstane i po smazání uložení.

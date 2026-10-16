@@ -1,7 +1,8 @@
 extends Node
 
 ## Měření výkonu, spouští se parametrem: ./hra -- --benchmark
-## Načte level, počká na mapu a po PHASE sekundách postupně vypíná části scény. Každá fáze
+## Založí novou hru (neukládá se), počká na první čtverec a po PHASE sekundách postupně vypíná
+## části scény. Každá fáze
 ## vypíše medián, 95. percentil a maximum času snímku, GPU a draw-callů, pak se hra ukončí.
 
 const PHASE := 5.0
@@ -25,6 +26,10 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	print("Benchmark: %s, okno %s" % [RenderingServer.get_video_adapter_name(), DisplayServer.window_get_size()])
+	# Bez id se hra neukládá, uložené hry hráče zůstanou, jak byly.
+	GameSession.suit_id = ""
+	GameSession.suit_resume = {}
+	GameSession.suit_outfits = []
 	get_tree().change_scene_to_file.call_deferred("res://scenes/world.tscn")
 
 
@@ -82,11 +87,14 @@ func _report() -> void:
 	print(line)
 
 
+## Terén je Ground a Ground_x_y dalších čtverců, příšery má každý čtverec svoje.
 func _apply(world: Node, phase: String) -> void:
-	var ground := world.get_node("Ground") as CanvasItem
-	var props := world.get_node("Props") as CanvasItem
-	var monsters: Array = world.get_node("Monsters").get("members")
-	ground.visible = phase != "bez_terenu" and phase != "bez_terenu_propu"
-	props.visible = phase != "bez_propu" and phase != "bez_terenu_propu"
-	for monster: Node in monsters:
-		monster.process_mode = Node.PROCESS_MODE_DISABLED if phase == "bez_prisery" else Node.PROCESS_MODE_INHERIT
+	var terrain := phase != "bez_terenu" and phase != "bez_terenu_propu"
+	for child in world.get_children():
+		if child.name.begins_with("Ground"):
+			(child as CanvasItem).visible = terrain
+	(world.get_node("Props") as CanvasItem).visible = phase != "bez_propu" and phase != "bez_terenu_propu"
+	for sq: Variant in (world.get_node("Board").get("_squares") as Dictionary).values():
+		for monster: Node in sq.monsters.members:
+			if is_instance_valid(monster):
+				monster.process_mode = Node.PROCESS_MODE_DISABLED if phase == "bez_prisery" else Node.PROCESS_MODE_INHERIT

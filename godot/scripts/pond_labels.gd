@@ -1,21 +1,19 @@
 extends Node2D
 
-## Nápis nad jezírkem: co v něm leží, od nejdražšího, každý materiál na řádku s počtem a body,
-## když je některá postava blízko. Plynule se objeví a zmizí, text se mění s výměnami. Velikost
-## drží stejnou na obrazovce i při oddálení kamery.
+## Nápis nad dolem: materiál a jeho body, když je některá postava blízko. Plynule se objeví
+## a zmizí. Velikost drží stejnou na obrazovce i při oddálení kamery.
 
 const Crystal := preload("res://scripts/crystal.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
-const Rocks := preload("res://scripts/rocks.gd")
 
-## Postava blíž ke středu jezírka než tolik metrů nápis ukáže. Jezírko má poloměr asi 1 m.
+## Postava blíž ke středu dolu než tolik metrů nápis ukáže. Důl má poloměr asi 1 m.
 const NEAR_METERS := 3.0
-## Spodní řádek nápisu je nad středem jezírka o tolik pixelů obrazovky, další řádky nad ním.
+## Nápis je nad středem dolu o tolik pixelů obrazovky.
 const LIFT_PX := 58.0
 const LINE_PX := 28.0
 const LABEL_WIDTH := 300.0
-## Jak často se hledají blízká jezírka, v sekundách.
+## Jak často se hledají blízké doly, v sekundách.
 const CHECK_EVERY := 0.1
 ## Rychlost objevení a zmizení, v podílu za sekundu.
 const FADE_SPEED := 5.0
@@ -24,16 +22,14 @@ var _spots: Array = []
 var _crystal: Crystal
 var _persons: Array = []
 var _camera: MapCamera
-var _rocks: Rocks
 var _labels := {}
 var _near := {}
 var _check_left := 0.0
 
 
-## spots jsou trojice [pos, mat, slot] z Rocks.pond_spots. Prázdné jezírko nápis nemá.
-func setup(spots: Array, crystal: Crystal, persons: Array, camera: MapCamera, rocks: Rocks) -> void:
+## spots jsou trojice [pos, mat, slot] z Rocks.pond_spots.
+func setup(spots: Array, crystal: Crystal, persons: Array, camera: MapCamera) -> void:
 	_spots = spots
-	_rocks = rocks
 	_crystal = crystal
 	_persons = persons
 	_camera = camera
@@ -65,8 +61,6 @@ func _find_near() -> void:
 	_near.clear()
 	var reach := NEAR_METERS * float(TerrainCatalog.TILE_SIZE)
 	for slot in _spots.size():
-		if _rocks != null and _rocks.pond_left(int(_spots[slot][2])) <= 0:
-			continue
 		var pos: Vector2 = _spots[slot][0]
 		for person: Node2D in _persons:
 			if person.position.distance_squared_to(pos) < reach * reach:
@@ -77,19 +71,14 @@ func _find_near() -> void:
 				break
 
 
-## Řádek za každý materiál v jezírku: „Diamant ×2 · 90 b“. Bezedné jezírko svůj materiál bez počtu.
+## Materiál dolu: „Diamant · 90 b“.
 func _fill(label: Label, slot: int) -> void:
-	var lines := PackedStringArray()
-	for entry: Array in _rocks.pond_summary(int(_spots[slot][2])):
-		var mat: int = entry[0]
-		var count: int = entry[1]
-		var many := " ×%d" % count if count > 1 else ""
-		lines.append("%s%s · %d b" % [_crystal.title_of(mat), many, _crystal.points_of(mat)])
-	var text := "\n".join(lines)
+	var mat: int = _spots[slot][1]
+	var text := "%s · %d b" % [_crystal.title_of(mat), _crystal.points_of(mat)]
 	if label.text == text:
 		return
 	label.text = text
-	label.size = Vector2(LABEL_WIDTH, LINE_PX * float(maxi(lines.size(), 1)) + 8.0)
+	label.size = Vector2(LABEL_WIDTH, LINE_PX + 8.0)
 	label.position = Vector2(-LABEL_WIDTH * 0.5, -label.size.y + LINE_PX * 0.5 + 4.0)
 
 

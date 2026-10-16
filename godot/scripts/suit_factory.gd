@@ -1,6 +1,6 @@
 extends "res://scripts/factory.gd"
 
-## Továrna typu hry Skafandry. Na každé straně kromě výstupku jsou dva zásobníky vedle sebe
+## Továrna se zásobníky. Na každé straně kromě výstupku jsou dva zásobníky vedle sebe
 ## (base_suits.png), zásobník se dá jen tam, kam patří. Před každým použitým zásobníkem je
 ## cedulka: obrázek materiálu a neonové číslo, kolik kamenů ještě chybí.
 ## Kámen dopadne na vnější konec zásobníku a dojede ke kolu, tam zůstane a další se hromadí

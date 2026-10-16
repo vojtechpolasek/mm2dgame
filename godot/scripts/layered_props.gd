@@ -415,7 +415,7 @@ func _fit(node: Node2D, kind: int) -> void:
 		layer_i += 1
 
 
-## Potomek může druh ze sázení podle povrchu vynechat. Jezírko má vlastní počet.
+## Potomek může druh ze sázení podle povrchu vynechat. Důl má vlastní počet.
 func _scatter_kind(_kind: int) -> bool:
 	return true
 

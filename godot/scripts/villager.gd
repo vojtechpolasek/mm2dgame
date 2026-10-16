@@ -6,20 +6,18 @@ extends Node2D
 ## vstupu do domu v něm zůstane HOUSE_PAUSE sekund, teprve pak losuje. Zůstat v domě je dalších
 ## WAIT sekund. V domě ho není vidět a nikomu nepřekáží. Do domu vchází kolmo dveřmi: přes stěny,
 ## ale pod střechou, a zmizí, až je celý pod ní. Ven vychází stejnou cestou obráceně.
-## Když je některý hráč blíž než POINT_NEAR metrů, zastaví se a nataženou rukou ukáže na nejbližší
-## jezírko, kde leží aspoň jeden kámen. Nad hlavou mu visí poloprůhledný nejdražší kámen z toho
-## jezírka, ten by si tam hráč vzal. U bezedných jezírek ukazuje na náhodné jezírko svého materiálu
-## a nad hlavou má svůj materiál. Když není na co ukázat, jen se k hráči otočí.
+## Když je některý hráč blíž než POINT_NEAR metrů, zastaví se a nataženou rukou ukáže na důl
+## nejlevnějšího materiálu, který továrně ještě chybí, ten nejblíž k továrně. Nad hlavou mu visí
+## poloprůhledný kámen toho materiálu. Když není na co ukázat, jen se k hráči otočí.
 ## Až jsou všichni hráči dál než POINT_FAR, pokračuje v tom, co dělal.
 ## Při honičce ho správce vesničanů může poslat pomáhat (help): přeruší, co dělá, z domu vyjde
 ## dveřmi a běží (RUN_METERS) na místo HELP_SHARE cesty od příšery k honěné postavě. Ruku má
 ## nataženou. Příšera přes něj neprojde, musí ho obejít. Po honičce jde domů.
 ## Grafika je hráčova, chodí atlasem chůze s kratším krokem, při pomoci běží atlasem běhu.
-## Typ hry Skafandry: venku je jedovatý vzduch. Vesničan bez skafandru (needs_suit) zůstává
-## doma a nepomáhá. Když mu hráč donese skafandr (dress), vyjde v něm ven a dělá všechno
-## jako jindy. Když je vzduch čistý (return_suit), dojde skafandr odložit k výstupku továrny.
-## Ve Skafandrech ukazuje na důl nejlevnějšího materiálu, který továrně ještě chybí, ten nejblíž
-## k továrně. Hráč, který se ho dotkne, si ho vezme s sebou (sledování): vesničan běží za ním
+## Venku je jedovatý vzduch. Vesničan bez skafandru (needs_suit) zůstává doma a nepomáhá.
+## Když mu hráč donese skafandr (dress), vyjde v něm ven a dělá všechno jako jindy. Když je
+## vzduch čistý (return_suit), dojde skafandr odložit k výstupku továrny.
+## Hráč, který se ho dotkne, si ho vezme s sebou (sledování): vesničan běží za ním
 ## a cíl přepočítá po FOLLOW_CHECK sekundách. Když hráč vezme kámen z dolu, vesničan dojde
 ## ke stejnému dolu a vezme si stejný materiál. Když se hráč dotkne továrny (i bez kamene),
 ## vesničan s kamenem dojde ke stejné straně a hodí ho tam, kam se vejde (jinde, když tam ne).
@@ -52,7 +50,7 @@ const HOUSE_PAUSE := 2.0
 const WAIT := Vector2(3.0, 5.0)
 const POINT_NEAR := 3.0
 const POINT_FAR := 3.5
-## Jak často se při ukazování ověří, že v jezírku materiál pořád leží.
+## Jak často se při ukazování znovu vybere důl. Továrně mezitím mohl přestat chybět materiál.
 const POINT_CHECK := 0.5
 ## Natáčení v radiánech za sekundu.
 const TURN_SPEED := 6.0
@@ -108,11 +106,9 @@ enum Then { ENTER, WAIT, DROP }
 
 ## Číslo mezi tvory, kteří nechodí přes sebe. Nastaví správce vesničanů.
 var crowd_id := -1
-## Materiál, na který vesničan ukazuje.
-var material_index := -1
 ## Barvy oblečení a kůže, ať jde vesničan uložit.
 var clothes := {}
-## Bez skafandru nesmí ven. Nastaví správce vesničanů v typu hry Skafandry.
+## Bez skafandru nesmí ven. Nastaví správce vesničanů.
 var needs_suit := false
 var _suited := false
 ## Jde odložit skafandr na _drop_at.
@@ -120,7 +116,7 @@ var _returning := false
 var _drop_at := Vector2.ZERO
 ## Právě dostal skafandr a vyjde ven, jakmile mu nikdo nestojí ve dveřích.
 var _go_out := false
-## Továrna Skafandrů. Jen s ní vesničan ukazuje na chybějící materiál a dá se vzít s sebou.
+## Továrna vesnice. Jen s ní vesničan ukazuje na chybějící materiál a dá se vzít s sebou.
 var suits: SuitFactory
 ## Kdo nese kámen, pro příšery. Pole sdílí správce příšer.
 var carriers: Array = []
@@ -203,7 +199,6 @@ func setup(
 	persons: Array[Person],
 	host: Node2D,
 	home: int,
-	mat: int,
 	colors: Dictionary,
 	rng: RandomNumberGenerator,
 ) -> bool:
@@ -217,7 +212,6 @@ func setup(
 	_rng = rng
 	_home = home
 	_host = host
-	material_index = mat
 	clothes = colors
 	_speed = WALK_METERS * float(TerrainCatalog.TILE_SIZE)
 	if not _figure.build(self, true, Person.CYCLE_METERS):
@@ -688,9 +682,9 @@ func _take_off() -> void:
 
 # --- Uložení ---
 
-## Dům, materiál a barvy: s nimi se vesničan po načtení objeví znovu.
+## Dům a barvy: s nimi se vesničan po načtení objeví znovu.
 func origin() -> Dictionary:
-	return {"home": _home, "mat": material_index, "colors": clothes}
+	return {"home": _home, "colors": clothes}
 
 
 ## Stav k uložení. Ve dveřích se počítá jako venku přede dveřmi. persons jsou postavy hráčů,
@@ -764,7 +758,7 @@ func restore(data: Dictionary, persons: Array[Person]) -> void:
 
 # --- Sledování hráče ---
 
-## Dotkl se ho hráč? Pak ho začne sledovat. Jen venku, ve skafandru a ve Skafandrech.
+## Dotkl se ho hráč? Pak ho začne sledovat. Jen venku a ve skafandru.
 func _touched() -> bool:
 	if suits == null or suits.cleared() or not _suited or _returning or _helping != null:
 		return false
@@ -1032,23 +1026,20 @@ func _watch(delta: float) -> bool:
 	return true
 
 
-## Ukazuje: otočí se k jezírku (bez něj k hráči), nad hlavou kámen. Jezírko po POINT_CHECK
+## Ukazuje: otočí se k dolu (bez něj k hráči), nad hlavou kámen. Důl po POINT_CHECK
 ## sekundách vybere znovu.
 func _point(delta: float) -> void:
 	_point_check -= delta
 	if _point_check <= 0.0:
 		_point_check = POINT_CHECK
-		if suits != null or not _rocks.bottomless or (_point_slot >= 0 and not _rocks.ponds_holding(material_index).has(_point_slot)):
-			_pick_pond()
+		_pick_pond()
 	var aim := (_rocks.pond_center(_point_slot) if _point_slot >= 0 else _point_at.position) - position
 	_face(aim, delta)
 	_figure.set_frame(_figure.idle_frame)
 	_show_gem(delta)
 
 
-## Nejbližší jezírko, kde leží aspoň jeden kámen. U bezedných jezírek náhodné jezírko
-## s materiálem vesničana, ta ho mají pořád. Ve Skafandrech důl nejlevnějšího materiálu,
-## který továrně chybí, ten nejblíž k továrně.
+## Důl nejlevnějšího materiálu, který továrně chybí, ten nejblíž k továrně.
 func _pick_pond() -> void:
 	_point_check = POINT_CHECK
 	var slots := PackedInt32Array()
@@ -1058,35 +1049,21 @@ func _pick_pond() -> void:
 		if not missing.is_empty():
 			wanted = missing[0]
 			slots = _rocks.ponds_holding(wanted)
-	elif not _rocks.bottomless:
-		slots = _rocks.ponds_with_gems()
-	elif material_index >= 0:
-		slots = _rocks.ponds_holding(material_index)
 	_point_slot = -1
 	if slots.is_empty():
 		_figure.set_hold(false)
 		if _gem != null:
 			_gem.visible = false
 		return
-	if suits != null:
-		var best := INF
-		for slot in slots:
-			var dist := _town.center().distance_squared_to(_rocks.pond_center(slot))
-			if dist < best:
-				best = dist
-				_point_slot = slot
-	elif _rocks.bottomless:
-		_point_slot = slots[_rng.randi() % slots.size()]
-	else:
-		var best := INF
-		for slot in slots:
-			var dist := position.distance_squared_to(_rocks.pond_center(slot))
-			if dist < best:
-				best = dist
-				_point_slot = slot
+	var best := INF
+	for slot in slots:
+		var dist := _town.center().distance_squared_to(_rocks.pond_center(slot))
+		if dist < best:
+			best = dist
+			_point_slot = slot
 	_figure.set_hold(true)
 	if _gem != null and _crystal != null:
-		var mat := wanted if suits != null else material_index if _rocks.bottomless else _rocks.pond_best(_point_slot)
+		var mat := wanted
 		if mat != _gem_mat:
 			_gem_mat = mat
 			_crystal.paint(_gem, mat, GEM_HEIGHT, _gem_phase)

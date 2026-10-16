@@ -4,10 +4,10 @@ extends Node
 ## Nožka T vede od výstupku, příčka jde napříč na obě strany. Obojí je křivka přes vybočené body,
 ## takže T není rovné. Do vody cesta nevede: rameno se ohne, a když to nestačí, zkrátí se.
 ## Továrna a domy jsou neprůchodné pro postavy i příšery. Na vyšlapaném středu cesty postava
-## běží rychleji (Person.ROAD_BOOST). Stromy, skály a jezírka se cestě, továrně a domům vyhnou.
+## běží rychleji (Person.ROAD_BOOST). Stromy, skály a doly se cestě, továrně a domům vyhnou.
 ##
-## Typ hry Skafandry má navíc tři sklady (stores): kříže s plochou na konci každého ramene.
-## Plocha drží jeden kámen a chová se jako jezírko. Zastřešený střed kříže i plochy jsou
+## Vesnice s továrnou má navíc tři sklady (stores): kříže s plochou na konci každého ramene.
+## Plocha drží jeden kámen. Zastřešený střed kříže i plochy jsou
 ## neprůchodné, kámen se odloží a vezme dotykem z kraje plochy. Sklady se rozmístí až po dolech (plan_stores), ty sází skály.
 ##
 ## Průběh jako u skal: load_assets na hlavním vlákně, plan ve vlákně (nesahá na scénu),
@@ -18,11 +18,7 @@ const ObjectLayers := preload("res://scripts/object_layers.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Crystal := preload("res://scripts/crystal.gd")
-const Factory := preload("res://scripts/factory.gd")
 const SuitFactory := preload("res://scripts/suit_factory.gd")
-
-## Kámen dojel v továrně pod mezikruží a započítal se. pos je místo ve světě.
-signal settled(mat: int, pos: Vector2)
 
 const FACTORY_CATALOG := "res://graphics/objects/factory/tovarna.json"
 const PATH_CATALOG := "res://graphics/paths/paths.json"
@@ -50,7 +46,7 @@ const HOUSE_EDGE_M := 5.5
 const SAMPLE_PX := 16.0
 ## Konce příčky a konec nožky v příčce zprůhlední na tolika metrech.
 const FADE_M := 1.4
-## Stromy, skály a jezírka drží od středu cesty půlku plné cesty a tolik metrů navíc.
+## Stromy, skály a doly drží od středu cesty půlku plné cesty a tolik metrů navíc.
 const ROAD_CLEAR_M := 0.35
 ## Od továrny a domů drží tolik metrů.
 const SOLID_CLEAR_M := 1.2
@@ -89,12 +85,10 @@ const STORE_DIRECTIONS := 12
 const STORE_MINE_M := 1.5
 const STORE_CLEAR_M := 0.4
 
-## Typ hry Skafandry: zásobníky továrny, dvojice [materiál, počet], a recept skafandru.
-## Nastaví svět před spawn, prázdný plán postaví obyčejnou továrnu s pásy.
+## Zásobníky továrny, dvojice [materiál, počet], a recept skafandru. Nastaví svět před spawn.
 var suit_plan: Array = []
 var suit_recipe := PackedInt32Array()
 var _factory_info := {}
-var _factory_base: Texture2D
 var _factory_suits: Texture2D
 var _factory_ring: Texture2D
 var _factory_shader: Shader
@@ -105,7 +99,7 @@ var _road_width := 160.0
 var _house_kinds: Array[Dictionary] = []
 var _palettes: Array[Dictionary] = []
 var _house_shader: Shader
-## Typ hry Skafandry chce sklady. Nastaví svět před plan.
+## Vesnice chce sklady. Nastaví svět před plan.
 var stores := false
 var _store_info := {}
 var _store_base: Texture2D
@@ -144,7 +138,7 @@ var _store_gems := PackedInt32Array()
 
 var _camera: MapCamera
 var _crystal: Crystal
-var _factory: Factory
+var _factory: SuitFactory
 var _roofs: Array[Sprite2D] = []
 ## Uzly domů v pořadí _houses. První dítě jsou stěny, druhé střecha.
 var _house_nodes: Array[Node2D] = []
@@ -160,13 +154,12 @@ func load_assets() -> bool:
 		return false
 	var layers: Dictionary = _factory_info.get("layers", {})
 	var root := FACTORY_CATALOG.get_base_dir()
-	_factory_base = _texture("%s/%s" % [root, str((layers.get("base", {}) as Dictionary).get("file", "base.png"))])
 	_factory_ring = _texture("%s/%s" % [root, str((layers.get("ring", {}) as Dictionary).get("file", "ring.png"))])
 	_factory_shader = load(str(_factory_info.get("shader", ""))) as Shader
 	var suits: Dictionary = _factory_info.get("suits", {})
 	if suits.has("file"):
 		_factory_suits = _texture("%s/%s" % [root, str(suits["file"])])
-	if _factory_base == null or _factory_ring == null or _factory_shader == null:
+	if _factory_suits == null or _factory_ring == null or _factory_shader == null:
 		push_error("Chybí grafika továrny.")
 		_factory_info = {}
 		return false
@@ -945,7 +938,7 @@ func dock_spot(body: float, rng: RandomNumberGenerator) -> Vector2:
 	return _center + Vector2(across, out).rotated(_turn)
 
 
-## Smí tu stát strom, skála nebo jezírko o poloměru radius? Ne na cestě a ne u továrny a domů.
+## Smí tu stát strom, skála nebo důl o poloměru radius? Ne na cestě a ne u továrny a domů.
 func blocks(pos: Vector2, radius: float) -> bool:
 	if _center == Vector2.INF or not _keep_rect.grow(radius).has_point(pos):
 		return false
@@ -1029,7 +1022,7 @@ func store_bay(pos: Vector2, body: float) -> int:
 	return -1
 
 
-## Výměna na ploše skladu jako u jezírka, jen se na plochu vejde jediný kámen. Postava vezme
+## Výměna na ploše skladu: na plochu se vejde jediný kámen. Postava vezme
 ## kámen, který tam ležel, a nesený (held, -1 je prázdná ruka) tam nechá. Vrátí vzatý kámen,
 ## -1 když byla plocha prázdná.
 func swap_store(bay: int, held: int) -> int:
@@ -1112,41 +1105,26 @@ func spawn(camera: MapCamera, road: Node2D, props: Node2D, crystal: Crystal) -> 
 			road.add_child(_road_line(_stem, 0.0, FADE_M * tile))
 		if _bar.size() >= 2:
 			road.add_child(_road_line(_bar, FADE_M * tile, FADE_M * tile))
-	var suits := not suit_plan.is_empty() and _factory_suits != null
-	_factory = SuitFactory.new() if suits else Factory.new()
+	_factory = SuitFactory.new()
 	_factory.name = "Factory"
 	_factory.position = _center
 	_factory.rotation = _turn
 	props.add_child(_factory)
-	_factory.setup(_factory_info, _factory_suits if suits else _factory_base, _factory_ring, _factory_shader, crystal, camera)
-	if suits:
-		(_factory as SuitFactory).configure(_factory_info, suit_plan, suit_recipe, hash(_center))
-	_factory.counted.connect(func(mat: int, pos: Vector2) -> void: settled.emit(mat, pos))
+	_factory.setup(_factory_info, _factory_suits, _factory_ring, _factory_shader, crystal, camera)
+	_factory.configure(_factory_info, suit_plan, suit_recipe, hash(_center))
 	_spawn_houses(props)
 	_spawn_stores(props)
 	camera.view_changed.connect(_fit_roofs)
 	_fit_roofs()
 
 
-## Kam dopadne kámen hozený od from: na vnější konec nejbližšího pásu.
-func drop_spot(from: Vector2, rng: RandomNumberGenerator) -> Vector2:
+## Kámen dopadl na zásobník lane. Ozve se hned, započítá se, až dojede pod mezikruží.
+func receive(mat: int, world: Vector2, rot: float, lane: int) -> void:
 	if _factory == null:
-		return _center
-	return _factory.belt_drop(from, rng)
-
-
-## Kámen dopadl na pás. Ozve se hned, započítá se, až dojede pod mezikruží. lane je zásobník
-## továrny typu Skafandry, -1 obyčejný pás.
-func receive(mat: int, world: Vector2, rot: float, lane: int = -1) -> void:
-	if _factory == null:
-		settled.emit(mat, world)
 		return
 	if _crystal != null:
 		Sound.at("basin/" + _crystal.name_of(mat), world)
-	if lane >= 0 and suit_factory() != null:
-		suit_factory().receive_lane(lane, mat, world, rot)
-		return
-	_factory.receive(mat, world, rot)
+	_factory.receive_lane(lane, mat, world, rot)
 
 
 ## Výška plošiny továrny v metrech, tam dopadají hozené kameny.
@@ -1154,19 +1132,19 @@ func deck_height() -> float:
 	return _factory.deck_height() if _factory != null else 0.0
 
 
-## Kámen, který se do továrny Skafandrů nikam nevejde, dopadl na konec zásobníku a rozplyne se.
+## Kámen, který se do továrny nikam nevejde, dopadl na konec zásobníku a rozplyne se.
 func discard(mat: int, world: Vector2, rot: float) -> void:
-	if suit_factory() != null:
-		suit_factory().discard(mat, world, rot)
+	if _factory != null:
+		_factory.discard(mat, world, rot)
 
 
-## Továrna typu Skafandry, jinak null.
+## Továrna, na čtverci bez vesnice null.
 func suit_factory() -> SuitFactory:
-	return _factory as SuitFactory
+	return _factory
 
 
-## Zásobník továrny Skafandrů, kam postava u from hodí kámen mat. Místo v něm zabere.
-## -1 když tu žádný kámen mat nechce, nebo továrna zásobníky nemá.
+## Zásobník továrny, kam postava u from hodí kámen mat. Místo v něm zabere.
+## -1 když tu žádný kámen mat nechce, nebo továrna není.
 func claim_lane(from: Vector2, mat: int) -> int:
 	var suits := suit_factory()
 	if suits == null:
