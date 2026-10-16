@@ -13,6 +13,7 @@ func _ready() -> void:
 		return
 	Sound.play_menu_music()
 	play.pressed.connect(_on_play)
+	$Center/Panel/Column/Settings.pressed.connect(_on_settings)
 	$Center/Panel/Column/About.pressed.connect(_on_about)
 	$Center/Panel/Column/Quit.pressed.connect(_on_quit)
 	play.grab_focus()
@@ -20,6 +21,10 @@ func _ready() -> void:
 
 func _on_play() -> void:
 	get_tree().change_scene_to_file("res://scenes/game_mode_menu.tscn")
+
+
+func _on_settings() -> void:
+	get_tree().change_scene_to_file("res://scenes/settings_menu.tscn")
 
 
 func _on_about() -> void:

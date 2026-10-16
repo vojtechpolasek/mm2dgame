@@ -1,0 +1,33 @@
+extends Control
+
+## Nastavení: hudba a zvuky zvlášť. Ve hře se přepínají i klávesami (Controls), tady se
+## popisky tlačítek drží podle Sound.
+
+@onready var music: Button = $Center/Panel/Column/Music
+@onready var sounds: Button = $Center/Panel/Column/Sounds
+
+
+func _ready() -> void:
+	Sound.play_menu_music()
+	music.pressed.connect(func() -> void: Sound.set_music_on(not Sound.music_on()))
+	sounds.pressed.connect(func() -> void: Sound.set_sounds_on(not Sound.sounds_on()))
+	$Center/Panel/Column/Back.pressed.connect(_back)
+	Sound.settings_changed.connect(_label)
+	_label()
+	music.grab_focus()
+
+
+func _label() -> void:
+	music.text = "Hudba: %s" % ("zapnutá" if Sound.music_on() else "vypnutá")
+	sounds.text = "Zvuky: %s" % ("zapnuté" if Sound.sounds_on() else "vypnuté")
+
+
+func _back() -> void:
+	Sound.ui("back")
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		_back()

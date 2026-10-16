@@ -7,6 +7,12 @@ extends Node
 ## Hudba: v menu hraje menu. Level hraje dvojici hudba do hry a hudba při honičce naráz,
 ## honička se jen plynule zesílí a zeslabí, takže obě běží dál od místa, kde byly.
 ## Tlačítka v menu zvučí sama: posun fokusu a stisk tlačítka se hlídají tady.
+## Hudba a zvuky jdou vypnout zvlášť (nastavení v menu, ve hře toggle_music a toggle_sounds).
+## Vypnutá hudba ztlumí sběrnici Music, vypnuté zvuky Sfx, Ambient a Ui. Volba se pamatuje
+## v SETTINGS.
+
+## Volba změnila hudbu nebo zvuky.
+signal settings_changed
 
 const ROOT := "res://audio"
 const BUSES := {"Music": -6.0, "Sfx": 0.0, "Ambient": -4.0, "Ui": -9.0}
@@ -21,6 +27,8 @@ const SILENT := -60.0
 const VOICES := 24
 ## Do kolika pixelů od kamery je zvuk ve světě slyšet.
 const HEARING := 1400.0
+const SETTINGS := "user://settings.cfg"
+const SOUND_BUSES: PackedStringArray = ["Sfx", "Ambient", "Ui"]
 
 var _cache := {}
 var _music_a: AudioStreamPlayer
@@ -38,6 +46,8 @@ var _chase_armed := false
 ## Posun fokusu zvučí jen do tohoto času (ms) po navigační klávese. Fokus, který si obrazovka
 ## nastaví sama (po startu hry, po otevření menu), je tichý.
 var _nav_until := 0
+var _music_on := true
+var _sounds_on := true
 
 
 func _ready() -> void:
@@ -57,6 +67,51 @@ func _ready() -> void:
 		_voices.append(voice)
 	get_viewport().gui_focus_changed.connect(_on_focus)
 	get_tree().node_added.connect(_on_node_added)
+	_load_settings()
+
+
+# --- Nastavení ---
+
+func music_on() -> bool:
+	return _music_on
+
+
+func sounds_on() -> bool:
+	return _sounds_on
+
+
+func set_music_on(on: bool) -> void:
+	_music_on = on
+	_apply()
+	_save_settings()
+
+
+func set_sounds_on(on: bool) -> void:
+	_sounds_on = on
+	_apply()
+	_save_settings()
+
+
+func _apply() -> void:
+	AudioServer.set_bus_mute(AudioServer.get_bus_index("Music"), not _music_on)
+	for bus in SOUND_BUSES:
+		AudioServer.set_bus_mute(AudioServer.get_bus_index(bus), not _sounds_on)
+	settings_changed.emit()
+
+
+func _load_settings() -> void:
+	var config := ConfigFile.new()
+	if config.load(SETTINGS) == OK:
+		_music_on = bool(config.get_value("sound", "music", true))
+		_sounds_on = bool(config.get_value("sound", "sounds", true))
+	_apply()
+
+
+func _save_settings() -> void:
+	var config := ConfigFile.new()
+	config.set_value("sound", "music", _music_on)
+	config.set_value("sound", "sounds", _sounds_on)
+	config.save(SETTINGS)
 
 
 func _process(delta: float) -> void:
@@ -179,6 +234,14 @@ func at_variant(name: String, count: int, pos: Vector2, volume_db: float = 0.0) 
 # --- Menu ---
 
 func _input(event: InputEvent) -> void:
+	# Do jména hry se M a N píšou jako písmena.
+	var typing := get_viewport().gui_get_focus_owner() is LineEdit
+	if not typing and event.is_action_pressed(&"toggle_music"):
+		set_music_on(not _music_on)
+		return
+	if not typing and event.is_action_pressed(&"toggle_sounds"):
+		set_sounds_on(not _sounds_on)
+		return
 	for action: StringName in [&"ui_up", &"ui_down", &"ui_left", &"ui_right", &"ui_focus_next", &"ui_focus_prev"]:
 		if event.is_action_pressed(action):
 			_nav_until = Time.get_ticks_msec() + 200

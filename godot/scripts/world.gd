@@ -79,6 +79,7 @@ var _board: WorldBoard
 func _ready() -> void:
 	# Kamera na skupinu hráčů až po tom, co se postavy v tomhle snímku pohnuly.
 	process_priority = 10
+	Sound.settings_changed.connect(_on_sound_settings)
 	await get_tree().process_frame
 	var mode_id := str(GameSession.rules().get("id", ""))
 	if mode_id == "world" or mode_id == "suits":
@@ -457,6 +458,15 @@ func _exit_tree() -> void:
 	if _task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_task)
 		_task = -1
+
+
+## Hudba nebo zvuky se přepnuly (M, N, LB, RB). Hláška řekne, jak jsou teď.
+func _on_sound_settings() -> void:
+	if _hud == null:
+		return
+	var music := "zapnutá" if Sound.music_on() else "vypnutá"
+	var sounds := "zapnuté" if Sound.sounds_on() else "vypnuté"
+	_hud.show_notice("Hudba %s · zvuky %s" % [music, sounds], 2.5)
 
 
 ## Esc nebo Start: první stisk ukáže hlášku, druhý do LEAVE_WINDOW sekund odejde do menu.

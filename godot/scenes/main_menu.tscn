@@ -69,6 +69,11 @@ custom_minimum_size = Vector2(360, 56)
 layout_mode = 2
 text = "Hrát"
 
+[node name="Settings" type="Button" parent="Center/Panel/Column"]
+custom_minimum_size = Vector2(360, 56)
+layout_mode = 2
+text = "Nastavení"
+
 [node name="About" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(360, 56)
 layout_mode = 2

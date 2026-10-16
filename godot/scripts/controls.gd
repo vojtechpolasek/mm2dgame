@@ -5,7 +5,8 @@ extends Node
 ## jdou později přemapovat. Šipky skáčou pravým Shiftem, WASD levým, gamepady tlačítkem A
 ## a chodí levou páčkou i křížovým ovladačem.
 ## Menu se ovládá stejně: k ui_* přibude WASD a oba Shifty potvrzují. game_menu (Esc, Start)
-## opustí hru. Myš se nepoužívá: kurzor je skrytý a její události se zahodí dřív, než
+## opustí hru, toggle_music (M, LB) a toggle_sounds (N, RB) vypnou a zapnou hudbu a zvuky.
+## Myš se nepoužívá: kurzor je skrytý a její události se zahodí dřív, než
 ## dojdou ke GUI.
 
 const ARROWS := 0
@@ -131,6 +132,14 @@ func _bind_menu() -> void:
 	start.device = -1
 	start.button_index = JOY_BUTTON_START
 	_add(&"game_menu", start)
+	for pair: Array in [[&"toggle_music", KEY_M, JOY_BUTTON_LEFT_SHOULDER], [&"toggle_sounds", KEY_N, JOY_BUTTON_RIGHT_SHOULDER]]:
+		var key := InputEventKey.new()
+		key.physical_keycode = pair[1]
+		_add(pair[0], key)
+		var shoulder := InputEventJoypadButton.new()
+		shoulder.device = -1
+		shoulder.button_index = pair[2]
+		_add(pair[0], shoulder)
 
 
 func _add(name: StringName, event: InputEvent) -> void:
