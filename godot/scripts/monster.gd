@@ -17,13 +17,22 @@ const NavGrid := preload("res://scripts/nav_grid.gd")
 const BITE := 0.6
 ## Po krádeži si příšera tolik sekund postavy nevšímá, ať ji hned znovu nehoní.
 const CALM_SECONDS := 1.0
-## Toulání: další cíl je tak daleko v metrech, u něj chvíli postojí.
+## Toulání: další cíl je tak daleko v metrech, u něj chvíli postojí. Chodící jde po cestě
+## z mřížky a vybírá jen cíl, ke kterému cesta vede.
 const WANDER_NEAR := 4.0
 const WANDER_FAR := 14.0
 const REST_MIN := 1.0
 const REST_MAX := 3.5
-## Když toulání tolik sekund skoro nepostupuje (překážka, voda), zkusí jiný cíl.
-const STALL_SECONDS := 1.2
+## Na cestu k cíli má TRIP_SLACK krát víc času, než by trvala, a TRIP_EXTRA sekund navíc.
+## Pak si vybere jiný cíl, ať došel, nebo ne.
+const TRIP_SLACK := 2.0
+const TRIP_EXTRA := 2.0
+## Zaseknutí se pozná podle toho, kam se tvor za okno dostal, ne kolik ušel: klouzání podél
+## překážky tam a zpátky je taky zaseknutí. Za okno se musí posunout aspoň o STUCK_SHARE
+## dráhy, kterou by ušel. Toulání má okno WANDER_WATCH sekund, honička CHASE_WATCH.
+const STUCK_SHARE := 0.25
+const WANDER_WATCH := 1.2
+const CHASE_WATCH := 0.6
 ## Honička jde přímo na postavu, dokud mezi nimi v mřížce cest nic nestojí. Viditelnost se
 ## ověřuje po SIGHT_EVERY sekundách. Když něco stojí, příšera jde po cestě kolem překážek
 ## a přepočítává ji po PATH_REPLAN sekundách. Zasekne-li se na cestě, přeskočí bod a cestu
@@ -35,7 +44,6 @@ const PATH_REPLAN := 1.0
 const PATH_REACH := 0.6
 ## Kolik bodů cesty dopředu se hledá ten nejbližší.
 const PATH_LOOKAHEAD := 16
-const DETOUR_STALL := 0.5
 const DETOUR_MIN := 1.0
 const DETOUR_MAX := 2.5
 const DETOUR_ANGLES: Array[float] = [1.2, 1.7, 2.3]
@@ -97,8 +105,14 @@ var _target := Vector2.ZERO
 var _resting := false
 var _rest_left := 0.0
 var _calm_left := 0.0
-var _stall_time := 0.0
-var _chase_stall := 0.0
+## Cesta toulání k _target a kolik sekund na ni ještě zbývá.
+var _trip := PackedVector2Array()
+var _trip_i := 0
+var _trip_left := 0.0
+## Hlídání zaseknutí: kde tvor stál na začátku okna a kolik okna zbývá.
+var _watch_from := Vector2.ZERO
+var _watch_left := 0.0
+var _was_chasing := false
 var _detour_left := 0.0
 var _detour_side := 1.0
 var _detour_tries := 0
@@ -216,6 +230,9 @@ func _process(delta: float) -> void:
 			_bite()
 		return
 	var before := position
+	if (_prey != null) != _was_chasing:
+		_was_chasing = _prey != null
+		_watch_reset(CHASE_WATCH if _was_chasing else WANDER_WATCH)
 	if _prey != null:
 		_chase(delta)
 	else:
@@ -249,9 +266,10 @@ func _chase(delta: float) -> void:
 		if _detour_left > 0.0:
 			_detour_left -= delta
 			dir = dir.rotated(_detour_side * DETOUR_ANGLES[mini(_detour_tries, DETOUR_ANGLES.size() - 1)])
-		var moved := _move(dir * step)
+		_move(dir * step)
 		if not _jumping:
-			_track_chase(delta, moved, step)
+			# U kořisti se jen dotahuje, tam pomalý postup zaseknutí není.
+			_track_chase(delta, position.distance_to(_prey.position) <= _touch * 2.0)
 	_bite()
 
 
@@ -286,19 +304,20 @@ func _bite() -> void:
 
 
 ## Zasekne-li se honička, začne objížďka. Když se zasekne i objížďka, zkusí druhou stranu
-## a větší úhel. Po úspěšném kusu cesty se počítání neúspěchů vynuluje.
-func _track_chase(delta: float, moved: float, step: float) -> void:
+## a větší úhel. Po okně, ve kterém se posunula, se počítání neúspěchů vynuluje.
+func _track_chase(delta: float, near: bool) -> void:
 	if _flying:
 		return
-	if moved >= step * 0.3:
-		_chase_stall = 0.0
+	if near:
+		_watch_reset(CHASE_WATCH)
+		return
+	var state := _watch(delta, _chase_px, CHASE_WATCH)
+	if state < 0:
+		return
+	if state == 0:
 		if _detour_left <= 0.0:
 			_detour_tries = 0
 		return
-	_chase_stall += delta
-	if _chase_stall < DETOUR_STALL:
-		return
-	_chase_stall = 0.0
 	if _nav != null and _detour_left <= 0.0:
 		if _on_path and _path_i < _path.size():
 			# Bod cesty je za překážkou, na kterou mřížka nestačí. Další bod a nová cesta.
@@ -326,18 +345,41 @@ func _plan() -> void:
 	_replan_left = PATH_REPLAN
 
 
-## Další bod cesty. Nejdřív najde nejbližší bod z pár následujících (po skoku může příšera
-## stát za několika body), pak přeskočí ty, ke kterým už došla. Za koncem cesty míří na postavu.
+## Další bod cesty honičky. Za koncem cesty míří na postavu.
 func _path_aim() -> Vector2:
-	var reach := maxf(PATH_REACH * float(TerrainCatalog.TILE_SIZE), _body)
-	var nearest := _path_i
-	for j in range(_path_i, mini(_path_i + PATH_LOOKAHEAD, _path.size())):
-		if position.distance_squared_to(_path[j]) < position.distance_squared_to(_path[nearest]):
-			nearest = j
-	_path_i = nearest
-	while _path_i < _path.size() and position.distance_to(_path[_path_i]) < reach:
-		_path_i += 1
+	_path_i = _next_point(_path, _path_i)
 	return _path[_path_i] if _path_i < _path.size() else _prey.position
+
+
+## Index dalšího bodu cesty. Nejdřív najde nejbližší bod z pár následujících (po skoku může
+## tvor stát za několika body), pak přeskočí ty, ke kterým už došel.
+func _next_point(path: PackedVector2Array, from: int) -> int:
+	var reach := maxf(PATH_REACH * float(TerrainCatalog.TILE_SIZE), _body)
+	var nearest := from
+	for j in range(from, mini(from + PATH_LOOKAHEAD, path.size())):
+		if position.distance_squared_to(path[j]) < position.distance_squared_to(path[nearest]):
+			nearest = j
+	var at := nearest
+	while at < path.size() and position.distance_to(path[at]) < reach:
+		at += 1
+	return at
+
+
+## Hlídání zaseknutí od teď na window sekund.
+func _watch_reset(window: float) -> void:
+	_watch_from = position
+	_watch_left = window
+
+
+## Konec okna? -1 okno běží, 0 tvor se posunul, 1 je zaseknutý: za okno se dostal méně než
+## o STUCK_SHARE dráhy, kterou by rychlostí speed (px/s) ušel. Pak začne další okno.
+func _watch(delta: float, speed: float, window: float) -> int:
+	_watch_left -= delta
+	if _watch_left > 0.0:
+		return -1
+	var stuck := position.distance_to(_watch_from) < speed * window * STUCK_SHARE
+	_watch_reset(window)
+	return 1 if stuck else 0
 
 
 func _wander(delta: float) -> void:
@@ -346,22 +388,24 @@ func _wander(delta: float) -> void:
 		if _rest_left <= 0.0:
 			_pick_target()
 		return
-	var to := _target - position
+	_trip_left -= delta
+	if _trip_left <= 0.0:
+		_pick_target()
+		return
+	_trip_i = _next_point(_trip, _trip_i)
+	var aim := _trip[_trip_i] if _trip_i < _trip.size() else _target
+	var to := aim - position
 	var step := _wander_px * delta
-	if to.length() <= step:
+	if _trip_i >= _trip.size() and to.length() <= step:
 		_move(to)
 		if _flying:
 			_pick_target()
 		else:
 			_rest()
 		return
-	var moved := _move(to.limit_length(step))
-	if moved < step * 0.3:
-		_stall_time += delta
-		if _stall_time > STALL_SECONDS:
-			_pick_target()
-	else:
-		_stall_time = 0.0
+	_move(to.limit_length(step))
+	if _watch(delta, _wander_px, WANDER_WATCH) == 1:
+		_pick_target()
 
 
 ## Posun o offset. Vrátí, kolik pixelů příšera opravdu ušla.
@@ -438,6 +482,7 @@ func _step_jump(delta: float) -> void:
 		# Po dopadu je příšera jinde, cesta se přepočítá odsud.
 		_replan_left = 0.0
 		_sight_left = 0.0
+		_watch_reset(CHASE_WATCH if _prey != null else WANDER_WATCH)
 
 
 ## Příšera skončila v překážce nebo ve vodě. Vysune se na nejbližší volné místo.
@@ -445,6 +490,9 @@ func _escape() -> void:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	if not _escaping or _walker.blocked(_escape_to, _body, crowd_id):
 		var spot := _walker.free_spot(position, _body, ESCAPE_REACH * tile, ESCAPE_STEP, crowd_id)
+		# Hluboko v houští nemusí být volno blízko. Hledá dál, hrubším krokem.
+		if spot == Vector2.INF:
+			spot = _walker.free_spot(position, _body, ESCAPE_REACH * 3.0 * tile, ESCAPE_STEP * 3.0, crowd_id)
 		if spot == Vector2.INF:
 			return
 		_escape_to = spot
@@ -455,9 +503,9 @@ func _escape() -> void:
 		_escaping = false
 
 
+## Další cíl toulání. Chodící bere jen cíl, ke kterému z mřížky vede cesta, a jde po ní.
 func _pick_target() -> void:
 	_resting = false
-	_stall_time = 0.0
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	# Mapa čtverce ve světě nezačíná v (0, 0), ale v space_origin.
 	var low := _walker.space_origin
@@ -465,15 +513,38 @@ func _pick_target() -> void:
 	if _flying:
 		var margin := FLY_MARGIN * tile
 		_target = Vector2(_rng.randf_range(low.x + margin, high.x - margin), _rng.randf_range(low.y + margin, high.y - margin))
+		_start_trip(PackedVector2Array())
 		return
 	for _try in 12:
 		var spot := position + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
 		if not _walker.contains(spot):
 			continue
-		if not _walker.blocked(spot, _body, crowd_id):
-			_target = spot
-			return
+		if _walker.blocked(spot, _body, crowd_id):
+			continue
+		var trip := PackedVector2Array()
+		if _nav != null:
+			trip = _nav.path(position, spot)
+			# Cesta, která k cíli nedojde, končí jinde. Takový cíl je za vodou nebo v houští.
+			if not trip.is_empty() and trip[trip.size() - 1].distance_to(spot) > tile:
+				continue
+		_target = spot
+		_start_trip(trip)
+		return
 	_rest()
+
+
+## Vyrazí po trip k _target. Času má podle délky cesty.
+func _start_trip(trip: PackedVector2Array) -> void:
+	_trip = trip
+	_trip_i = 0
+	var length := 0.0
+	var last := position
+	for point in trip:
+		length += last.distance_to(point)
+		last = point
+	length += last.distance_to(_target)
+	_trip_left = length / maxf(_wander_px, 1.0) * TRIP_SLACK + TRIP_EXTRA
+	_watch_reset(WANDER_WATCH)
 
 
 ## Stav k uložení: materiál a kde stojí.
