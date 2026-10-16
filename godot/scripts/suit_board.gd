@@ -154,7 +154,7 @@ func _plan_square(sq: Square) -> void:
 	sq.layout = TOWN_LAYOUT if sq.level > 0 else "empty"
 
 
-## Čtverec s továrnou: doly materiálů levelu v úzkých pásech kolem továrny a zásobníky
+## Čtverec s továrnou: doly materiálů ze zásobníků v úzkých pásech kolem továrny a zásobníky
 ## podle levelu. Ostatní čtverce nemají doly ani továrnu.
 func _configure(sq: Square) -> void:
 	if sq.level <= 0:
@@ -165,20 +165,24 @@ func _configure(sq: Square) -> void:
 	sq.rocks.bottomless = true
 	sq.rocks.set_available(GameSession.mode_materials(sq.level))
 	var order: PackedInt32Array = sq.rocks.by_points()
-	var need := {}
 	var plan: Array = []
 	for pair: Array in GameSession.suit_lanes(sq.level):
-		var at := mini(int(pair[0]), order.size() - 1)
-		need[at] = int(need.get(at, 0)) + int(pair[1])
-		plan.append([order[at], int(pair[1])])
-	# Každý materiál má svůj důl, ten, kterého zásobníky chtějí tři a víc, dva.
+		plan.append([order[mini(int(pair[0]), order.size() - 1)], int(pair[1])])
+	# Každý materiál ze zásobníků má jeden důl, materiál, který továrna nechce, žádný.
+	var used := GameSession.suit_orders(sq.level)
 	var mines := PackedInt32Array()
-	for at in mini(GameSession.mode_materials(sq.level), order.size()):
-		mines.append(2 if int(need.get(at, 0)) >= 3 else 1)
+	mines.resize(mini(GameSession.mode_materials(sq.level), order.size()))
+	var recipe := PackedInt32Array()
+	for at in used:
+		if at >= mines.size():
+			continue
+		mines[at] = 1
+		if recipe.size() < GameSession.SUIT_RECIPE:
+			recipe.append(order[at])
 	sq.rocks.mine_plan = mines
 	sq.rocks.band_max = GameSession.SUIT_BAND_M
 	sq.town.suit_plan = plan
-	sq.town.suit_recipe = order.slice(0, mini(GameSession.SUIT_RECIPE, order.size()))
+	sq.town.suit_recipe = recipe
 
 
 func _built_square(sq: Square) -> void:

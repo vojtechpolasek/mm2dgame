@@ -47,8 +47,8 @@ const SUIT_BAND_M := 8.0
 ## jen jednou, víc až v dalších levelech. Nejlevnější materiál zásobníků s levelem jen
 ## stoupá, levnější se už nevrátí. Od pořadí 4 (magnetit) chce každý materiál až po
 ## nejdražší aspoň jednou.
-## Na mapě jsou všechny materiály od nejlevnějšího po nejdražší ze zásobníků, aspoň tři:
-## recept skafandru chce tři nejlevnější. Poslední, patnáctý level je výjimka: limity překračuje,
+## Na mapě jsou jen materiály ze zásobníků, každý s jedním dolem. Recept skafandru chce tři
+## nejlevnější z nich. Poslední, patnáctý level je výjimka: limity překračuje,
 ## chce 26 kamenů a nejdražší materiály po čtyřech. Po něm hra končí.
 const SUIT_LEVELS: Array = [
 	[[0, 1], [1, 1]],
@@ -67,7 +67,7 @@ const SUIT_LEVELS: Array = [
 	[[4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3]],
 	[[5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 4], [11, 4], [12, 4]],
 ]
-## Recept skafandru: po jednom z tolika nejlevnějších materiálů.
+## Recept skafandru: po jednom z tolika nejlevnějších materiálů ze zásobníků levelu.
 const SUIT_RECIPE := 3
 ## Typ hry, kterému patří postup z doby před typy hry (progress/unlocked).
 const FIRST_MODE_ID := "time_points"
@@ -413,19 +413,37 @@ func mode_size(at: int) -> int:
 	return SUIT_MAP if str(rules()["id"]) == "suits" else level_size(at)
 
 
-## Počet materiálů na mapě levelu ve vybraném typu hry.
+## Počet materiálů od nejlevnějšího, mezi kterými jsou všechny materiály levelu ve vybraném
+## typu hry. Skafandry z nich na mapu dají jen ty ze zásobníků (suit_orders).
 func mode_materials(at: int) -> int:
 	if str(rules()["id"]) != "suits":
 		return level_materials(at)
-	var most := SUIT_RECIPE
-	for pair: Array in suit_lanes(at):
-		most = maxi(most, int(pair[0]) + 1)
+	var most := 0
+	for order in suit_orders(at):
+		most = maxi(most, order + 1)
 	return most
+
+
+## Počet materiálů, které na mapě levelu opravdu jsou.
+func mode_material_count(at: int) -> int:
+	if str(rules()["id"]) != "suits":
+		return level_materials(at)
+	return suit_orders(at).size()
 
 
 ## Zásobníky levelu typu Skafandry: dvojice [pořadí materiálu, počet kamenů].
 static func suit_lanes(at: int) -> Array:
 	return SUIT_LEVELS[clampi(at, 1, SUIT_LEVELS.size()) - 1]
+
+
+## Pořadí materiálů ze zásobníků levelu, od nejlevnějšího, každé jednou.
+static func suit_orders(at: int) -> PackedInt32Array:
+	var seen := {}
+	for pair: Array in suit_lanes(at):
+		seen[int(pair[0])] = true
+	var out := PackedInt32Array(seen.keys())
+	out.sort()
+	return out
 
 
 ## Počet dostupných materiálů, od nejlevnějšího. Každý level přidá jeden.
