@@ -6,6 +6,10 @@ extends Node
 ## Továrna a domy jsou neprůchodné pro postavy i příšery. Na vyšlapaném středu cesty postava
 ## běží rychleji (Person.ROAD_BOOST). Stromy, skály a jezírka se cestě, továrně a domům vyhnou.
 ##
+## Typ hry Skafandry má navíc tři sklady (stores): kříže s plochou na konci každého ramene.
+## Plocha drží jeden kámen a chová se jako jezírko. Zastřešený střed kříže i plochy jsou
+## neprůchodné, kámen se odloží a vezme dotykem z kraje plochy. Sklady se rozmístí až po dolech (plan_stores), ty sází skály.
+##
 ## Průběh jako u skal: load_assets na hlavním vlákně, plan ve vlákně (nesahá na scénu),
 ## spawn zase na hlavním.
 
@@ -23,6 +27,7 @@ signal settled(mat: int, pos: Vector2)
 const FACTORY_CATALOG := "res://graphics/objects/factory/tovarna.json"
 const PATH_CATALOG := "res://graphics/paths/paths.json"
 const HOUSE_CATALOG := "res://graphics/objects/houses/houses.json"
+const STORE_CATALOG := "res://graphics/objects/warehouse/sklad.json"
 
 ## Nožka T a půlka příčky na každou stranu, v metrech.
 const STEM_M := 20.0
@@ -71,6 +76,18 @@ const HOUSE_VAL := 0.1
 const TOUCH_PX := 2.0
 ## Buňka mřížky úseků cesty v pixelech.
 const SEG_CELL := 128.0
+## Sklady stojí ve vrcholech rovnostranného trojúhelníku kolem továrny, v půlce vzdálenosti
+## k nejvzdálenějšímu dolu. Trojúhelník se zkusí natočit STORE_TURNS krát. Když se nikdy
+## nevejdou všechny, sklad, který se nevejde, hledá místo kolem svého vrcholu, po STORE_STEP_M
+## metrech nejvýš STORE_SEARCH_M daleko.
+const STORES := 3
+const STORE_TURNS := 24
+const STORE_STEP_M := 1.0
+const STORE_SEARCH_M := 14.0
+const STORE_DIRECTIONS := 12
+## Od dolu drží kříž tolik metrů, stromy a skály od kříže STORE_CLEAR_M.
+const STORE_MINE_M := 1.5
+const STORE_CLEAR_M := 0.4
 
 ## Typ hry Skafandry: zásobníky továrny, dvojice [materiál, počet], a recept skafandru.
 ## Nastaví svět před spawn, prázdný plán postaví obyčejnou továrnu s pásy.
@@ -88,6 +105,18 @@ var _road_width := 160.0
 var _house_kinds: Array[Dictionary] = []
 var _palettes: Array[Dictionary] = []
 var _house_shader: Shader
+## Typ hry Skafandry chce sklady. Nastaví svět před plan.
+var stores := false
+var _store_info := {}
+var _store_base: Texture2D
+var _store_roof: Texture2D
+var _store_shader: Shader
+## Plochy skladu v souřadnicích obrázku: střed a poloviny stran v px.
+var _bay_center := PackedVector2Array()
+var _bay_half := PackedVector2Array()
+var _store_reach := 0.0
+var _store_arm := 0.0
+var _store_core := 0.0
 
 var _center := Vector2.INF
 var _turn := 0.0
@@ -105,6 +134,13 @@ var _keep_rect := Rect2()
 var _seg_a := PackedVector2Array()
 var _seg_b := PackedVector2Array()
 var _seg_cells := {}
+## Sklady: [poloha, natočení]. Natočení míří ramenem k továrně.
+var _stores: Array[Dictionary] = []
+## Půdorysy ramen skladů, dva obdélníky na sklad. Nejsou neprůchodné, jen se jim vyhne
+## sázení. Zastřešené středy a plochy jsou v _solids za domy.
+var _store_parts: Array[Solid] = []
+## Kámen na každé ploše, sklad * plochy + plocha. -1 je prázdná plocha.
+var _store_gems := PackedInt32Array()
 
 var _camera: MapCamera
 var _crystal: Crystal
@@ -112,6 +148,8 @@ var _factory: Factory
 var _roofs: Array[Sprite2D] = []
 ## Uzly domů v pořadí _houses. První dítě jsou stěny, druhé střecha.
 var _house_nodes: Array[Node2D] = []
+## Uzly skladů v pořadí _stores. Kameny na plochách jsou v dítěti Gems.
+var _store_nodes: Array[Node2D] = []
 
 
 # --- Načtení ---
@@ -134,7 +172,31 @@ func load_assets() -> bool:
 		return false
 	_load_paths()
 	_load_houses()
+	_load_stores()
 	return true
+
+
+func _load_stores() -> void:
+	_store_info = _read_json(STORE_CATALOG)
+	if _store_info.is_empty():
+		return
+	var layers: Dictionary = _store_info.get("layers", {})
+	var root := STORE_CATALOG.get_base_dir()
+	_store_base = _texture("%s/%s" % [root, str((layers.get("base", {}) as Dictionary).get("file", "base.png"))])
+	_store_roof = _texture("%s/%s" % [root, str((layers.get("roof", {}) as Dictionary).get("file", "roof.png"))])
+	_store_shader = load(str(_store_info.get("shader", ""))) as Shader
+	if _store_base == null or _store_roof == null or _store_shader == null:
+		push_error("Chybí grafika skladu.")
+		_store_info = {}
+		return
+	_store_reach = float(_store_info.get("reach_px", 123.0))
+	_store_arm = float(_store_info.get("arm_half_px", 40.0))
+	_store_core = float(_store_info.get("core_px", 50.0))
+	for bay: Dictionary in _store_info.get("bays", []):
+		var center: Array = bay.get("center", [0.0, 0.0])
+		var half: Array = bay.get("half", [24.0, 24.0])
+		_bay_center.append(Vector2(float(center[0]), float(center[1])))
+		_bay_half.append(Vector2(float(half[0]), float(half[1])))
 
 
 func _load_paths() -> void:
@@ -202,6 +264,7 @@ func plan(map: MapData, rng: RandomNumberGenerator, layout: String = "") -> void
 	_bar = PackedVector2Array()
 	_houses.clear()
 	_solids.clear()
+	_clear_stores()
 	_seg_a = PackedVector2Array()
 	_seg_b = PackedVector2Array()
 	_seg_cells.clear()
@@ -244,6 +307,7 @@ func _plan_layout(map: MapData, rng: RandomNumberGenerator, layout: String) -> v
 	_bar = PackedVector2Array()
 	_houses.clear()
 	_solids.clear()
+	_clear_stores()
 	_seg_a = PackedVector2Array()
 	_seg_b = PackedVector2Array()
 	_seg_cells.clear()
@@ -358,6 +422,10 @@ func relocate(delta: Vector2) -> void:
 		house["pos"] = (house["pos"] as Vector2) + delta
 	for solid in _solids:
 		solid.shift(delta)
+	for store in _stores:
+		store["pos"] = (store["pos"] as Vector2) + delta
+	for part in _store_parts:
+		part.shift(delta)
 	_seg_a = PackedVector2Array()
 	_seg_b = PackedVector2Array()
 	_seg_cells.clear()
@@ -627,6 +695,140 @@ static func _vary(color: Color, rng: RandomNumberGenerator, hue: float, sat: flo
 	)
 
 
+## Sklady kolem továrny. mines jsou středy dolů, mine_reach dosah jejich obrysu v px.
+## Poloměr je půlka vzdálenosti k nejvzdálenějšímu dolu. Trojúhelník se natáčí, dokud se
+## nevejdou všechny tři. Když to nejde, bere natočení, kde se jich vešlo nejvíc, a sklad,
+## který se nevejde, posune na nejbližší volné místo. Kde není ani to, sklad chybí.
+## Běží ve vlákně po dolech, před stromy a skálami. Ty se pak skladům vyhnou.
+func plan_stores(map: MapData, rng: RandomNumberGenerator, mines: PackedVector2Array, mine_reach: float) -> void:
+	_clear_stores()
+	if not stores or _store_info.is_empty() or _center == Vector2.INF or mines.is_empty():
+		return
+	var far := 0.0
+	for mine in mines:
+		far = maxf(far, mine.distance_to(_center))
+	var radius := far * 0.5
+	var step := TAU / float(STORES)
+	var best_turn := 0.0
+	var best_count := -1
+	for _try in STORE_TURNS:
+		var turn := rng.randf() * TAU
+		var count := 0
+		for k in STORES:
+			var spot := _center + Vector2.from_angle(turn + step * float(k)) * radius
+			if _store_fits(map, spot, mines, mine_reach):
+				_add_store(spot)
+				count += 1
+		if count == STORES:
+			_measure()
+			return
+		_clear_stores()
+		if count > best_count:
+			best_count = count
+			best_turn = turn
+	for k in STORES:
+		var spot := _store_spot(map, _center + Vector2.from_angle(best_turn + step * float(k)) * radius, mines, mine_reach)
+		if spot != Vector2.INF:
+			_add_store(spot)
+	_measure()
+
+
+## Nejbližší místo kolem ideal, kam se sklad vejde. Prochází kruhy po STORE_STEP_M metrech
+## a ze stejně vzdálených míst bere to, které nejlíp drží poloměr trojúhelníku.
+func _store_spot(map: MapData, ideal: Vector2, mines: PackedVector2Array, mine_reach: float) -> Vector2:
+	if _store_fits(map, ideal, mines, mine_reach):
+		return ideal
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var away := (ideal - _center).angle()
+	var radius := ideal.distance_to(_center)
+	var dist := STORE_STEP_M
+	while dist <= STORE_SEARCH_M + 0.001:
+		var best := Vector2.INF
+		var best_off := INF
+		for k in STORE_DIRECTIONS:
+			var spot := ideal + Vector2.from_angle(away + TAU * float(k) / float(STORE_DIRECTIONS)) * dist * tile
+			var off := absf(spot.distance_to(_center) - radius)
+			if off < best_off and _store_fits(map, spot, mines, mine_reach):
+				best = spot
+				best_off = off
+		if best != Vector2.INF:
+			return best
+		dist += STORE_STEP_M
+	return Vector2.INF
+
+
+## Celý kříž na souši, mimo cestu, domy, továrnu, jiné sklady a doly.
+func _store_fits(map: MapData, spot: Vector2, mines: PackedVector2Array, mine_reach: float) -> bool:
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var apart := HOUSE_APART_M * tile
+	var keep := mine_reach + STORE_MINE_M * tile
+	for bar in _store_bars(spot, _store_turn(spot)):
+		for mine in mines:
+			if mine.distance_to(spot) < keep + bar.reach and bar.signed(mine) < keep:
+				return false
+		for other in _store_parts:
+			if other.center.distance_to(bar.center) > other.reach + bar.reach + apart:
+				continue
+			for point in bar.outline(tile * 0.5):
+				if other.signed(point) < apart:
+					return false
+			for point in other.outline(tile * 0.5):
+				if bar.signed(point) < apart:
+					return false
+		if not _house_fits(map, bar):
+			return false
+	return true
+
+
+## Rameno skladu míří k továrně.
+func _store_turn(spot: Vector2) -> float:
+	return (_center - spot).angle()
+
+
+## Kříž jako dva obdélníky přes sebe, oba konvexní.
+func _store_bars(spot: Vector2, turn: float) -> Array[Solid]:
+	var bars: Array[Solid] = []
+	for half: Vector2 in [Vector2(_store_reach, _store_arm), Vector2(_store_arm, _store_reach)]:
+		bars.append(_box(spot, half, turn))
+	return bars
+
+
+static func _box(spot: Vector2, half: Vector2, turn: float) -> Solid:
+	var points := PackedVector2Array()
+	for corner: Vector2 in [Vector2(-half.x, -half.y), Vector2(half.x, -half.y), Vector2(half.x, half.y), Vector2(-half.x, half.y)]:
+		points.append(spot + corner.rotated(turn))
+	return Solid.new(points)
+
+
+## Sklad stojí. Zastřešený střed a plochy jsou neprůchodné, ramena jen drží sázení stranou.
+func _add_store(spot: Vector2) -> void:
+	var turn := _store_turn(spot)
+	_stores.append({"pos": spot, "turn": turn})
+	_store_parts.append_array(_store_bars(spot, turn))
+	_solids.append(_box(spot, Vector2(_store_core, _store_core), turn))
+	# Plocha a pruh ramene mezi ní a střechou jsou jeden obdélník. Mezi dvěma půdorysy by zbyla
+	# škvíra, ve které by tvory tlačil jeden do druhého.
+	for bay in _bay_center.size():
+		var dir := _bay_center[bay].normalized()
+		var across := absf(_bay_half[bay].dot(dir.orthogonal().abs()))
+		var outer := _bay_center[bay].length() + absf(_bay_half[bay].dot(dir.abs()))
+		var middle := dir * (_store_core + outer) * 0.5
+		var half := (outer - _store_core) * 0.5
+		var size := Vector2(half, across) if absf(dir.x) > absf(dir.y) else Vector2(across, half)
+		_solids.append(_box(spot + middle.rotated(turn), size, turn))
+	for _bay in _bay_center.size():
+		_store_gems.append(-1)
+
+
+## Zruší sklady. Jejich střechy a plochy jsou v _solids poslední, za továrnou a domy.
+func _clear_stores() -> void:
+	if not _stores.is_empty():
+		_solids.resize(maxi(_solids.size() - _stores.size() * (1 + _bay_center.size()), 0))
+	_stores.clear()
+	_store_parts.clear()
+	_store_gems = PackedInt32Array()
+
+
 ## Obdélníky, ve kterých má smysl hledat: půdorysy a cesta.
 func _measure() -> void:
 	_solid_rect = Rect2()
@@ -634,6 +836,8 @@ func _measure() -> void:
 		_solid_rect = _solids[i].rect() if i == 0 else _solid_rect.merge(_solids[i].rect())
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	_keep_rect = _solid_rect.grow(SOLID_CLEAR_M * tile)
+	for part in _store_parts:
+		_keep_rect = _keep_rect.merge(part.rect().grow(STORE_CLEAR_M * tile))
 	for line: PackedVector2Array in [_stem, _bar]:
 		for point in line:
 			_keep_rect = _keep_rect.expand(point)
@@ -749,6 +953,10 @@ func blocks(pos: Vector2, radius: float) -> bool:
 	for solid in _solids:
 		if pos.distance_to(solid.center) < solid.reach + clear and solid.signed(pos) < clear:
 			return true
+	var near := radius + STORE_CLEAR_M * float(TerrainCatalog.TILE_SIZE)
+	for part in _store_parts:
+		if pos.distance_to(part.center) < part.reach + near and part.signed(pos) < near:
+			return true
 	return _road_distance(pos, radius + _clear_half) < radius + _clear_half
 
 
@@ -795,6 +1003,88 @@ func block_cells(grid: AStarGrid2D, body: float, margin: float) -> void:
 					grid.set_point_solid(Vector2i(x, y))
 
 
+## Kolik skladů na mapě stojí.
+func store_count() -> int:
+	return _stores.size()
+
+
+## Střed skladu ve světě.
+func store_center(store: int) -> Vector2:
+	return _stores[store]["pos"]
+
+
+## Plocha skladu, které se tělo o poloměru body dotýká, jako číslo sklad * plochy + plocha.
+## Žádná je -1.
+func store_bay(pos: Vector2, body: float) -> int:
+	var reach := body + TOUCH_PX
+	for store in _stores.size():
+		var center: Vector2 = _stores[store]["pos"]
+		if pos.distance_to(center) > _store_reach * 1.5 + reach:
+			continue
+		var local := (pos - center).rotated(-float(_stores[store]["turn"]))
+		for bay in _bay_center.size():
+			var gap := ((local - _bay_center[bay]).abs() - _bay_half[bay]).max(Vector2.ZERO)
+			if gap.length() <= reach:
+				return store * _bay_center.size() + bay
+	return -1
+
+
+## Výměna na ploše skladu jako u jezírka, jen se na plochu vejde jediný kámen. Postava vezme
+## kámen, který tam ležel, a nesený (held, -1 je prázdná ruka) tam nechá. Vrátí vzatý kámen,
+## -1 když byla plocha prázdná.
+func swap_store(bay: int, held: int) -> int:
+	if bay < 0 or bay >= _store_gems.size():
+		return held
+	var had := _store_gems[bay]
+	if had < 0 and held < 0:
+		return -1
+	_store_gems[bay] = held
+	_refresh_store(bay / maxi(_bay_center.size(), 1))
+	return had
+
+
+## Střed plochy ve světě. Tam doletí ukradený kámen.
+func bay_home(bay: int) -> Vector2:
+	var count := maxi(_bay_center.size(), 1)
+	var store: Dictionary = _stores[bay / count]
+	return Vector2(store["pos"]) + _bay_center[bay % count].rotated(float(store["turn"]))
+
+
+## Ukradený nebo odnesený kámen se vrací na plochu bay. Když je obsazená, lehne na nejbližší
+## prázdnou plochu kteréhokoli skladu. Když žádná prázdná není, zmizí.
+func store_gem(bay: int, mat: int) -> void:
+	if mat < 0 or bay < 0 or bay >= _store_gems.size():
+		return
+	var target := bay
+	if _store_gems[bay] >= 0:
+		target = -1
+		var home := bay_home(bay)
+		var best := INF
+		for other in _store_gems.size():
+			var dist := bay_home(other).distance_squared_to(home)
+			if _store_gems[other] < 0 and dist < best:
+				best = dist
+				target = other
+	if target < 0:
+		return
+	_store_gems[target] = mat
+	_refresh_store(target / maxi(_bay_center.size(), 1))
+
+
+## Kameny na plochách skladů k uložení.
+func store_snapshot() -> PackedInt32Array:
+	return _store_gems.duplicate()
+
+
+func restore_stores(gems: PackedInt32Array) -> void:
+	if gems.size() != _store_gems.size():
+		push_warning("Uložené sklady nesedí na sklady čtverce, zůstanou prázdné.")
+		return
+	_store_gems = gems.duplicate()
+	for store in _store_nodes.size():
+		_refresh_store(store)
+
+
 ## Nejmenší vzdálenost od středu cesty mezi úseky v okolí reach. Dál nic není, vrátí INF.
 func _road_distance(pos: Vector2, reach: float) -> float:
 	var best := INF
@@ -833,6 +1123,7 @@ func spawn(camera: MapCamera, road: Node2D, props: Node2D, crystal: Crystal) -> 
 		(_factory as SuitFactory).configure(_factory_info, suit_plan, suit_recipe, hash(_center))
 	_factory.counted.connect(func(mat: int, pos: Vector2) -> void: settled.emit(mat, pos))
 	_spawn_houses(props)
+	_spawn_stores(props)
 	camera.view_changed.connect(_fit_roofs)
 	_fit_roofs()
 
@@ -953,6 +1244,72 @@ func _house_sprite(node: Node2D, texture: Texture2D, slot: float, height: float,
 	sprite.material = material
 	node.add_child(sprite)
 	return sprite
+
+
+## Sklad: spodek na zemi, nad ním kameny na plochách a střecha nad postavami.
+func _spawn_stores(props: Node2D) -> void:
+	var layers: Dictionary = _store_info.get("layers", {})
+	for store in _stores.size():
+		var node := Node2D.new()
+		node.name = "Store%d" % store
+		node.position = _stores[store]["pos"]
+		node.rotation = _stores[store]["turn"]
+		props.add_child(node)
+		_store_nodes.append(node)
+		_store_sprite(node, _store_base, layers.get("base", {}))
+		var gems := Node2D.new()
+		gems.name = "Gems"
+		node.add_child(gems)
+		var roof := _store_sprite(node, _store_roof, layers.get("roof", {}))
+		roof.z_index = 2
+		_roofs.append(roof)
+		_refresh_store(store)
+
+
+func _store_sprite(node: Node2D, texture: Texture2D, layer: Dictionary) -> Sprite2D:
+	var material := ShaderMaterial.new()
+	material.shader = _store_shader
+	material.set_shader_parameter("height_m", float(layer.get("height", 0.0)))
+	material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
+	var colors: Array = layer.get("colors", [])
+	var slots := ["color_r", "color_g", "color_b"]
+	for i in mini(colors.size(), slots.size()):
+		material.set_shader_parameter(slots[i], Color.html(str(colors[i])))
+	var shade: Array = _store_info.get("shade", [0.42, 1.1])
+	var sheen: Array = _store_info.get("sheen", [0.16, 0.7])
+	material.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
+	material.set_shader_parameter("shade_floor", float(_store_info.get("shade_floor", 0.2)))
+	material.set_shader_parameter("sheen", Vector2(float(sheen[0]), float(sheen[1])))
+	var sprite := Sprite2D.new()
+	sprite.texture = texture
+	sprite.centered = true
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	sprite.material = material
+	node.add_child(sprite)
+	return sprite
+
+
+## Kameny na plochách skladu podle _store_gems. Každá plocha má kámen jinak natočený.
+func _refresh_store(store: int) -> void:
+	if store < 0 or store >= _store_nodes.size() or _crystal == null:
+		return
+	var holder := _store_nodes[store].get_node_or_null("Gems") as Node2D
+	if holder == null:
+		return
+	for child in holder.get_children():
+		holder.remove_child(child)
+		child.queue_free()
+	var count := _bay_center.size()
+	for bay in count:
+		var mat := _store_gems[store * count + bay]
+		if mat < 0:
+			continue
+		var spin := float(store * count + bay) * 2.39
+		var sprite := _crystal.make_sprite()
+		sprite.position = _bay_center[bay]
+		sprite.rotation = spin
+		holder.add_child(sprite)
+		_crystal.paint(sprite, mat, 0.0, spin)
 
 
 ## Střecha je vysoko a posun výšky ji vytáhne z obdélníku spritu.

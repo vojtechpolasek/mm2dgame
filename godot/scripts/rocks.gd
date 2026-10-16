@@ -127,8 +127,8 @@ var _gem_total := 0
 var _pond_nodes := {}
 
 
-## Továrna, cesta a domy (town) už stojí. Nejdřív jezírka kolem továrny, potom pás kolem mapy,
-## potom skály podle povrchu. Stromy se sází až potom. Nesahá na scénu, smí běžet ve vlákně.
+## Továrna, cesta a domy (town) už stojí. Nejdřív jezírka kolem továrny, podle nich sklady
+## (jen když je town chce), potom pás kolem mapy, potom skály podle povrchu. Stromy se sází až potom. Nesahá na scénu, smí běžet ve vlákně.
 func plant(map: MapData, rng: RandomNumberGenerator) -> void:
 	var pond_name := MINE if bottomless and _kind_of.has(MINE) else POND
 	_pond_kind = int(_kind_of[pond_name]) if _kind_of.has(pond_name) else -1
@@ -136,6 +136,11 @@ func plant(map: MapData, rng: RandomNumberGenerator) -> void:
 		return
 	_begin_plant(map)
 	_place_ponds(map, rng)
+	if town != null and town.stores:
+		var mines := PackedVector2Array()
+		for index in _pond_rock:
+			mines.append(_pos[index])
+		town.plan_stores(map, rng, mines, _kind_foot[_pond_kind] if _pond_kind >= 0 else 0.0)
 	if draw_rim:
 		_place_rim(map, rng)
 	_scatter(map, rng)

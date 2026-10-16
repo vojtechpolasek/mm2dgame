@@ -68,7 +68,8 @@ const SUIT_REACH := 30.0
 ## Skafandr v ruce je trochu menší než na zemi.
 const SUIT_SCALE := 0.8
 
-## Typ hry Skafandry: ukradený kámen zmizí, neletí zpátky do dolu. Nastaví svět.
+## Typ hry Skafandry: ukradený kámen zmizí, neletí zpátky do dolu. Kámen ze skladu se ale
+## vrátí na svou plochu. Nastaví svět.
 var stolen_vanish := false
 ## Typ hry Skafandry: zavolá se s polohou postavy, která nese skafandr. Vrátí true, když ho
 ## u dveří domu převzal vesničan. Nastaví svět.
@@ -105,9 +106,13 @@ var _held: Sprite2D
 var _held_mat := -1
 ## Jezírko, ze kterého je kámen v ruce. Tam se vrátí, když ho příšera ukradne.
 var _held_slot := -1
+## Plocha skladu (Town.store_bay), ze které je kámen v ruce, nebo -1. Tam se vrátí po krádeži.
+var _held_bay := -1
 ## Jezírko, kterého se postava právě dotýká, a za kolik sekund u něj vymění znovu.
 var _touch_slot := -1
 var _touch_left := 0.0
+## Plocha skladu, které se postava právě dotýká. Odpočet sdílí s jezírkem.
+var _touch_bay := -1
 var _flyer: Sprite2D
 var _fly_from := Vector2.ZERO
 var _fly_to := Vector2.ZERO
@@ -376,6 +381,8 @@ func _carry(delta: float) -> void:
 		elif not _town.suit_factory().wanted(_held_mat):
 			_throw(_town.suit_factory().nearest_lane(position), true)
 		return
+	if _touch_store(delta):
+		return
 	var slot := _rocks.pond_at(position, BODY, _held_mat >= 0)
 	if slot < 0:
 		_touch_slot = -1
@@ -394,6 +401,30 @@ func _carry(delta: float) -> void:
 		_put_down()
 
 
+## Plocha skladu se chová jako jezírko, jen drží jediný kámen. Vrátí true, když se postava
+## nějaké plochy dotýká.
+func _touch_store(delta: float) -> bool:
+	var bay := _town.store_bay(position, BODY) if _town != null else -1
+	if bay < 0:
+		_touch_bay = -1
+		return false
+	_touch_slot = -1
+	if bay == _touch_bay:
+		_touch_left -= delta
+		if _touch_left > 0.0:
+			return true
+	_touch_bay = bay
+	_touch_left = SWAP_REPEAT
+	var held := _held_mat
+	var mat := _town.swap_store(bay, held)
+	if mat >= 0:
+		_take(-1, mat)
+		_held_bay = bay
+	elif held >= 0:
+		_put_down()
+	return true
+
+
 ## Nese prázdný skafandr?
 func carries_suit() -> bool:
 	return _suit != null
@@ -401,7 +432,7 @@ func carries_suit() -> bool:
 
 ## Stav k uložení: kde stojí a co nese. Kámen v letu už patří továrně.
 func snapshot() -> Dictionary:
-	return {"pos": position, "rot": rotation, "held": _held_mat, "suit": _suit != null}
+	return {"pos": position, "rot": rotation, "held": _held_mat, "bay": _held_bay, "suit": _suit != null}
 
 
 ## Obnoví stav ze snapshot.
@@ -411,6 +442,7 @@ func restore(data: Dictionary) -> void:
 	var held := int(data.get("held", -1))
 	if held >= 0:
 		_take(-1, held)
+		_held_bay = int(data.get("bay", -1))
 	if bool(data.get("suit", false)) and _suit == null:
 		_take_suit()
 
@@ -446,6 +478,7 @@ func _put_down() -> void:
 	_held.visible = false
 	_held_mat = -1
 	_held_slot = -1
+	_held_bay = -1
 	_set_hold(false)
 	held_changed.emit(-1)
 	Sound.at("sfx/pickup", global_position, -3.0)
@@ -478,30 +511,34 @@ func drop_held() -> void:
 	if _held_mat < 0:
 		return
 	Sound.at("sfx/steal", global_position)
-	if stolen_vanish:
+	if stolen_vanish and _held_bay < 0:
 		_held.visible = false
 		_held_mat = -1
 		_held_slot = -1
+		_held_bay = -1
 		_set_hold(false)
 		held_changed.emit(-1)
 		return
 	_send_back()
 
 
-## Kámen z ruky odletí obloukem do jezírka, ze kterého ho postava vzala. Až dopadne, jezírku
-## přibude.
+## Kámen z ruky odletí obloukem do jezírka nebo na plochu skladu, odkud ho postava vzala.
+## Až dopadne, jezírku přibude, plocha ho zase drží.
 func _send_back() -> void:
 	var mat := _held_mat
 	var slot := _held_slot
+	var bay := _held_bay
+	var town := _town
 	var start := _held.global_position
 	_held.visible = false
 	_held_mat = -1
 	_held_slot = -1
+	_held_bay = -1
 	_set_hold(false)
 	held_changed.emit(-1)
 	var host := get_parent() as Node2D
-	if host == null or slot < 0:
-		_rocks.return_gem(slot, mat)
+	if host == null or (slot < 0 and bay < 0):
+		_land_home(null, slot, mat, bay, town)
 		return
 	var gem := _crystal.make_sprite()
 	host.add_child(gem)
@@ -511,8 +548,9 @@ func _send_back() -> void:
 	_pad_gem(gem, _hand_height)
 	var spin := (-1.0 if _rng.randf() < 0.5 else 1.0) * TAU * _rng.randf_range(0.75, 1.6)
 	var tween := gem.create_tween()
-	tween.tween_method(_fly_home.bind(gem, gem.position, _rocks.gem_home(slot), spin), 0.0, 1.0, RETURN_TIME)
-	tween.tween_callback(_land_home.bind(gem, slot, mat))
+	var home := town.bay_home(bay) if bay >= 0 else _rocks.gem_home(slot)
+	tween.tween_method(_fly_home.bind(gem, gem.position, home, spin), 0.0, 1.0, RETURN_TIME)
+	tween.tween_callback(_land_home.bind(gem, slot, mat, bay, town))
 
 
 func _fly_home(t: float, gem: Sprite2D, from: Vector2, to: Vector2, spin: float) -> void:
@@ -526,15 +564,20 @@ func _fly_home(t: float, gem: Sprite2D, from: Vector2, to: Vector2, spin: float)
 	_pad_gem(gem, lerpf(_hand_height, 0.0, eased))
 
 
-func _land_home(gem: Sprite2D, slot: int, mat: int) -> void:
-	gem.queue_free()
-	_rocks.return_gem(slot, mat)
+func _land_home(gem: Sprite2D, slot: int, mat: int, bay: int, town: Town) -> void:
+	if gem != null:
+		gem.queue_free()
+	if bay >= 0 and town != null:
+		town.store_gem(bay, mat)
+	else:
+		_rocks.return_gem(slot, mat)
 
 
 ## V ruce je kámen mat z jezírka slot. Stejný kámen jako předtím jen změní jezírko, kam se
 ## vrátí po krádeži, a nezazní.
 func _take(slot: int, mat: int) -> void:
 	_held_slot = slot
+	_held_bay = -1
 	if mat == _held_mat:
 		return
 	_held_mat = mat
@@ -550,16 +593,20 @@ func _take(slot: int, mat: int) -> void:
 
 
 func leave_square() -> void:
-	if _held_mat >= 0 and _rocks != null:
+	if _held_mat >= 0 and _held_bay >= 0 and _town != null:
+		_town.store_gem(_held_bay, _held_mat)
+	elif _held_mat >= 0 and _rocks != null:
 		_rocks.return_gem(_held_slot, _held_mat)
 	if _held_mat >= 0:
 		if _held != null:
 			_held.visible = false
 		_held_mat = -1
 		_held_slot = -1
+		_held_bay = -1
 		_set_hold(false)
 		held_changed.emit(-1)
 	_touch_slot = -1
+	_touch_bay = -1
 	_touch_left = 0.0
 
 
@@ -589,6 +636,7 @@ func _throw(lane: int = -1, discard: bool = false) -> void:
 	_held.visible = false
 	_held_mat = -1
 	_held_slot = -1
+	_held_bay = -1
 	_set_hold(false)
 	held_changed.emit(-1)
 	var flyer := _crystal.make_sprite()

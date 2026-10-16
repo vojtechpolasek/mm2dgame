@@ -11,9 +11,11 @@ extends "res://scripts/world_board.gd"
 ## přiblíží k nové továrně na LOCK_M metrů, kdo je v jejím čtverci, už z něj nevyjde.
 ## Tvorové jsou jen na čtverci hráče a na jeho sousedech, dál zmizí (WorldBoard._actors).
 ## Po patnáctém levelu hra končí.
+## Čtverec s továrnou má tři sklady (Town.plan_stores), kam si hráči můžou kameny odložit.
 ## Hra se ukládá sama (SuitSaves): každých SAVE_EVERY sekund, po splnění levelu a při odchodu.
-## Uloží se mapy všech hotových čtverců a přesný stav levelu: postavy a co nesou, zásobníky
-## továrny, vesničané a příšery jeho čtverce. Po načtení se hraje tam, kde hra skončila.
+## Uloží se mapy všech hotových čtverců, kameny ve skladech všech čtverců a přesný stav levelu:
+## postavy a co nesou, zásobníky továrny, vesničané a příšery jeho čtverce. Po načtení se hraje
+## tam, kde hra skončila.
 
 const SuitGame := preload("res://scripts/suit_game.gd")
 const SuitSaves := preload("res://scripts/suit_saves.gd")
@@ -56,6 +58,8 @@ var _save_left := SAVE_EVERY
 var _closed_saved := false
 ## Stav uložené hry, který čeká, až vzniknou postavy a tvorové a továrna čtverce levelu.
 var _pending := {}
+## Kameny ve skladech uložené hry podle souřadnic čtverce, dokud čtverec nevznikne.
+var _stores := {}
 
 
 func start(host) -> void:
@@ -83,6 +87,7 @@ func _load(data: Dictionary) -> void:
 	_done = data.get("done", {})
 	_world_rng.state = int(data.get("rng", _world_rng.state))
 	_pending = data.get("state", {})
+	_stores = data.get("stores", {})
 	var persons: Array = _pending.get("persons", [])
 	var first: Vector2 = _origin_of(_active) + Vector2(_span(), _span()) * 0.5
 	if not persons.is_empty():
@@ -156,6 +161,7 @@ func _configure(sq: Square) -> void:
 		sq.rocks.bottomless = false
 		sq.rocks.set_available(0)
 		return
+	sq.town.stores = true
 	sq.rocks.bottomless = true
 	sq.rocks.set_available(GameSession.mode_materials(sq.level))
 	var order: PackedInt32Array = sq.rocks.by_points()
@@ -178,6 +184,9 @@ func _configure(sq: Square) -> void:
 func _built_square(sq: Square) -> void:
 	if sq.level <= 0 or sq.town.suit_factory() == null:
 		return
+	if _stores.has(sq.coord):
+		sq.town.restore_stores(_stores[sq.coord])
+		_stores.erase(sq.coord)
 	var game := SuitGame.new()
 	game.name = "Suits_%d_%d" % [sq.coord.x, sq.coord.y]
 	add_child(game)
@@ -485,6 +494,12 @@ func _snapshot() -> Dictionary:
 	for coord: Vector2i in _done:
 		var finished: SuitGame = _games.get(coord)
 		done[coord] = int(finished.factory().snapshot()["suits"]) if finished != null else int(_done[coord])
+	# Sklady čtverců, které po načtení ještě nevznikly, se uloží znovu, jak byly.
+	var stores := _stores.duplicate()
+	for coord: Vector2i in _squares:
+		var built: Square = _squares[coord]
+		if built.ready and built.town.store_count() > 0:
+			stores[coord] = built.town.store_snapshot()
 	var persons: Array = []
 	for person: Person in _host._persons:
 		persons.append(person.snapshot())
@@ -511,5 +526,6 @@ func _snapshot() -> Dictionary:
 		"done": done,
 		"rng": _world_rng.state,
 		"squares": squares,
+		"stores": stores,
 		"state": state,
 	}

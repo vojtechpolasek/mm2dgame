@@ -1,0 +1,97 @@
+{
+  "px_per_meter": 64,
+  "height_unit": "m",
+  "shader": "res://shaders/factory_layer.gdshader",
+  "span_m": 3.84,
+  "core_px": 49.92,
+  "arm_half_px": 39.68,
+  "reach_px": 122.88,
+  "bays": [
+    {
+      "side": "east",
+      "center": [
+        87.04,
+        0.0
+      ],
+      "half": [
+        24.32,
+        28.16
+      ]
+    },
+    {
+      "side": "south",
+      "center": [
+        0.0,
+        87.04
+      ],
+      "half": [
+        28.16,
+        24.32
+      ]
+    },
+    {
+      "side": "west",
+      "center": [
+        -87.04,
+        0.0
+      ],
+      "half": [
+        24.32,
+        28.16
+      ]
+    },
+    {
+      "side": "north",
+      "center": [
+        0.0,
+        -87.04
+      ],
+      "half": [
+        28.16,
+        24.32
+      ]
+    }
+  ],
+  "shade": [
+    0.42,
+    1.1
+  ],
+  "shade_floor": 0.2,
+  "sheen": [
+    0.16,
+    0.7
+  ],
+  "layers": {
+    "base": {
+      "file": "base.png",
+      "height": 0.0,
+      "channels": [
+        "floor",
+        "metal",
+        "yard"
+      ],
+      "colors": [
+        "B0A48C",
+        "666A70",
+        "867458"
+      ],
+      "cell": 258
+    },
+    "roof": {
+      "file": "roof.png",
+      "height": 1.5,
+      "channels": [
+        "plate",
+        "brass",
+        "lip"
+      ],
+      "colors": [
+        "8A8478",
+        "C69C4E",
+        "403830"
+      ],
+      "half_px": 56.32,
+      "cell": 258
+    }
+  }
+}
