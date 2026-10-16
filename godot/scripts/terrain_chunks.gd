@@ -5,7 +5,8 @@ extends Node2D
 ## v každém snímku přes celou obrazovku. Voda se vlní jen přes dlaždice, které mají v rohu vodu
 ## (terrain_water.gdshader). Chunky se pečou podle kamery. Vzdálený chunk vrátí sprite i texturu
 ## do zásobníku, nový chunk si je odtud vezme a jen se přepeče. Založit texturu je drahé (jednotky
-## ms), proto se zásobník naplní už při načítání levelu.
+## ms), proto se zásobník naplní už při načítání levelu. Čtverce světa sdílejí jeden zásobník
+## (share_spare), jinak by každý otevřený čtverec držel své textury, i když je daleko.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
@@ -13,12 +14,15 @@ const MapCamera := preload("res://scripts/map_camera.gd")
 ## Strana chunku v dlaždicích. Textura chunku má TILES * TILE_SIZE pixelů na stranu.
 const TILES := 8
 ## Chunky do tolika pixelů světa za okrajem obrazovky se pečou dopředu, nejvýš BAKE_PER_FRAME
-## za snímek. Chunk, který už je na obrazovce, se upeče hned.
+## za snímek. Chunk, který už je na obrazovce, se upeče hned, ale nejvýš BAKE_NOW za snímek,
+## ať rychlé oddálení nezasekne hru. Zbytek dojde z fronty, nejbližší ke středu první.
+## Při prvním zobrazení se upeče všechno, co je vidět.
 const AHEAD := 256.0
 const BAKE_PER_FRAME := 1
+const BAKE_NOW := 3
 ## Chunk dál než tolik pixelů za okrajem obrazovky se vrátí do zásobníku. Mezera proti AHEAD
 ## brání tomu, aby se chunk na hraně pekl a vracel dokola.
-const KEEP := 512.0
+const KEEP := 384.0
 
 var _camera: MapCamera
 var _water: ShaderMaterial
@@ -33,13 +37,27 @@ var _water_tiles := {}
 ## Klíč chunku -> Sprite2D. Neupečený chunk je skrytý.
 var _live := {}
 ## Volné sprity chunků i s texturou a vodou, čekají na další chunk.
-var _pool: Array[Sprite2D] = []
+var _spare := Spare.new()
 ## Klíč chunku -> ArrayMesh vody. Postaví se poprvé, když je chunk vidět.
 var _water_meshes := {}
 ## Chunky čekající na pečení, nejbližší ke středu obrazovky první.
 var _queue: Array[Vector2i] = []
 var _baked_this_frame := 0
 var _bake_frame := -1
+var _shown := false
+
+
+## Zásobník volných spritů. cap je velikost, nad kterou se volné sprity uvolní, ať po oddálení
+## nezůstanou textury navíc.
+class Spare:
+	extends RefCounted
+	var sprites: Array[Sprite2D] = []
+	var cap := 0
+
+
+## Bere a vrací sprity do zásobníku jiných chunků. Volá se před setup.
+func share_spare(other: Node2D) -> void:
+	_spare = other.get("_spare")
 
 
 ## corners jsou čtyři bajty rohů na dlaždici z MapGenerator.corner_data. Katalog už má mapu
@@ -90,6 +108,7 @@ func _find_water(size: int, corners: PackedByteArray, water: int) -> void:
 
 
 func _refresh() -> void:
+	_new_frame()
 	var size := _camera.get_viewport_rect().size / _camera.zoom
 	var center := _camera.get_screen_center_position() - global_position
 	var view := Rect2(center - size * 0.5, size)
@@ -98,7 +117,7 @@ func _refresh() -> void:
 		if not keep.intersects(_chunk_rect(key)):
 			var sprite: Sprite2D = _live[key]
 			sprite.visible = false
-			_pool.append(sprite)
+			_spare.sprites.append(sprite)
 			_live.erase(key)
 	var ahead := _cells(view.grow(AHEAD))
 	var added := false
@@ -109,13 +128,18 @@ func _refresh() -> void:
 				_create(key)
 				_queue.append(key)
 				added = true
-	# Co je už na obrazovce, se upeče hned, jinak by tam byla díra.
+	# Až po nových chunkách, ty si sprity berou ze zásobníku.
+	while _spare.sprites.size() > _spare.cap:
+		_spare.sprites.pop_back().queue_free()
+	# Co je už na obrazovce, se upeče hned, jinak by tam byla díra. Po prvním zobrazení nejvýš
+	# BAKE_NOW za snímek, zbytek dopeče fronta.
 	var seen := _cells(view)
 	for y in range(seen.position.y, seen.end.y):
 		for x in range(seen.position.x, seen.end.x):
 			var key := Vector2i(x, y)
-			if not (_live[key] as Sprite2D).visible:
+			if not (_live[key] as Sprite2D).visible and (not _shown or _baked_this_frame < BAKE_NOW):
 				_bake(key)
+	_shown = true
 	if added:
 		_queue.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 			return _chunk_rect(a).get_center().distance_squared_to(center) < _chunk_rect(b).get_center().distance_squared_to(center))
@@ -138,8 +162,12 @@ func _prefill() -> void:
 	var view := _camera.get_viewport_rect().size + Vector2(KEEP, KEEP) * 2.0
 	var across := mini(ceili(view.x / _chunk_px) + 1, _count)
 	var down := mini(ceili(view.y / _chunk_px) + 1, _count)
-	while _pool.size() < across * down:
-		_pool.append(_new_sprite())
+	# Sdílený zásobník už naplnil první chunk.
+	if _spare.cap > 0:
+		return
+	_spare.cap = across * down
+	while _spare.sprites.size() < _spare.cap:
+		_spare.sprites.append(_new_sprite())
 
 
 ## Sprite s prázdnou texturou a vrstvou vody. Voda se zapne jen u chunku, který vodu má.
@@ -161,14 +189,24 @@ func _new_sprite() -> Sprite2D:
 
 
 ## Sprite pro chunk ze zásobníku. Ukáže se, až je upečený. Chunk na kraji mapy kreslí jen tu
-## část textury, která je v mapě.
+## část textury, která je v mapě. Sprite od jiného čtverce se přestěhuje sem a dostane vodu
+## tohoto čtverce.
 func _create(key: Vector2i) -> void:
-	var sprite: Sprite2D = _pool.pop_back() if not _pool.is_empty() else _new_sprite()
+	var sprite: Sprite2D = null
+	while sprite == null and not _spare.sprites.is_empty():
+		sprite = _spare.sprites.pop_back()
+		if not is_instance_valid(sprite):
+			sprite = null
+	if sprite == null:
+		sprite = _new_sprite()
+	elif sprite.get_parent() != self:
+		sprite.reparent(self, false)
 	sprite.position = Vector2(key) * _chunk_px
 	var inside := Vector2(mini(_chunk_px, _map_px - key.x * _chunk_px), mini(_chunk_px, _map_px - key.y * _chunk_px))
 	sprite.region_enabled = inside.x < _chunk_px or inside.y < _chunk_px
 	sprite.region_rect = Rect2(Vector2.ZERO, inside)
 	var water := sprite.get_child(0) as MeshInstance2D
+	water.material = _water
 	water.visible = _water_tiles.has(key)
 	if water.visible:
 		if not _water_meshes.has(key):

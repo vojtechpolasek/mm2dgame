@@ -95,11 +95,11 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 	var layers: Array[Dictionary] = []
 	for key: Variant in _sorted_keys(listed):
 		var layer_info: Dictionary = listed[key]
-		var texture := _texture_from("%s/%s/layer_%s.png" % [_root(), kind_name, str(key)])
-		if texture == null:
+		var path := "%s/%s/layer_%s.png" % [_root(), kind_name, str(key)]
+		if not _texture_exists(path):
 			push_error("Chybí vrstva %s objektu %s." % [str(key), kind_name])
 			return {}
-		layers.append(_layer(texture, float(layer_info.get("height", 0.0))))
+		layers.append(_layer(path, float(layer_info.get("height", 0.0))))
 	if layers.is_empty():
 		push_error("Objekt %s nemá vrstvy." % kind_name)
 		return {}
@@ -179,6 +179,11 @@ func spawn(camera: MapCamera, host: Node2D, chunks: PropChunks) -> void:
 	_host = host
 	if _kinds.is_empty():
 		return
+	var used := {}
+	for kind in _kind:
+		used[kind] = true
+	for kind: int in used:
+		_load_textures(kind)
 	var view := _camera.get_viewport_rect().size
 	_measure(view)
 	_shader_on = ObjectLayers.shader_needed(view, _camera.zoom.x, _tallest)
@@ -353,6 +358,18 @@ func _root() -> String:
 	return _catalog_path().get_base_dir()
 
 
+## Textury druhu se načtou, až je na mapě první objekt toho druhu. Na mapě bez sněhu tak
+## sněhové skály a stromy nezabírají paměť.
+func _load_textures(kind: int) -> void:
+	for layer: Dictionary in _kinds[kind]["layers"]:
+		if layer["texture"] == null:
+			layer["texture"] = _texture_from(str(layer["path"]))
+
+
+func _texture_exists(path: String) -> bool:
+	return ResourceLoader.exists(path) or FileAccess.file_exists(path)
+
+
 ## Import dává mipmapy i vyčištěné okraje. Soubor, který editor ještě nenaimportoval, se dopočítá tady.
 func _texture_from(path: String) -> Texture2D:
 	if ResourceLoader.exists(path):
@@ -366,6 +383,7 @@ func _texture_from(path: String) -> Texture2D:
 
 
 func _build(kind: int) -> Node2D:
+	_load_textures(kind)
 	var entry := _kinds[kind]
 	var columns := int(entry["columns"])
 	var rows := int(entry["rows"])
@@ -411,6 +429,9 @@ func _measure(view: Vector2) -> void:
 		for layer: Dictionary in entry["layers"]:
 			var info: Dictionary = layer
 			var texture: Texture2D = info["texture"]
+			# Druh, který na mapě není, nemá textury a nic nepřesahuje.
+			if texture == null:
+				continue
 			var height := float(info["height"])
 			_tallest = maxf(_tallest, height)
 			var frame := maxf(texture.get_width() / float(columns), texture.get_height() / float(rows))
@@ -418,7 +439,8 @@ func _measure(view: Vector2) -> void:
 
 
 ## Vrstva katalogu. Materiál nese výšku vrstvy, vrstvy stejné výšky ho sdílejí.
-func _layer(texture: Texture2D, height: float) -> Dictionary:
+## Textura se načte až v _load_textures.
+func _layer(path: String, height: float) -> Dictionary:
 	var key := snappedf(height, 0.001)
 	if not _material_for_height.has(key):
 		var material := ShaderMaterial.new()
@@ -426,7 +448,7 @@ func _layer(texture: Texture2D, height: float) -> Dictionary:
 		material.set_shader_parameter("height_m", height)
 		material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
 		_material_for_height[key] = material
-	return {"texture": texture, "height": height, "material": _material_for_height[key]}
+	return {"path": path, "texture": null, "height": height, "material": _material_for_height[key]}
 
 
 func _kind_order() -> Array[int]:

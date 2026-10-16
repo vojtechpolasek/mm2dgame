@@ -74,6 +74,7 @@ var _ticked := -1
 var _leave_left := 0.0
 ## Otevřený svět (Svět a Skafandry). Klasické levely ho nemají a jejich smyčka běží dál sama.
 var _board: WorldBoard
+var _fps_shown := -1.0
 
 
 func _ready() -> void:
@@ -234,7 +235,11 @@ func _timed() -> bool:
 
 
 func _process(delta: float) -> void:
-	fps.text = "%d FPS" % Engine.get_frames_per_second()
+	# Engine počítá snímky jednou za sekundu. Nový text jen při změně, ať se popisek nepřepočítává.
+	var rate := Engine.get_frames_per_second()
+	if rate != _fps_shown:
+		_fps_shown = rate
+		fps.text = "%d FPS" % rate
 	_leave_left = maxf(_leave_left - delta, 0.0)
 	if _board != null:
 		if _party != null:

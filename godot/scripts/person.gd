@@ -49,6 +49,9 @@ const STOP_SPEED := 3800.0
 const ESCAPE_METERS := 6.0
 const ESCAPE_REACH := 8.0
 const ESCAPE_STEP := 6.0
+## Stojící postava kontroluje, jestli nestojí v překážce, jen po tolika sekundách.
+## Sama se nehýbe a ostatní tvorové se jí vyhýbají sami.
+const IDLE_CHECK := 0.2
 ## Dlaň z tools/gen_person.py, HOLD_PALM. Záporné Y je dopředu, jako v atlasu.
 const PALM := Vector2(16.0, -16.0)
 const THROW_TIME := 0.45
@@ -93,6 +96,7 @@ var party: Party
 var _device := 0
 var _velocity := Vector2.ZERO
 var _escaping := false
+var _idle_check_left := 0.0
 var _escape_to := Vector2.ZERO
 var _travel := 0.0
 var _step_travel := 0.0
@@ -167,7 +171,7 @@ func _process(delta: float) -> void:
 		_begin_jump(direction)
 	if _jumping:
 		_step_jump(delta)
-	elif _stuck() or _escaping:
+	elif _escaping or _stuck_now(direction, delta):
 		_step_escape(delta)
 	else:
 		_step_run(delta, direction)
@@ -207,6 +211,8 @@ func _step_jump(delta: float) -> void:
 	if phase >= 1.0:
 		_jumping = false
 		scale = Vector2.ONE
+		# Dopad do překážky se pozná hned, ne až po IDLE_CHECK.
+		_idle_check_left = 0.0
 		Sound.at("sfx/land", global_position, -3.0)
 
 
@@ -220,7 +226,10 @@ func _step_run(delta: float, direction: Vector2) -> void:
 			_velocity = _velocity.limit_length(max_speed)
 	else:
 		_velocity = _velocity.move_toward(Vector2.ZERO, STOP_SPEED * delta)
-	var next := _leashed(walker.allowed(position, position + _velocity * delta, BODY, -1.0, crowd_id))
+	# Stojící postava zůstane, kde je. Krok by ji jen znovu prověřil proti všem překážkám.
+	var next := position
+	if _velocity != Vector2.ZERO:
+		next = _leashed(walker.allowed(position, position + _velocity * delta, BODY, -1.0, crowd_id))
 	var step := next - position
 	position = next
 	# Sever v atlasu je záporné Y. Kladné otočení uzlu jde po směru hodin.
@@ -261,6 +270,18 @@ func _leashed(next: Vector2) -> Vector2:
 ## Stojí postava uvnitř překážky nebo na vodě? Překážka by ji posunula, voda neunese.
 func _stuck() -> bool:
 	return _blocked(position)
+
+
+## Stuck pro každý snímek pohybu. Stojící postava se ptá jen po IDLE_CHECK sekundách.
+func _stuck_now(direction: Vector2, delta: float) -> bool:
+	if direction != Vector2.ZERO or _velocity != Vector2.ZERO:
+		_idle_check_left = 0.0
+		return _stuck()
+	_idle_check_left -= delta
+	if _idle_check_left > 0.0:
+		return false
+	_idle_check_left = IDLE_CHECK
+	return _stuck()
 
 
 func _blocked(pos: Vector2) -> bool:

@@ -17,6 +17,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+from gen_glints import glint_name, save_glints
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "godot" / "graphics" / "objects" / "crystal"
 PREVIEW = ROOT / "tools" / "preview"
@@ -231,7 +233,10 @@ def main() -> None:
     shapes = {}
     for name, mask in masks.items():
         mask.save(OUT_DIR / f"{name}.png")
-        shapes[name] = {"file": f"{name}.png", "radius": opaque_radius(mask)}
+        # Odlesky ze semínek v G předpočítané pro shader, viz gen_glints.py.
+        glint = glint_name(f"{name}.png")
+        save_glints(mask, OUT_DIR / glint)
+        shapes[name] = {"file": f"{name}.png", "radius": opaque_radius(mask), "glint": glint}
     catalog = {"shader": SHADER, "shapes": shapes, "materials": MATERIALS}
     text = json.dumps(catalog, indent=2, ensure_ascii=False) + "\n"
     (OUT_DIR / "crystal.json").write_text(text, encoding="utf-8")

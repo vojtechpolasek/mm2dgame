@@ -60,6 +60,9 @@ const JUMP_BOOST := 1.1
 const JUMP_GROW := 0.15
 const JUMP_REACH := 10.0
 const JUMP_STEP := 0.25
+## Hledání místa přistání prochází až desítky bodů. Když skok nevyšel, další pokus až za tolik
+## sekund, ne v každém snímku klouzání podél překážky.
+const JUMP_RETRY := 0.2
 ## Hlasitost kroků podle druhu v dB. Chodící dupne dvakrát za cyklus, létající mávne jednou.
 const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "koule": -8.0}
 const STEP_VARIANTS := 3
@@ -67,6 +70,12 @@ const STEP_VARIANTS := 3
 const ESCAPE_METERS := 4.0
 const ESCAPE_REACH := 10.0
 const ESCAPE_STEP := 8.0
+## Jak často se kontroluje, jestli příšera nestojí v překážce nebo ve vodě. Krok pohybu ji
+## z překážky stejně vytlačí, kontrola je pojistka pro vodu a zaklínění.
+const BLOCK_CHECK := 0.2
+## Toulání dál než tolik metrů za okrajem obrazovky jde po cestě z mřížky bez srážek, jako
+## vesničan. Cesta překážky obchází sama, srážky by jen stály procesor.
+const OFF_SCREEN_M := 4.0
 
 ## Materiál příšery. Honí postavu, která ho nese.
 var material_index := -1
@@ -128,6 +137,8 @@ var _jump_from := Vector2.ZERO
 var _jump_to := Vector2.ZERO
 var _jump_t := 0.0
 var _jump_dur := 0.0
+var _jump_retry_left := 0.0
+var _block_check_left := 0.0
 var _step_travel := 0.0
 ## Zařvala už v téhle honičce? Zařve, až je honící příšera poprvé na obrazovce.
 var _roared := false
@@ -135,8 +146,8 @@ var _roared := false
 
 
 ## info je druh z monsters.json, textures vrstvy podle pořadí klíčů, colors klíče body, accent, eye.
-## Kamenná příšera má v colors navíc glint a sparkle materiálu a sparkle_maps, atlasy
-## semínek odlesků podle pořadí vrstev.
+## Kamenná příšera má v colors navíc glint a sparkle materiálu a glint_maps, atlasy
+## předpočítaných odlesků podle pořadí vrstev.
 ## speed násobí rychlost honičky druhu, dražší materiál má rychlejší příšeru.
 func setup(
 	info: Dictionary,
@@ -195,9 +206,9 @@ func setup(
 			material.set_shader_parameter("glint_color", colors["glint"])
 			material.set_shader_parameter("sparkle", colors["sparkle"])
 			material.set_shader_parameter("phase", sparkle_phase)
-			var maps: Array = colors.get("sparkle_maps", [])
+			var maps: Array = colors.get("glint_maps", [])
 			if i < maps.size() and maps[i] != null:
-				material.set_shader_parameter("sparkle_map", maps[i])
+				material.set_shader_parameter("glint_map", maps[i])
 		if bool(layer.get("shadow", false)):
 			material.set_shader_parameter("shadow_alpha", shadow_alpha)
 			# Stín leží na zemi pod postavou, i když tvor letí nad vším.
@@ -218,6 +229,8 @@ func _process(delta: float) -> void:
 	if not _active:
 		return
 	_calm_left = maxf(_calm_left - delta, 0.0)
+	_jump_retry_left = maxf(_jump_retry_left - delta, 0.0)
+	_block_check_left -= delta
 	_prey = _carrier() if _calm_left <= 0.0 else null
 	if _prey == null:
 		_roared = false
@@ -403,6 +416,9 @@ func _wander(delta: float) -> void:
 		else:
 			_rest()
 		return
+	if _trip_i < _trip.size() and not _flying and not _escaping and not _on_screen(OFF_SCREEN_M * float(TerrainCatalog.TILE_SIZE)):
+		position += to.limit_length(step)
+		return
 	_move(to.limit_length(step))
 	if _watch(delta, _wander_px, WANDER_WATCH) == 1:
 		_pick_target()
@@ -414,7 +430,7 @@ func _move(offset: Vector2) -> float:
 	if _flying:
 		var margin := FLY_MARGIN * float(TerrainCatalog.TILE_SIZE)
 		position = _walker.fit(position + offset, margin)
-	elif _escaping or _walker.blocked(position, _body, crowd_id):
+	elif _escaping or _blocked_now():
 		_escape()
 	else:
 		position = _walker.allowed(position, position + offset, _body, -1.0, crowd_id)
@@ -427,11 +443,21 @@ func _move(offset: Vector2) -> float:
 	return position.distance_to(before)
 
 
+## Stojí příšera v překážce nebo ve vodě? Kontroluje se jen po BLOCK_CHECK sekundách.
+func _blocked_now() -> bool:
+	if _block_check_left > 0.0:
+		return false
+	_block_check_left = BLOCK_CHECK
+	return _walker.blocked(position, _body, crowd_id)
+
+
 ## Skok přes nízkou překážku nebo malého tvora ve směru dir. Skočí, jen když za překážkou najde
 ## místo přistání a cestou není nic vyššího, voda ani okraj mapy.
 func _try_jump(dir: Vector2) -> bool:
-	if _jump_clear <= 0.0 or _flying or dir == Vector2.ZERO:
+	if _jump_clear <= 0.0 or _flying or dir == Vector2.ZERO or _jump_retry_left > 0.0:
 		return false
+	# Platí pro každý konec bez skoku. Když skok vyjde, nic nevadí, ve skoku se nehledá.
+	_jump_retry_left = JUMP_RETRY
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var step := JUMP_STEP * tile
 	var along := step
@@ -523,6 +549,9 @@ func _pick_target() -> void:
 			continue
 		var trip := PackedVector2Array()
 		if _nav != null:
+			# Za vodou nebo v uzavřeném houští: bez hledání cesty, to by prošlo celou oblast.
+			if not _nav.reaches(position, spot):
+				continue
 			trip = _nav.path(position, spot)
 			# Cesta, která k cíli nedojde, končí jinde. Takový cíl je za vodou nebo v houští.
 			if not trip.is_empty() and trip[trip.size() - 1].distance_to(spot) > tile:

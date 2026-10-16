@@ -16,15 +16,22 @@ uniform vec2 accent_shade = vec2(0.6, 1.1);
 uniform vec3 body_color : source_color = vec3(0.5);
 uniform vec3 accent_color : source_color = vec3(0.8);
 uniform vec3 eye_color : source_color = vec3(1.0, 0.3, 0.2);
-// Atlas semínek odlesků se stejným rozložením jako vrstva: G je semínko (jas = fáze bliknutí).
-uniform sampler2D sparkle_map : filter_nearest, hint_default_black;
+// Odlesky předpočítané ze semínek (tools/gen_glints.py) se stejným rozložením jako vrstva:
+// RG vektor od středu semínka k texelu, B jas semínka (fáze bliknutí), 0 bez semínka.
+uniform sampler2D glint_map : filter_nearest, hint_default_black;
 // Barva a síla odlesku podle materiálu (glint, sparkle). 0 je matný kámen.
 uniform vec3 glint_color : source_color = vec3(1.0);
 uniform float sparkle = 0.0;
 // Posun bliknutí, ať příšery stejného materiálu neblikají naráz.
 uniform float phase = 0.0;
+// Třpyt z nastavení hry, 0 ho vypne úplně.
+global uniform float sparkle_on;
 // Stínová vrstva létající příšery: černá s tímto krytím. 0 je běžná vrstva.
 uniform float shadow_alpha = 0.0;
+
+// Míry mapy odlesků, stejné jako v tools/gen_glints.py.
+const float GLINT_REACH = 8.0;
+const float GLINT_THRESHOLD = 0.045;
 
 // Odlesk jako při focení proti slunci: malé jádro a šest tenkých paprsků. p je v px textury.
 float glint_star(vec2 p) {
@@ -77,6 +84,9 @@ void vertex() {
 
 void fragment() {
 	vec4 mask = texture(TEXTURE, UV);
+	// Derivace mimo větvení, uvnitř podmínky nejsou definované.
+	vec2 duv_dx = dFdx(UV);
+	vec2 duv_dy = dFdy(UV);
 	if (shadow_alpha > 0.0) {
 		COLOR = vec4(0.0, 0.0, 0.0, mask.a * shadow_alpha);
 	} else {
@@ -84,42 +94,13 @@ void fragment() {
 		vec3 skin = mix(body, accent_color * mix(accent_shade.x, accent_shade.y, mask.r), mask.g);
 		vec3 lit = mix(skin, eye_color, mask.b);
 		float flash = 0.0;
-		if (mask.a > 0.004 && sparkle > 0.001) {
-			vec2 duv_dx = dFdx(UV);
-			vec2 duv_dy = dFdy(UV);
-			// Nejsilnější semínko v okolí 9 × 9 px, bližší má přednost.
-			float best = -1.0;
-			float peak_g = 0.0;
-			vec2 peak_at = vec2(0.0);
-			for (int y = -4; y <= 4; y++) {
-				for (int x = -4; x <= 4; x++) {
-					vec2 at = vec2(float(x), float(y));
-					float seed = textureLod(sparkle_map, UV + at * TEXTURE_PIXEL_SIZE, 0.0).g;
-					float score = seed * exp(-dot(at, at) * 0.10);
-					if (score > best) {
-						best = score;
-						peak_g = seed;
-						peak_at = at;
-					}
-				}
-			}
-			if (peak_g >= 0.045) {
-				// Střed semínka přesněji než na pixel: těžiště jeho okolí.
-				vec2 acc = vec2(0.0);
-				float mass = 0.0;
-				for (int y = -2; y <= 2; y++) {
-					for (int x = -2; x <= 2; x++) {
-						vec2 off = vec2(float(x), float(y));
-						vec2 at = peak_at + off;
-						float seed = textureLod(sparkle_map, UV + at * TEXTURE_PIXEL_SIZE, 0.0).g;
-						float around = exp(-dot(off, off) * 0.35);
-						acc += at * seed * around;
-						mass += seed * around;
-					}
-				}
-				vec2 from_seed = -acc / max(mass, 0.0001);
-				float wave = sin(TIME * 2.4 + phase + peak_g * 6.2831853);
-				flash = pow(max(wave, 0.0), 14.0) * glint_star(glint_aim(from_seed, duv_dx, duv_dy, TEXTURE_PIXEL_SIZE)) * sparkle;
+		if (mask.a > 0.004 && sparkle * sparkle_on > 0.001) {
+			vec3 glint = textureLod(glint_map, UV, 0.0).rgb;
+			float wave = sin(TIME * 2.4 + phase + glint.b * 6.2831853);
+			if (glint.b >= GLINT_THRESHOLD && wave > 0.0) {
+				// Vektor je od středu texelu, pixel leží uvnitř texelu jinde.
+				vec2 from_seed = (glint.rg * 255.0 - 127.5) / 127.5 * GLINT_REACH + fract(UV / TEXTURE_PIXEL_SIZE) - 0.5;
+				flash = pow(wave, 14.0) * glint_star(glint_aim(from_seed, duv_dx, duv_dy, TEXTURE_PIXEL_SIZE)) * sparkle;
 			}
 		}
 		COLOR = vec4(lit + glint_color * flash, mask.a);

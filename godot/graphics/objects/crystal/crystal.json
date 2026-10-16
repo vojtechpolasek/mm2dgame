@@ -3,11 +3,13 @@
   "shapes": {
     "crystal": {
       "file": "crystal.png",
-      "radius": 12.98
+      "radius": 12.98,
+      "glint": "crystal_glint.png"
     },
     "stone": {
       "file": "stone.png",
-      "radius": 13.21
+      "radius": 13.21,
+      "glint": "stone_glint.png"
     }
   },
   "materials": {

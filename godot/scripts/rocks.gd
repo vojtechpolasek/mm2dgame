@@ -949,8 +949,13 @@ func _push(pos: Vector2, body: float, clearance: float) -> Vector2:
 					item = grid.next[item]
 					continue
 				var delta := result - _pos[item]
-				var limit := _sample(_bound, kind, _variant[item], _turn[item], delta.angle())
 				var dist_sq := delta.length_squared()
+				# Hranice nesahá dál než obrys druhu plus tělo. Vzdálená skála se odmítne bez úhlu.
+				var most := _kind_foot[kind] + body
+				if dist_sq >= most * most:
+					item = grid.next[item]
+					continue
+				var limit := _sample(_bound, kind, _variant[item], _turn[item], delta.angle())
 				if dist_sq < limit * limit:
 					if dist_sq < 0.0001:
 						result = _pos[item] + Vector2(limit, 0.0)

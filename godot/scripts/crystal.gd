@@ -7,6 +7,8 @@ const ObjectLayers := preload("res://scripts/object_layers.gd")
 const CATALOG := "res://graphics/objects/crystal/crystal.json"
 
 var _textures: Array[Texture2D] = []
+## Předpočítané odlesky každého vzoru (tools/gen_glints.py), null když vzor žádné nemá.
+var _glints: Array[Texture2D] = []
 var _material: ShaderMaterial
 var _radius := 0.0
 var _shape := PackedInt32Array()
@@ -50,6 +52,8 @@ func load_catalog() -> bool:
 			return false
 		shape_of[shape_name] = _textures.size()
 		_textures.append(texture)
+		var glint_file := str(shape.get("glint", ""))
+		_glints.append(null if glint_file.is_empty() else _texture_from("%s/%s" % [root, glint_file]))
 		_radius = maxf(_radius, float(shape.get("radius", float(texture.get_width()) * 0.35)))
 	_material = ShaderMaterial.new()
 	_material.shader = shader
@@ -130,6 +134,7 @@ func make_sprite() -> Sprite2D:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	# Vlastní materiál: instanční uniformy stačí v renderu Compatibility jen na pár stovek objektů.
 	sprite.material = _material.duplicate()
+	(sprite.material as ShaderMaterial).set_shader_parameter("glint_map", _glints[0])
 	return sprite
 
 
@@ -137,6 +142,7 @@ func make_sprite() -> Sprite2D:
 func paint(sprite: Sprite2D, index: int, height: float, phase: float) -> void:
 	sprite.texture = _textures[_shape[index]]
 	var material := sprite.material as ShaderMaterial
+	material.set_shader_parameter("glint_map", _glints[_shape[index]])
 	material.set_shader_parameter("gem_color", _color[index])
 	material.set_shader_parameter("glint_color", _glint[index])
 	material.set_shader_parameter("sparkle", _sparkle[index])

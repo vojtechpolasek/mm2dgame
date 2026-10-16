@@ -507,6 +507,7 @@ func _show_terrain(sq: Square) -> void:
 		chunks.name = "Ground_%d_%d" % [sq.coord.x, sq.coord.y]
 		chunks.position = sq.origin
 		chunks.z_index = -1
+		chunks.share_spare(_ground)
 		_host.add_child(chunks)
 	var water := mats["water"] as ShaderMaterial
 	water.set_shader_parameter("map_origin", sq.origin)

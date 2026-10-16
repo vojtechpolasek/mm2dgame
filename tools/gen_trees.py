@@ -934,7 +934,7 @@ def clean_output(path: Path) -> None:
                 if item.is_file():
                     item.unlink()
             child.rmdir()
-        elif child.suffix == ".png" or child.name.endswith(".png.import"):
+        elif child.suffix == ".png":
             child.unlink()
 
 

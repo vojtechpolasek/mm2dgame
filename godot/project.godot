@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 Controls="*res://scripts/controls.gd"
 GameSession="*res://scripts/game_session.gd"
 Sound="*res://scripts/sound.gd"
+Graphics="*res://scripts/graphics.gd"
 
 [debug]
 
@@ -62,6 +63,10 @@ camera_position={
 "value": Vector2(0, 0)
 }
 camera_zoom={
+"type": "float",
+"value": 1.0
+}
+sparkle_on={
 "type": "float",
 "value": 1.0
 }

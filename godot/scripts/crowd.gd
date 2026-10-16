@@ -8,33 +8,42 @@ extends RefCounted
 ## crowd_clearance() (výška skoku v metrech, záporná mimo skok) a crowd_flying().
 
 var _members: Array[Node2D] = []
+## Poloměr těla a výška každého tvora. Za hry se nemění, uloží se při join, ať se pro každou
+## dvojici nevolají metody tvora.
+var _bodies := PackedFloat32Array()
+var _heights := PackedFloat32Array()
 
 
 ## Přidá tvora a vrátí jeho číslo. Číslem se tvor při pohybu vynechá sám ze sebe.
 func join(member: Node2D) -> int:
 	_members.append(member)
+	_bodies.append(float(member.crowd_body()))
+	_heights.append(float(member.crowd_height()))
 	return _members.size() - 1
 
 
 ## Posune bod ven z ostatních tvorů. who je číslo tvora, který se hýbe. clearance je výška
-## jeho skoku v metrech, záporná mimo skok.
+## jeho skoku v metrech, záporná mimo skok. Nejdřív se zkouší vzdálenost, dotaz na stav tvora
+## (schovaný, letí, skáče) jen u toho, kdo je dost blízko.
 func avoid(pos: Vector2, body: float, who: int, clearance: float) -> Vector2:
 	if who < 0 or who >= _members.size():
 		return pos
-	var height := float(_members[who].crowd_height())
+	var height := _heights[who]
 	var result := pos
 	for i in _members.size():
 		if i == who:
 			continue
 		var other := _members[i]
-		if not is_instance_valid(other) or not other.is_inside_tree() or not other.visible or bool(other.crowd_flying()):
+		if not is_instance_valid(other):
 			continue
-		if clearance >= float(other.crowd_height()) or float(other.crowd_clearance()) >= height:
-			continue
-		var limit := body + float(other.crowd_body())
+		var limit := body + _bodies[i]
 		var delta := result - other.position
 		var dist_sq := delta.length_squared()
 		if dist_sq >= limit * limit:
+			continue
+		if not other.is_inside_tree() or not other.visible or bool(other.crowd_flying()):
+			continue
+		if clearance >= _heights[i] or float(other.crowd_clearance()) >= height:
 			continue
 		if dist_sq < 0.0001:
 			result = other.position + Vector2(limit, 0.0)

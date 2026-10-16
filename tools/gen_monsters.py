@@ -35,9 +35,9 @@ Chodí střídavě: L1 P2 L3 P4 spolu, druhá čtveřice o půl cyklu později.
 Kamenný golem (pavouk2) chodí jako pavouk, ale celý je z kamenů ve stylu krystalů:
 tmavý lem, zkosené plošky, plochý vrchol. Tělo jsou hromádky kamenů na tmavém jádru,
 končetiny řady protažených kamenů, svítí jen oči. Kresba jako u pavouka (pruh na hrudi,
-kříž a krokve na zadečku, proužky na noze) je vtlačená do kamenů. Semínka odlesků jsou
-ve zvláštním atlasu layer_N_spark.png (G jako u krystalu, jas je fáze bliknutí), v katalogu
-sparkle_file vrstvy. Hra ho kreslí shaderem monster_stone_layer ("shader": "stone"),
+kříž a krokve na zadečku, proužky na noze) je vtlačená do kamenů. Odlesky jsou
+ve zvláštním atlasu layer_N_glint.png předpočítaném ze semínek (gen_glints.py), v katalogu
+glint_file vrstvy. Hra ho kreslí shaderem monster_stone_layer ("shader": "stone"),
 odlesky mají barvu glint a sílu sparkle materiálu. Náhled _trpyt.gif ukazuje blikání.
 
 Vlk: vrstva 1 (nohy, 0 m), vrstva 2 (trup, ocas a hlava, 0,75 m). Klusá:
@@ -89,6 +89,7 @@ from typing import Callable
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from gen_crystal import MATERIALS, parse_hex
+from gen_glints import glint_name, save_glints
 from gen_trees import blank, contact_sheet, crop_square, on_grass, pack_atlas
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -2723,9 +2724,10 @@ def generate(name: str, preset: dict) -> dict:
             entry[str(key)]["shadow"] = True
         if stone:
             sparks[key] = crop_square(sparks[key])
-            spark_file = info["file"].replace(".png", "_spark.png")
-            pack_atlas(sparks[key], COLUMNS).save(folder / spark_file)
-            entry[str(key)]["sparkle_file"] = f"{name}/{spark_file}"
+            # Shader čte místo semínek předpočítané odlesky, viz gen_glints.py.
+            glint_file = glint_name(info["file"])
+            save_glints(pack_atlas(sparks[key], COLUMNS), folder / glint_file)
+            entry[str(key)]["glint_file"] = f"{name}/{glint_file}"
     write_previews(name, preset, frames, sparks)
     return {
         "cycle_meters": round(preset["cycle_meters"], 4),

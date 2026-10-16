@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dq7cm7c5tqq1n"
-path="res://.godot/imported/layer_2_spark.png-3f64ed0a6becd843104a6c3db4989bed.ctex"
+uid="uid://b53v7fm0g6a2n"
+path="res://.godot/imported/layer_2_glint.png-83a838c6a937382811f4fe35cb7f8269.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://graphics/characters/monsters/vlk2/layer_2_spark.png"
-dest_files=["res://.godot/imported/layer_2_spark.png-3f64ed0a6becd843104a6c3db4989bed.ctex"]
+source_file="res://graphics/characters/monsters/rex2/layer_2_glint.png"
+dest_files=["res://.godot/imported/layer_2_glint.png-83a838c6a937382811f4fe35cb7f8269.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
@@ -31,7 +31,7 @@ process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2
 process/channel_remap/alpha=3
-process/fix_alpha_border=true
+process/fix_alpha_border=false
 process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false

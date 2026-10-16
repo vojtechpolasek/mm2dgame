@@ -29,6 +29,9 @@ const VOICES := 24
 const HEARING := 1400.0
 const SETTINGS := "user://settings.cfg"
 const SOUND_BUSES: PackedStringArray = ["Sfx", "Ambient", "Ui"]
+## Krátké zvuky z těchto složek se po spuštění načtou na pozadí. Načtení z disku při prvním
+## přehrání trvá jednotky ms a ve hře by zadrhlo snímek, když zní několik zvuků naráz.
+const WARM_DIRS: PackedStringArray = ["sfx", "ui", "monsters", "steps", "basin"]
 
 var _cache := {}
 var _music_a: AudioStreamPlayer
@@ -68,6 +71,7 @@ func _ready() -> void:
 	get_viewport().gui_focus_changed.connect(_on_focus)
 	get_tree().node_added.connect(_on_node_added)
 	_load_settings()
+	_warm()
 
 
 # --- Nastavení ---
@@ -107,8 +111,10 @@ func _load_settings() -> void:
 	_apply()
 
 
+## Soubor sdílí s grafikou (Graphics). Načte se celý, ať se její sekce nepřepíše.
 func _save_settings() -> void:
 	var config := ConfigFile.new()
+	config.load(SETTINGS)
 	config.set_value("sound", "music", _music_on)
 	config.set_value("sound", "sounds", _sounds_on)
 	config.save(SETTINGS)
@@ -214,6 +220,8 @@ func ui(name: String) -> void:
 ## Zvuk ve světě na místě pos. name je cesta pod res://audio bez přípony, třeba steps/grass_2.
 ## pitch mírně mění výšku, ať se stejné zvuky neopakují do písmene.
 func at(name: String, pos: Vector2, volume_db: float = 0.0, pitch: float = 1.0) -> void:
+	if not _audible(pos):
+		return
 	var stream := _stream(name)
 	if stream == null:
 		return
@@ -226,8 +234,17 @@ func at(name: String, pos: Vector2, volume_db: float = 0.0, pitch: float = 1.0) 
 	voice.play()
 
 
+## Zvuk dál než HEARING od středu kamery by nebyl slyšet. Nezabere hlas, ten by jinak vzal
+## blízkému zvuku, a mixér ho nemusí počítat.
+func _audible(pos: Vector2) -> bool:
+	var camera := get_viewport().get_camera_2d()
+	return camera == null or camera.get_screen_center_position().distance_squared_to(pos) <= HEARING * HEARING
+
+
 ## Náhodná varianta: name_1 až name_count.
 func at_variant(name: String, count: int, pos: Vector2, volume_db: float = 0.0) -> void:
+	if not _audible(pos):
+		return
 	at("%s_%d" % [name, randi_range(1, count)], pos, volume_db, randf_range(0.94, 1.06))
 
 
@@ -267,6 +284,15 @@ func _on_button() -> void:
 
 ## Zvuk z res://audio, OGG (hudba, voda) nebo WAV (krátké zvuky). Importovaný soubor se načte
 ## jako zdroj, nenaimportovaný přímo ze souboru. loop nastaví smyčku přes celý soubor.
+## Požádá o načtení krátkých zvuků ve vlákně. _stream si je pak vyzvedne hotové.
+func _warm() -> void:
+	for dir in WARM_DIRS:
+		var folder := "%s/%s" % [ROOT, dir]
+		for file in ResourceLoader.list_directory(folder):
+			if file.ends_with(".wav") or file.ends_with(".ogg"):
+				ResourceLoader.load_threaded_request("%s/%s" % [folder, file])
+
+
 func _stream(name: String, loop: bool = false) -> AudioStream:
 	var key := name + ("#loop" if loop else "")
 	if _cache.has(key):
@@ -274,7 +300,9 @@ func _stream(name: String, loop: bool = false) -> AudioStream:
 	var stream: AudioStream
 	for ext: String in ["ogg", "wav"]:
 		var path := "%s/%s.%s" % [ROOT, name, ext]
-		if ResourceLoader.exists(path):
+		if ResourceLoader.load_threaded_get_status(path) != ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			stream = ResourceLoader.load_threaded_get(path) as AudioStream
+		elif ResourceLoader.exists(path):
 			stream = load(path) as AudioStream
 		elif FileAccess.file_exists(path):
 			var file := ProjectSettings.globalize_path(path)

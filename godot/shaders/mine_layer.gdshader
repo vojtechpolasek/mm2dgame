@@ -16,6 +16,8 @@ uniform vec3 rock_color : source_color = vec3(0.43, 0.41, 0.38);
 uniform vec3 ore_color : source_color = vec3(0.77, 0.13, 0.19);
 uniform vec3 glint_color : source_color = vec3(1.0, 0.91, 0.88);
 uniform float sparkle = 0.5;
+// Třpyt z nastavení hry, 0 ho vypne úplně.
+global uniform float sparkle_on;
 // Hloubka dna v metrech. Podle ní svítí lucerna na hlubší vrstvy víc.
 uniform float pit_depth = 1.8;
 uniform vec3 lamp_color : source_color = vec3(1.0, 0.7, 0.36);
@@ -71,7 +73,7 @@ void fragment() {
 	body *= vec3(1.0) + lamp_color * glow * mix(1.3, 1.9, ore);
 	body += lamp_color * glow * 0.06;
 
-	if (ore > 0.5 && mask.b > 0.04 && sparkle > 0.001) {
+	if (ore > 0.5 && mask.b > 0.04 && sparkle * sparkle_on > 0.001) {
 		float wave = sin(TIME * 2.4 + seed + mask.b * 37.0);
 		float flash = pow(max(wave, 0.0), 14.0) * sparkle * (0.6 + 0.8 * glow);
 		body += glint_color * flash * 1.4;

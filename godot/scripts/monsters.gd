@@ -126,7 +126,7 @@ func spawn(
 			layer_material = stone_shared
 			colors["glint"] = crystal.glint_of(mat)
 			colors["sparkle"] = crystal.sparkle_of(mat)
-			colors["sparkle_maps"] = _sparkle_textures(root, info)
+			colors["glint_maps"] = _glint_textures(root, info)
 		var speed := crystal.monster_speed(mat)
 		var flying := bool(info.get("flying", false))
 		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE)
@@ -239,14 +239,14 @@ func _layer_textures(root: String, info: Dictionary) -> Array[Texture2D]:
 	return out
 
 
-## Atlasy semínek odlesků podle pořadí vrstev, null u vrstvy bez sparkle_file.
-func _sparkle_textures(root: String, info: Dictionary) -> Array:
+## Atlasy předpočítaných odlesků podle pořadí vrstev, null u vrstvy bez glint_file.
+func _glint_textures(root: String, info: Dictionary) -> Array:
 	var listed: Dictionary = info.get("layers", {})
 	var keys: Array = listed.keys()
 	keys.sort_custom(func(a: Variant, b: Variant) -> bool: return int(a) < int(b))
 	var out: Array = []
 	for key: Variant in keys:
-		var file := str((listed[key] as Dictionary).get("sparkle_file", ""))
+		var file := str((listed[key] as Dictionary).get("glint_file", ""))
 		out.append(null if file.is_empty() else _texture_from("%s/%s" % [root, file]))
 	return out
 

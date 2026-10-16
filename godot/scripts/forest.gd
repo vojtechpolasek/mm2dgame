@@ -85,8 +85,8 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 	var entry := super._load_entry(kind_name, info, columns)
 	if entry.is_empty():
 		return entry
-	var stump := _texture_from("%s/%s/stump.png" % [_root(), kind_name])
-	if stump == null:
+	var stump := "%s/%s/stump.png" % [_root(), kind_name]
+	if not _texture_exists(stump):
 		push_error("Chybí pařez stromu %s." % kind_name)
 		return {}
 	var stump_info: Dictionary = info.get("stump", {})

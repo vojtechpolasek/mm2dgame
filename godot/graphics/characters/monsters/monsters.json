@@ -61,14 +61,14 @@
           "file": "had2/layer_1.png",
           "cell": 82,
           "center": 41,
-          "sparkle_file": "had2/layer_1_spark.png"
+          "glint_file": "had2/layer_1_glint.png"
         },
         "2": {
           "height": 0.35,
           "file": "had2/layer_2.png",
           "cell": 106,
           "center": 53,
-          "sparkle_file": "had2/layer_2_spark.png"
+          "glint_file": "had2/layer_2_glint.png"
         }
       },
       "colors": {
@@ -119,14 +119,14 @@
           "file": "pavouk2/layer_1.png",
           "cell": 102,
           "center": 51,
-          "sparkle_file": "pavouk2/layer_1_spark.png"
+          "glint_file": "pavouk2/layer_1_glint.png"
         },
         "2": {
           "height": 0.5,
           "file": "pavouk2/layer_2.png",
           "cell": 94,
           "center": 47,
-          "sparkle_file": "pavouk2/layer_2_spark.png"
+          "glint_file": "pavouk2/layer_2_glint.png"
         }
       },
       "colors": {
@@ -177,14 +177,14 @@
           "file": "vlk2/layer_1.png",
           "cell": 78,
           "center": 39,
-          "sparkle_file": "vlk2/layer_1_spark.png"
+          "glint_file": "vlk2/layer_1_glint.png"
         },
         "2": {
           "height": 0.637,
           "file": "vlk2/layer_2.png",
           "cell": 128,
           "center": 64,
-          "sparkle_file": "vlk2/layer_2_spark.png"
+          "glint_file": "vlk2/layer_2_glint.png"
         }
       },
       "colors": {
@@ -241,14 +241,14 @@
           "cell": 248,
           "center": 124,
           "shadow": true,
-          "sparkle_file": "ptakojester2/layer_1_spark.png"
+          "glint_file": "ptakojester2/layer_1_glint.png"
         },
         "2": {
           "height": 4.0,
           "file": "ptakojester2/layer_2.png",
           "cell": 242,
           "center": 121,
-          "sparkle_file": "ptakojester2/layer_2_spark.png"
+          "glint_file": "ptakojester2/layer_2_glint.png"
         }
       },
       "colors": {
@@ -299,14 +299,14 @@
           "file": "rex2/layer_1.png",
           "cell": 124,
           "center": 62,
-          "sparkle_file": "rex2/layer_1_spark.png"
+          "glint_file": "rex2/layer_1_glint.png"
         },
         "2": {
           "height": 1.2,
           "file": "rex2/layer_2.png",
           "cell": 220,
           "center": 110,
-          "sparkle_file": "rex2/layer_2_spark.png"
+          "glint_file": "rex2/layer_2_glint.png"
         }
       },
       "colors": {
@@ -330,14 +330,14 @@
           "file": "koule2/layer_1.png",
           "cell": 68,
           "center": 34,
-          "sparkle_file": "koule2/layer_1_spark.png"
+          "glint_file": "koule2/layer_1_glint.png"
         },
         "2": {
           "height": 0.55,
           "file": "koule2/layer_2.png",
           "cell": 72,
           "center": 36,
-          "sparkle_file": "koule2/layer_2_spark.png"
+          "glint_file": "koule2/layer_2_glint.png"
         }
       },
       "colors": {
