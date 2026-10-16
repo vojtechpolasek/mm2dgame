@@ -2,8 +2,9 @@ extends Node
 
 ## Příšery čtverce: jedna za každý materiál, který má na mapě důl. Druh a barvy určuje
 ## materiál v katalogu krystalu, vzhled a pohyb druhu jsou v monsters.json.
-## Objeví se náhodně v mezikruží kolem středu mapy: u okraje, uvnitř stěny skal, ale nejdál
-## SPAWN_REACH metrů od středu, ať na velké mapě nezačínají stovky metrů daleko.
+## Každá příšera se toulá v mezikruží kolem dolu svého materiálu (Crystal.monster_range) a tam
+## se i objeví. Bez dolu nebo oblasti se objeví v mezikruží kolem středu mapy, nejdál
+## SPAWN_REACH metrů od středu.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -21,10 +22,10 @@ const CATALOG := "res://graphics/characters/monsters/monsters.json"
 const SHADER := "res://shaders/monster_layer.gdshader"
 ## Druhy s "shader": "stone" v katalogu: kamenné příšery s odlesky podle materiálu.
 const STONE_SHADER := "res://shaders/monster_stone_layer.gdshader"
-## Kde se příšery objeví: mezikruží kolem středu mapy. Vnější okraj je SPAWN_NEAR metrů od okraje
-## mapy (stěna skal končí asi 7 m od okraje), ale nejdál SPAWN_REACH metrů od středu. Mezikruží
-## je široké SPAWN_FAR - SPAWN_NEAR metrů. Chodící musí mít z místa cestu ke středu mapy, ať
-## nezačne v kapse mezi skalami.
+## Kde se příšera bez oblasti objeví: mezikruží kolem středu mapy. Vnější okraj je SPAWN_NEAR
+## metrů od okraje mapy, ale nejdál SPAWN_REACH metrů od středu. Mezikruží je široké
+## SPAWN_FAR - SPAWN_NEAR metrů. Chodící musí mít z místa cestu ke středu mapy, ať nezačne
+## v kapse mezi skalami. Stejně se ověřuje i místo v oblasti kolem dolu.
 const SPAWN_NEAR := 9.0
 const SPAWN_FAR := 20.0
 const SPAWN_REACH := 50.0
@@ -138,7 +139,14 @@ func spawn(
 		host.add_child(monster)
 		var jump := float(info.get("jump_meters", 0.0))
 		var nav: NavGrid = null if flying else _nav_for(body, jump, walker, rocks, forest)
-		var at := _spawn_point(walker, nav, body, flying, rng)
+		var area := crystal.monster_range(mat) * float(TerrainCatalog.TILE_SIZE)
+		var home := _mine_of(rocks, mat, walker.home())
+		if home != Vector2.INF and area.y > 0.0:
+			monster.home = home
+			monster.home_range = area
+		var at := _area_point(walker, nav, body, flying, home, area, rng) if monster.home_range.y > 0.0 else Vector2.INF
+		if at == Vector2.INF:
+			at = _spawn_point(walker, nav, body, flying, rng)
 		monster.setup(info, textures, layer_material, colors, speed, shadow_alpha, walker, nav, persons, camera, rng, at)
 		monster.carriers = carriers
 		members.append(monster)
@@ -203,6 +211,30 @@ func _nav_for(body: float, jump: float, walker: Walker, rocks: Rocks, forest: Fo
 
 
 ## Náhodné místo v pásu u okraje. Chodící musí stát na souši mimo překážky.
+## Důl materiálu mat nejblíž k near. Bez dolu Vector2.INF.
+static func _mine_of(rocks: Rocks, mat: int, near: Vector2) -> Vector2:
+	var best := Vector2.INF
+	for slot in rocks.ponds_holding(mat):
+		var center := rocks.pond_center(slot)
+		if best == Vector2.INF or near.distance_squared_to(center) < near.distance_squared_to(best):
+			best = center
+	return best
+
+
+## Volné místo v mezikruží area (px) kolem dolu home, na čtverci. Nenajde-li, Vector2.INF.
+func _area_point(walker: Walker, nav: NavGrid, body: float, flying: bool, home: Vector2, area: Vector2, rng: RandomNumberGenerator) -> Vector2:
+	for _try in SPAWN_TRIES:
+		var radius := sqrt(rng.randf_range(area.x * area.x, area.y * area.y))
+		var spot := home + Vector2.from_angle(rng.randf() * TAU) * radius
+		if not walker.contains(spot, Walker.EDGE_M * float(TerrainCatalog.TILE_SIZE)):
+			continue
+		if flying:
+			return spot
+		if not walker.blocked(spot, body) and (nav == null or nav.reaches(spot, walker.home())):
+			return spot
+	return Vector2.INF
+
+
 func _spawn_point(walker: Walker, nav: NavGrid, body: float, flying: bool, rng: RandomNumberGenerator) -> Vector2:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var world := walker.world()

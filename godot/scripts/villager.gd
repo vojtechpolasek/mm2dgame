@@ -15,11 +15,14 @@ extends Node2D
 ## nataženou. Příšera přes něj neprojde, musí ho obejít. Po honičce jde domů.
 ## Grafika je hráčova, chodí atlasem chůze s kratším krokem, při pomoci běží atlasem běhu.
 ## Venku je jedovatý vzduch. Vesničan bez skafandru (needs_suit) zůstává doma a nepomáhá.
-## Když mu hráč donese skafandr (dress), vyjde v něm ven a dělá všechno jako jindy. Když je
-## vzduch čistý (return_suit), dojde skafandr odložit k výstupku továrny.
+## Když na výstupku továrny leží skafandr, hra pošle pro skafandr jednoho z těch, kdo čekají
+## doma (fetch_suit): vyběhne a doběhne si pro něj (RUN_METERS). Pak v něm dělá všechno
+## jako jindy. Když je vzduch čistý (return_suit), dojde skafandr odložit k výstupku továrny.
 ## Hráč, který se ho dotkne, si ho vezme s sebou (sledování): vesničan běží za ním
 ## a cíl přepočítá po FOLLOW_CHECK sekundách. Když hráč vezme kámen z dolu, vesničan dojde
-## ke stejnému dolu a vezme si stejný materiál. Když se hráč dotkne továrny (i bez kamene),
+## ke stejnému dolu a vezme si stejný materiál. U skladu dělá, co hráč (leader_used_store):
+## když hráč odloží, odloží na volnou plochu téhož skladu, když si vezme, vezme si tam stejný
+## materiál, jinak nejdražší, a když hráč vymění, vymění taky. Když se hráč dotkne továrny (i bez kamene),
 ## vesničan s kamenem dojde ke stejné straně a hodí ho tam, kam se vejde (jinde, když tam ne).
 ## Pak a také když kámen ztratí, přestane sledovat a jde domů. Vesničan bez kamene přestane
 ## sledovat, když hráč do továrny hodí. Vesničan s kamenem je pro příšery jako
@@ -43,8 +46,10 @@ const SuitFactory := preload("res://scripts/suit_factory.gd")
 
 ## Chůze je poloviční rychlost běhu hráče.
 const WALK_METERS := Person.RUN_METERS * 0.5
-## Běh vesničana (při pomoci i při sledování hráče) je o pětinu pomalejší než běh hráče.
+## Běh vesničana při pomoci a pro skafandr je o pětinu pomalejší než běh hráče, při sledování
+## hráče jen o desetinu.
 const RUN_METERS := Person.RUN_METERS * 0.8
+const FOLLOW_METERS := Person.RUN_METERS * 0.9
 const BODY := Person.BODY
 const HOUSE_PAUSE := 2.0
 const WAIT := Vector2(3.0, 5.0)
@@ -85,7 +90,7 @@ const HELP_ARRIVE_PX := 6.0
 const HELP_REACH := 0.6
 ## Barvy kůže. Triko, kalhoty a vlasy jsou ze vzorníku menu postavy.
 const SKINS: PackedStringArray = ["F6CDB0", "EDBE98", "D9A27A", "B07850", "8A5A3C"]
-## Sledování hráče: dotyk těl s rezervou TOUCH_PX, běží rychlostí RUN_METERS,
+## Sledování hráče: dotyk těl s rezervou TOUCH_PX, běží rychlostí FOLLOW_METERS,
 ## zastaví se FOLLOW_NEAR metrů od hráče. Kam běžet, se přepočítá po FOLLOW_CHECK sekundách.
 const TOUCH_PX := 6.0
 const FOLLOW_NEAR := 1.5
@@ -94,15 +99,12 @@ const FOLLOW_CHECK := 0.5
 const REST_POINT := 1.0
 ## Hod kamene do továrny trvá tolik sekund.
 const THROW_TIME := 0.45
-## Oblečený vesničan vyjde z domu, až žádný hráč není blíž ke dveřím než tolik metrů.
-## Jinak by se hned dotkl hráče, který mu skafandr přinesl. Znovu se podívá po DOOR_RECHECK s.
-const DOOR_CLEAR := 2.0
-const DOOR_RECHECK := 0.3
 
 enum State { INSIDE, WALKING, WAITING, DOORWAY, HELPING, FOLLOWING }
-## Při sledování: jen za hráčem, pro kámen do dolu, nebo s kamenem k továrně.
-enum Task { NONE, MINE, FACTORY }
-enum Then { ENTER, WAIT, DROP }
+## Při sledování: jen za hráčem, pro kámen do dolu, s kamenem k továrně, nebo ke skladu.
+enum Task { NONE, MINE, FACTORY, STORE }
+## Co udělá u cíle chůze: vejde do domu, postojí, odloží skafandr, nebo si ho vezme.
+enum Then { ENTER, WAIT, DROP, SUIT }
 
 ## Číslo mezi tvory, kteří nechodí přes sebe. Nastaví správce vesničanů.
 var crowd_id := -1
@@ -114,8 +116,8 @@ var _suited := false
 ## Jde odložit skafandr na _drop_at.
 var _returning := false
 var _drop_at := Vector2.ZERO
-## Právě dostal skafandr a vyjde ven, jakmile mu nikdo nestojí ve dveřích.
-var _go_out := false
+## Běží pro skafandr na výstupek.
+var _fetching := false
 ## Továrna vesnice. Jen s ní vesničan ukazuje na chybějící materiál a dá se vzít s sebou.
 var suits: SuitFactory
 ## Kdo nese kámen, pro příšery. Pole sdílí správce příšer.
@@ -125,6 +127,12 @@ var _task := Task.NONE
 var _task_slot := -1
 var _task_mat := -1
 var _task_lane := -1
+## U skladu: plocha, ke které jde, a kterýkoli plocha skladu, kterou použil vůdce. Se
+## _task_mat -1 kámen odloží, jinak si vezme _task_mat, nebo nejdražší, co tam je.
+var _task_bay := -1
+var _task_store := -1
+## Plocha skladu, ze které je kámen v ruce, nebo -1. Ukradený se tam vrátí.
+var _carry_bay := -1
 ## Kámen se do továrny nikam nevejde. Vesničan ho donese k nejbližšímu zásobníku a tam
 ## se rozplyne.
 var _discard := false
@@ -275,6 +283,9 @@ func _process(delta: float) -> void:
 	if _state == State.FOLLOWING:
 		_step_follow(delta)
 		return
+	if _fetching:
+		_walk(delta)
+		return
 	if _touched():
 		return
 	if _watch(delta):
@@ -290,11 +301,8 @@ func _process(delta: float) -> void:
 # --- Činnosti ---
 
 func _choose() -> void:
-	if _go_out:
-		if _door_crowded():
-			_timer = DOOR_RECHECK
-			return
-		_leave(_out_to_road)
+	if _fetching:
+		_leave(_run_to_dock)
 		return
 	if needs_suit and not _suited:
 		_timer = _rng.randf_range(WAIT.x, WAIT.y)
@@ -405,6 +413,9 @@ func _arrive() -> void:
 	if _then == Then.DROP:
 		_take_off()
 		return
+	if _then == Then.SUIT:
+		_pick_up_suit()
+		return
 	if _then == Then.ENTER:
 		# Kdo to vzdal daleko ode dveří, vejde jen v duchu.
 		var near := position.distance_to(_town.door(_goal_house, BODY)) <= BODY * 2.0
@@ -450,7 +461,8 @@ func _walk(delta: float) -> void:
 			_arrive()
 		return
 	var dir := to / left
-	var stride := minf(_speed * delta, left)
+	var speed := RUN_METERS * float(TerrainCatalog.TILE_SIZE) if _fetching else _speed
+	var stride := minf(speed * delta, left)
 	# Mimo obrazovku jde jen po cestě z mřížky, ta překážky obchází sama. Šetří procesor.
 	if _routed and not _on_screen(OFF_SCREEN_M * float(TerrainCatalog.TILE_SIZE)):
 		position += dir * stride
@@ -598,33 +610,43 @@ func _step_help(delta: float) -> void:
 
 # --- Skafandr ---
 
-## Je doma v domě house a čeká na skafandr?
-func waits_in(house: int) -> bool:
-	return needs_suit and not _suited and _state == State.INSIDE and _home == house
+## Čeká doma na skafandr a ještě pro žádný neběží?
+func waits_for_suit() -> bool:
+	return needs_suit and not _suited and not _fetching and _state == State.INSIDE
 
 
-## Hráč donesl skafandr ke dveřím. Vesničan si ho obleče a vyjde ven na cestu.
-func dress() -> void:
-	_suited = true
-	_figure.set_gear(true)
-	_fit(_fitted)
-	_go_out = true
+## Běží pro skafandr?
+func fetching() -> bool:
+	return _fetching
+
+
+## Na výstupku leží skafandr: vyběhne z domu a doběhne si pro něj.
+func fetch_suit() -> void:
+	_fetching = true
 	_timer = 0.0
 
 
-## Stojí některý hráč u dveří domu?
-func _door_crowded() -> bool:
-	var door := _town.door(_home, BODY)
-	var reach := DOOR_CLEAR * float(TerrainCatalog.TILE_SIZE) + Person.BODY
-	for person in _persons:
-		if is_instance_valid(person) and person.position.distance_squared_to(door) < reach * reach:
-			return true
-	return false
+func _run_to_dock() -> void:
+	_figure.set_run(true)
+	_head_to(_town.dock_spot(BODY, _rng), Then.SUIT)
 
 
-func _out_to_road() -> void:
-	_go_out = false
-	_head_to(_town.road_point(_rng), Then.WAIT)
+## U výstupku: vezme si skafandr, obleče ho a dál dělá, co jindy. Když tam už žádný není,
+## jde domů.
+func _pick_up_suit() -> void:
+	_fetching = false
+	_figure.set_run(false)
+	if suits == null or not suits.take_suit(position):
+		_head_to_house(_home)
+		return
+	_suited = true
+	_figure.set_gear(true)
+	_fit(_fitted)
+	Sound.at("sfx/pickup", global_position, -3.0)
+	_state = State.WAITING
+	_timer = _rng.randf_range(WAIT.x, WAIT.y)
+	_travel = 0.0
+	_figure.set_frame(_figure.idle_frame)
 
 
 func suited() -> bool:
@@ -699,7 +721,6 @@ func snapshot(persons: Array[Person]) -> Dictionary:
 	var out := origin()
 	out.merge({
 		"suited": _suited,
-		"go_out": _go_out,
 		"returning": _returning,
 		"place": place,
 		"pos": pos,
@@ -720,9 +741,6 @@ func restore(data: Dictionary, persons: Array[Person]) -> void:
 		_suited = true
 		_figure.set_gear(true)
 		_fit(_fitted)
-	_go_out = bool(data.get("go_out", false))
-	if _go_out:
-		_timer = 0.0
 	var place := str(data.get("place", "inside"))
 	if place != "inside":
 		visible = true
@@ -797,6 +815,69 @@ func leader_took(slot: int, mat: int, person: Person) -> void:
 	_follow_left = 0.0
 
 
+## Vůdce použil plochu skladu bay: left nechal, took si vzal (-1 nic). Vesničan, který nic
+## jiného nedělá, udělá u stejného skladu totéž: s kamenem odloží nebo vymění, bez kamene si
+## vezme. Když vůdce jen vzal a vesničan kámen má, nebo jen odložil a vesničan nemá, nic.
+func leader_used_store(bay: int, left: int, took: int, person: Person) -> void:
+	if _state != State.FOLLOWING or _leader != person or _task != Task.NONE:
+		return
+	if took >= 0 and (_carry_mat < 0 or left >= 0):
+		_task_mat = took
+	elif took < 0 and left >= 0 and _carry_mat >= 0:
+		_task_mat = -1
+	else:
+		return
+	_task = Task.STORE
+	_task_store = bay
+	_task_bay = -1
+	_follow_left = 0.0
+
+
+## Plocha skladu pro úkol: k odložení nejbližší prázdná, k braní nejbližší se stejným
+## materiálem, jinak s nejdražším. Když žádná není, úkol skončí.
+func _pick_bay() -> void:
+	var best := -1
+	var best_rank := -INF
+	for bay in _town.store_bays(_task_store):
+		var gem := _town.bay_gem(bay)
+		var rank := -position.distance_squared_to(_town.bay_home(bay))
+		if _task_mat < 0:
+			if gem >= 0:
+				continue
+		elif gem < 0:
+			continue
+		elif gem != _task_mat:
+			# Jiný materiál jen jako náhrada, dražší dřív.
+			rank = -1.0e12 + float(_crystal.points_of(gem))
+		if rank > best_rank:
+			best_rank = rank
+			best = bay
+	_task_bay = best
+	if best < 0:
+		_task = Task.NONE
+
+
+## U plochy skladu: odloží, vezme, nebo vymění. Když se mezitím plocha změnila, vybere jinou.
+func _use_store() -> void:
+	var gem := _town.bay_gem(_task_bay)
+	if (_task_mat < 0) != (gem < 0):
+		_pick_bay()
+		return
+	var held := _carry_mat
+	var got := _town.swap_store(_task_bay, held)
+	var bay := _task_bay
+	_task = Task.NONE
+	_follow_left = 0.0
+	if got < 0:
+		_drop_carry()
+		_figure.set_hold(false)
+		Sound.at("sfx/pickup", global_position, -3.0)
+		return
+	_task_mat = got
+	_take_stone()
+	_carry_bay = bay
+
+
 ## Vůdce hodil kámen do továrny. Bez kamene vesničan přestane sledovat, s kamenem jde
 ## k továrně (to už spustil dotyk továrny).
 func leader_threw(person: Person) -> void:
@@ -829,11 +910,14 @@ func _pick_lane(near: Vector2) -> void:
 	_task_lane = lane if lane >= 0 else suits.nearest_lane(near)
 
 
-## Příšera kámen sebrala. Zmizí a vesničan přestane sledovat.
+## Příšera kámen sebrala. Kámen ze skladu se na plochu vrátí, jiný zmizí. Vesničan přestane
+## sledovat.
 func drop_held() -> void:
 	if _carry_mat < 0:
 		return
 	Sound.at("sfx/steal", global_position)
+	if _carry_bay >= 0:
+		_town.store_gem(_carry_bay, _carry_mat)
 	_stop_follow()
 
 
@@ -849,6 +933,7 @@ func _stop_follow() -> void:
 
 func _drop_carry() -> void:
 	_carry_mat = -1
+	_carry_bay = -1
 	carriers.erase(self)
 	if _carry != null:
 		_carry.visible = false
@@ -870,6 +955,9 @@ func _step_follow(delta: float) -> void:
 	if _task == Task.FACTORY and _town.touches_factory(position, BODY):
 		_throw_stone()
 		return
+	if _task == Task.STORE and _task_bay >= 0 and _town.store_bay(position, BODY) == _task_bay:
+		_use_store()
+		return
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var goal := _follow_aim if _task != Task.NONE else _leader.position
 	if _task == Task.NONE and position.distance_to(goal) <= FOLLOW_NEAR * tile:
@@ -884,14 +972,16 @@ func _step_follow(delta: float) -> void:
 		_follow_i += 1
 	if _follow_i < _follow_path.size():
 		aim = _follow_path[_follow_i]
-	# U dolu už rovnou k němu, okraj ho zastaví a dotkne se ho.
+	# U dolu nebo plochy skladu už rovnou k ní, okraj ho zastaví a dotkne se jí.
 	if _task == Task.MINE and position.distance_to(goal) < FOLLOW_NEAR * tile:
 		aim = _rocks.pond_center(_task_slot)
+	elif _task == Task.STORE and _task_bay >= 0 and position.distance_to(goal) < FOLLOW_NEAR * tile:
+		aim = _town.bay_home(_task_bay)
 	var to := aim - position
 	var left := to.length()
 	if left < 0.5:
 		return
-	var stride := minf(RUN_METERS * tile * delta, left)
+	var stride := minf(FOLLOW_METERS * tile * delta, left)
 	var next := _walker.allowed(position, position + to / left * stride, BODY, -1.0, crowd_id)
 	var moved := next.distance_to(position)
 	position = next
@@ -930,14 +1020,19 @@ func _end_rest() -> void:
 		_stop_pointing()
 
 
-## Kam teď: za vůdcem, k dolu, nebo před zásobník. Cesta po mřížce, když na cíl není vidět.
+## Kam teď: za vůdcem, k dolu, před zásobník, nebo k ploše skladu. Cesta po mřížce, když
+## na cíl není vidět.
 func _aim_follow() -> void:
+	if _task == Task.STORE:
+		_pick_bay()
 	match _task:
 		Task.MINE:
 			_follow_aim = _rocks.pond_edge(_task_slot, position, BODY)
 		Task.FACTORY:
 			_pick_lane(position)
 			_follow_aim = suits.lane_front(_task_lane, BODY)
+		Task.STORE:
+			_follow_aim = _town.bay_edge(_task_bay, position, BODY)
 		_:
 			_follow_aim = _leader.position
 	_follow_path = PackedVector2Array()
@@ -948,6 +1043,7 @@ func _aim_follow() -> void:
 
 func _take_stone() -> void:
 	_carry_mat = _task_mat
+	_carry_bay = -1
 	_task = Task.NONE
 	_follow_left = 0.0
 	if _carry == null and _crystal != null:

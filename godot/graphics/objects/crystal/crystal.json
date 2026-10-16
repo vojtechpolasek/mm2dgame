@@ -22,7 +22,11 @@
       "glint": "F0E0B8",
       "monster": "had2",
       "monster_accent": "5E4022",
-      "monster_speed": 1.0
+      "monster_speed": 1.0,
+      "monster_range": [
+        3,
+        8
+      ]
     },
     "sira": {
       "title": "Síra",
@@ -33,7 +37,11 @@
       "glint": "FFF3A8",
       "monster": "had2",
       "monster_accent": "4A3A18",
-      "monster_speed": 1.08
+      "monster_speed": 1.08,
+      "monster_range": [
+        3,
+        7
+      ]
     },
     "lavovy": {
       "title": "Lávový kámen",
@@ -43,7 +51,11 @@
       "sparkle": 0.24,
       "glint": "FF7848",
       "monster": "pavouk2",
-      "monster_speed": 1.0
+      "monster_speed": 1.0,
+      "monster_range": [
+        3,
+        10
+      ]
     },
     "grafit": {
       "title": "Grafit",
@@ -54,7 +66,11 @@
       "glint": "3A3A3A",
       "monster": "pavouk2",
       "monster_accent": "6E767E",
-      "monster_speed": 1.08
+      "monster_speed": 1.08,
+      "monster_range": [
+        3,
+        8
+      ]
     },
     "magnetit": {
       "title": "Magnetit",
@@ -64,7 +80,11 @@
       "sparkle": 0.38,
       "glint": "E4E8EE",
       "monster": "koule2",
-      "monster_speed": 1.0
+      "monster_speed": 1.0,
+      "monster_range": [
+        3,
+        11
+      ]
     },
     "kremen": {
       "title": "Křemen",
@@ -75,7 +95,11 @@
       "glint": "FFFFFF",
       "monster": "koule2",
       "monster_accent": "8C7458",
-      "monster_speed": 1.08
+      "monster_speed": 1.08,
+      "monster_range": [
+        3,
+        11
+      ]
     },
     "stribro": {
       "title": "Stříbro",
@@ -86,7 +110,11 @@
       "glint": "FFFFFF",
       "monster": "vlk2",
       "monster_accent": "4E5A6C",
-      "monster_speed": 1.0
+      "monster_speed": 1.0,
+      "monster_range": [
+        4,
+        12
+      ]
     },
     "jantar": {
       "title": "Jantar",
@@ -97,7 +125,11 @@
       "glint": "FFE1B0",
       "monster": "vlk2",
       "monster_accent": "5A2410",
-      "monster_speed": 1.08
+      "monster_speed": 1.08,
+      "monster_range": [
+        4,
+        11
+      ]
     },
     "smaragd": {
       "title": "Smaragd",
@@ -108,7 +140,11 @@
       "glint": "E7FFE8",
       "monster": "rex2",
       "monster_accent": "E2B33A",
-      "monster_speed": 1.0
+      "monster_speed": 1.0,
+      "monster_range": [
+        5,
+        16
+      ]
     },
     "zlato": {
       "title": "Zlato",
@@ -119,7 +155,11 @@
       "glint": "FFF0A8",
       "monster": "rex2",
       "monster_accent": "B8302A",
-      "monster_speed": 1.08
+      "monster_speed": 1.08,
+      "monster_range": [
+        5,
+        15
+      ]
     },
     "rubin": {
       "title": "Rubín",
@@ -129,7 +169,11 @@
       "sparkle": 0.92,
       "glint": "FFE8E0",
       "monster": "ptakojester2",
-      "monster_speed": 1.0
+      "monster_speed": 1.0,
+      "monster_range": [
+        8,
+        25
+      ]
     },
     "safir": {
       "title": "Safír",
@@ -139,7 +183,11 @@
       "sparkle": 1.15,
       "glint": "E4EEFF",
       "monster": "ptakojester2",
-      "monster_speed": 1.08
+      "monster_speed": 1.08,
+      "monster_range": [
+        8,
+        22
+      ]
     },
     "diamant": {
       "title": "Diamant",
@@ -150,7 +198,11 @@
       "glint": "FFFFFF",
       "monster": "ptakojester2",
       "monster_accent": "8098B4",
-      "monster_speed": 1.15
+      "monster_speed": 1.15,
+      "monster_range": [
+        8,
+        20
+      ]
     }
   }
 }

@@ -1036,6 +1036,37 @@ func swap_store(bay: int, held: int) -> int:
 	return had
 
 
+## Kámen na ploše bay, -1 prázdná.
+func bay_gem(bay: int) -> int:
+	return _store_gems[bay] if bay >= 0 and bay < _store_gems.size() else -1
+
+
+## Plochy skladu, ke kterému patří plocha bay.
+func store_bays(bay: int) -> PackedInt32Array:
+	var count := maxi(_bay_center.size(), 1)
+	var first := bay / count * count
+	var out := PackedInt32Array()
+	for other in range(first, mini(first + count, _store_gems.size())):
+		out.append(other)
+	return out
+
+
+## Místo, kde stojí tělo o poloměru body u okraje plochy bay, na straně k from. Plocha je
+## neprůchodná, dotkne se jí z kraje.
+func bay_edge(bay: int, from: Vector2, body: float) -> Vector2:
+	var count := maxi(_bay_center.size(), 1)
+	var store: Dictionary = _stores[bay / count]
+	var turn := float(store["turn"])
+	var center := bay_home(bay)
+	var local := (from - center).rotated(-turn)
+	if local.length_squared() < 1.0:
+		local = Vector2.DOWN
+	var half := _bay_half[bay % count]
+	var dir := local.normalized()
+	var reach := minf(half.x / maxf(absf(dir.x), 0.001), half.y / maxf(absf(dir.y), 0.001))
+	return center + (dir * (reach + body + TOUCH_PX * 0.5)).rotated(turn)
+
+
 ## Střed plochy ve světě. Tam doletí ukradený kámen.
 func bay_home(bay: int) -> Vector2:
 	var count := maxi(_bay_center.size(), 1)

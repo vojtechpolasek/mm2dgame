@@ -9,7 +9,7 @@ extends "res://scripts/factory.gd"
 ## Výstupkem (výdejnou) vede pás na skafandry. Kámen donesený k výstupku jde na něj, pás chce
 ## po jednom kameni z receptu. Plný se rozjede sám, kameny se rozdrtí bez prachu
 ## (sfx/crush_short) a výstupkem vyjede prázdný skafandr. Leží na výstupku vedle pásu, dokud
-## si ho postava nevezme. Pás pak chce znovu stejný recept. Až je vzduch čistý, skafandry
+## si pro něj nedoběhne vesničan. Pás pak chce znovu stejný recept. Až je vzduch čistý, skafandry
 ## se na výstupek vracejí (store_suit).
 ## Zásobník je číslo strana * 2 + z: strana k míří na k * 45°, z 0 je na záporné kolmici
 ## (-sin, cos), 1 na kladné (tovarna.json, suits). Pás výstupkem je DOCK_LANE.
@@ -25,6 +25,8 @@ signal stored(mat: int, world: Vector2)
 signal cleaned
 ## Skafandr se vrátil na výstupek.
 signal suit_stored
+## Vyrobený skafandr dojel na výstupek a čeká, až si pro něj doběhne vesničan.
+signal suit_ready
 
 ## Pás výstupkem na skafandry. Strana 2 je jih, pás jde jejím středem.
 const DOCK_LANE := 4
@@ -369,13 +371,18 @@ func receive_lane(id: int, mat: int, world: Vector2, rot: float) -> void:
 		stored.emit(mat, world)
 
 
-## Leží na výstupku skafandr blíž než reach od pos? Vezme ho a vrátí true. Až je vzduch
-## čistý, skafandry se jen vracejí.
-func take_suit(pos: Vector2, reach: float) -> bool:
+## Kolik skafandrů leží na výstupku.
+func suits_lying() -> int:
+	return _suits_lying.size()
+
+
+## Vezme z výstupku skafandr nejblíž k pos a vrátí true. Až je vzduch čistý, skafandry se jen
+## vracejí.
+func take_suit(pos: Vector2) -> bool:
 	if _done or _running:
 		return false
 	var best := -1
-	var best_dist := reach * reach
+	var best_dist := INF
 	for i in _suits_lying.size():
 		# Plošina je posunutá podle kamery, skafandr leží na místě bez posunu.
 		var dist := to_global(_suits_lying[i].position).distance_squared_to(pos)
@@ -577,7 +584,10 @@ func _eject_suit() -> void:
 	var tween := sprite.create_tween()
 	tween.tween_property(sprite, "position", Vector2(0.0, rest.y), SUIT_SLIDE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tween.tween_property(sprite, "position", rest, SUIT_SLIDE * 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_callback(func() -> void: Sound.at("sfx/land", sprite.global_position, -2.0))
+	tween.tween_callback(func() -> void:
+		Sound.at("sfx/land", sprite.global_position, -2.0)
+		suit_ready.emit()
+	)
 
 
 func _suit_sprite() -> Sprite2D:

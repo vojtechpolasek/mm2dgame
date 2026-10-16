@@ -50,7 +50,7 @@ const EDGE := 2.0
 const WATER_CELL := 4
 const WATER_HEAR := 14.0
 const SPAWN_RING := 1.5
-const FENCE_M := 1.0
+const FENCE_M := Walker.EDGE_M
 const BLINK_M := 12.0
 const ALARM_M := 7.0
 const LOCK_M := 20.0
@@ -518,7 +518,7 @@ func _built_square(sq: Square) -> void:
 	var game := SuitGame.new()
 	game.name = "Suits_%d_%d" % [sq.coord.x, sq.coord.y]
 	add_child(game)
-	if not game.setup(sq.town, _host._persons):
+	if not game.setup(sq.town):
 		game.queue_free()
 		return
 	_games[sq.coord] = game
@@ -624,7 +624,7 @@ func _setup_hud(_sq: Square) -> void:
 ## na kterém stojí: kdo ji sleduje, jde za ní.
 func _dress(person: Person) -> void:
 	person.wear_gear(true)
-	person.deliver_suit = _deliver
+	person.used_store.connect(_on_used_store.bind(person))
 	person.took_gem.connect(_on_took.bind(person))
 	person.threw_gem.connect(_on_threw.bind(person))
 	person.touched_factory.connect(_on_touched.bind(person))
@@ -969,16 +969,16 @@ func _on_threw(person: Person) -> void:
 		villagers.leader_threw(person)
 
 
+func _on_used_store(bay: int, left: int, took: int, person: Person) -> void:
+	var villagers := _villagers_of(person)
+	if villagers != null:
+		villagers.leader_used_store(bay, left, took, person)
+
+
 func _on_touched(person: Person) -> void:
 	var villagers := _villagers_of(person)
 	if villagers != null:
 		villagers.leader_touched(person)
-
-
-## Skafandr převezme vesničan u dveří domu na čtverci levelu.
-func _deliver(pos: Vector2) -> bool:
-	var game: SuitGame = _games.get(_active)
-	return game != null and _coord(pos) == _active and game.deliver(pos)
 
 
 ## Ohrada: postava ve čtverci levelu z něj nevyjde. Kraj ji zastaví FENCE_M metrů před sebou.

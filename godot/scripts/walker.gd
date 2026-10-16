@@ -11,6 +11,9 @@ const Town := preload("res://scripts/town.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Crowd := preload("res://scripts/crowd.gd")
 
+## Střed těla nesmí blíž ke kraji čtverce než tolik metrů. Platí pro postavy, příšery
+## i vesničany, chodící i létající.
+const EDGE_M := 1.0
 ## Body na obvodu těla, které musí stát na souši.
 const PROBES: Array[Vector2] = [
 	Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
@@ -119,7 +122,7 @@ func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) ->
 			pos = town.avoid(pos, body)
 		if crowd != null and who >= 0:
 			pos = crowd.avoid(pos, body, who, clearance)
-	return fit(pos, 0.0)
+	return fit(pos, EDGE_M * float(TerrainCatalog.TILE_SIZE))
 
 
 ## Drží bod uvnitř mapy. margin je odstup od kraje v pixelech.
@@ -131,10 +134,10 @@ func fit(pos: Vector2, margin: float) -> Vector2:
 	)
 
 
-## Leží bod na téhle mapě?
-func contains(pos: Vector2) -> bool:
+## Leží bod na téhle mapě, aspoň margin pixelů od kraje?
+func contains(pos: Vector2, margin: float = 0.0) -> bool:
 	var local := pos - space_origin
-	return local.x >= 0.0 and local.y >= 0.0 and local.x < _map_size.x and local.y < _map_size.y
+	return local.x >= margin and local.y >= margin and local.x < _map_size.x - margin and local.y < _map_size.y - margin
 
 
 ## Střed i obvod těla musí být na schůdném povrchu. Voda má walkable false.

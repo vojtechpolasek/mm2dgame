@@ -17,8 +17,14 @@ const NavGrid := preload("res://scripts/nav_grid.gd")
 const BITE := 0.6
 ## Po krádeži si příšera tolik sekund postavy nevšímá, ať ji hned znovu nehoní.
 const CALM_SECONDS := 1.0
-## Toulání: další cíl je tak daleko v metrech, u něj chvíli postojí. Chodící jde po cestě
-## z mřížky a vybírá jen cíl, ke kterému cesta vede.
+## Toulání: další cíl je v oblasti kolem dolu příšery (home, home_range), u něj chvíli
+## postojí. Chodící jde po cestě z mřížky a vybírá jen cíl, ke kterému cesta vede.
+## Úhel cíle kolem dolu je nejvýš AREA_SPREAD od toho, kde příšera stojí, ať kolem dolu
+## spíš krouží, než aby ho přecházela. Každý nepovedený pokus úhel rozšíří o další AREA_SPREAD.
+## Po AREA_TRIES nepovedených pokusech (voda, skály) bere cíl jako příšera bez oblasti:
+## WANDER_NEAR až WANDER_FAR metrů od místa, kde stojí. Při honičce oblast neplatí.
+const AREA_SPREAD := PI / 3.0
+const AREA_TRIES := 8
 const WANDER_NEAR := 4.0
 const WANDER_FAR := 14.0
 const REST_MIN := 1.0
@@ -47,8 +53,6 @@ const PATH_LOOKAHEAD := 16
 const DETOUR_MIN := 1.0
 const DETOUR_MAX := 2.5
 const DETOUR_ANGLES: Array[float] = [1.2, 1.7, 2.3]
-## Létající drží od okraje mapy aspoň tolik metrů.
-const FLY_MARGIN := 4.0
 ## Natáčení za směrem pohybu v radiánech za sekundu.
 const TURN_SPEED := 7.0
 ## Skok jako u postavy: první polovina snímků chůze, uprostřed skoku zvětšení o JUMP_GROW.
@@ -84,6 +88,10 @@ var material_index := -1
 var kind_name := ""
 ## Číslo mezi tvory, kteří nechodí přes sebe. Nastaví správce příšer.
 var crowd_id := -1
+## Střed dolu materiálu a oblast toulání kolem něj: x od, y do, v pixelech. Bez oblasti je
+## home_range nula. Nastaví správce příšer před setup.
+var home := Vector2.INF
+var home_range := Vector2.ZERO
 
 var _walker: Walker
 var _nav: NavGrid
@@ -428,7 +436,7 @@ func _wander(delta: float) -> void:
 func _move(offset: Vector2) -> float:
 	var before := position
 	if _flying:
-		var margin := FLY_MARGIN * float(TerrainCatalog.TILE_SIZE)
+		var margin := Walker.EDGE_M * float(TerrainCatalog.TILE_SIZE)
 		position = _walker.fit(position + offset, margin)
 	elif _escaping or _blocked_now():
 		_escape()
@@ -536,14 +544,26 @@ func _pick_target() -> void:
 	# Mapa čtverce ve světě nezačíná v (0, 0), ale v space_origin.
 	var low := _walker.space_origin
 	var high := low + _walker.world()
+	var area := home_range.y > 0.0
 	if _flying:
-		var margin := FLY_MARGIN * tile
-		_target = Vector2(_rng.randf_range(low.x + margin, high.x - margin), _rng.randf_range(low.y + margin, high.y - margin))
+		var margin := Walker.EDGE_M * tile
+		var bounds := Rect2(low, high - low).grow(-margin)
+		for attempt in AREA_TRIES if area else 0:
+			var spot := _area_spot(attempt)
+			if bounds.has_point(spot):
+				_target = spot
+				_start_trip(PackedVector2Array())
+				return
+		_target = Vector2(_rng.randf_range(bounds.position.x, bounds.end.x), _rng.randf_range(bounds.position.y, bounds.end.y))
 		_start_trip(PackedVector2Array())
 		return
-	for _try in 12:
-		var spot := position + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
-		if not _walker.contains(spot):
+	for attempt in 12:
+		var spot := Vector2.ZERO
+		if area and attempt < AREA_TRIES:
+			spot = _area_spot(attempt)
+		else:
+			spot = position + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
+		if not _walker.contains(spot, Walker.EDGE_M * tile):
 			continue
 		if _walker.blocked(spot, _body, crowd_id):
 			continue
@@ -560,6 +580,15 @@ func _pick_target() -> void:
 		_start_trip(trip)
 		return
 	_rest()
+
+
+## Náhodné místo v oblasti kolem dolu. Rovnoměrně po ploše mezikruží, úhel kolem toho, kde
+## příšera stojí: při pokusu attempt nejvýš (attempt + 1) * AREA_SPREAD na každou stranu.
+func _area_spot(attempt: int) -> Vector2:
+	var from := (position - home).angle()
+	var spread := minf(AREA_SPREAD * float(attempt + 1), PI)
+	var radius := sqrt(_rng.randf_range(home_range.x * home_range.x, home_range.y * home_range.y))
+	return home + Vector2.from_angle(from + _rng.randf_range(-spread, spread)) * radius
 
 
 ## Vyrazí po trip k _target. Času má podle délky cesty.

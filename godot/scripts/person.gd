@@ -24,6 +24,9 @@ signal took_gem(slot: int, mat: int)
 signal threw_gem
 ## Postava se dotkla továrny, ať nese cokoli.
 signal touched_factory
+## Postava použila plochu skladu bay: left je kámen, který tam nechala, took ten, který si
+## vzala, -1 nic.
+signal used_store(bay: int, left: int, took: int)
 
 ## Běh, v metrech za sekundu. Dlaždice je jeden metr.
 const RUN_METERS := 4.5
@@ -66,14 +69,6 @@ const STEP_SURFACES: PackedStringArray = ["grass", "dirt", "desert", "snow"]
 const STEP_VARIANTS := 4
 const STEP_DB := -6.0
 const THROW_ARC := 36.0
-## Skafandr ležící na výstupku továrny se vezme, když je střed těla blíž než tolik px navíc.
-const SUIT_REACH := 30.0
-## Skafandr v ruce je trochu menší než na zemi.
-const SUIT_SCALE := 0.8
-
-## Zavolá se s polohou postavy, která nese skafandr. Vrátí true, když ho
-## u dveří domu převzal vesničan. Nastaví svět.
-var deliver_suit: Callable
 
 var _rocks: Rocks
 var _forest: Forest
@@ -126,8 +121,6 @@ var _fly_mat := -1
 var _fly_lane := -1
 ## Kámen se do továrny nikam nevejde, po dopadu se rozplyne.
 var _fly_discard := false
-## Prázdný skafandr v ruce.
-var _suit: Sprite2D
 ## Továrna, do které kámen letí. Přechod na jiný čtverec ji nezmění.
 var _fly_town: Town
 ## Čtverec, ve kterém postava bere a odkládá kameny. Nula znamená jednu mapu bez světa.
@@ -351,8 +344,6 @@ func _fit(view: Vector2) -> void:
 		_pad_gem(_held, _hand_height)
 	if _flyer != null:
 		_pad_gem(_flyer, _fly_height)
-	if _suit != null and view != Vector2.ZERO:
-		ObjectLayers.fit_sprite(_suit, _suit.material as ShaderMaterial, _hand_height, view, true)
 
 
 func _attach_hand() -> void:
@@ -371,17 +362,6 @@ func _carry(delta: float) -> void:
 	if _flyer != null or _crystal == null or _crystal.count() == 0 or _held == null:
 		return
 	if not _inside_square():
-		return
-	if _suit != null:
-		if deliver_suit.is_valid() and deliver_suit.call(position):
-			_drop_suit()
-		elif _town != null and _town.suit_factory() != null and _town.suit_factory().cleared() and _town.suit_factory().at_dock(position, BODY):
-			# Vzduch je čistý, skafandr patří zpátky na výstupek.
-			_town.suit_factory().store_suit()
-			_drop_suit()
-		return
-	if _held_mat < 0 and _town != null and _town.suit_factory() != null and _town.suit_factory().take_suit(position, BODY + SUIT_REACH):
-		_take_suit()
 		return
 	if _held_mat >= 0 and _town != null and _town.touches_factory(position, BODY):
 		_touch_slot = -1
@@ -430,17 +410,14 @@ func _touch_store(delta: float) -> bool:
 		_held_bay = bay
 	elif held >= 0:
 		_put_down()
+	if mat >= 0 or held >= 0:
+		used_store.emit(bay, held, mat)
 	return true
-
-
-## Nese prázdný skafandr?
-func carries_suit() -> bool:
-	return _suit != null
 
 
 ## Stav k uložení: kde stojí a co nese. Kámen v letu už patří továrně.
 func snapshot() -> Dictionary:
-	return {"pos": position, "rot": rotation, "held": _held_mat, "bay": _held_bay, "suit": _suit != null}
+	return {"pos": position, "rot": rotation, "held": _held_mat, "bay": _held_bay}
 
 
 ## Obnoví stav ze snapshot.
@@ -451,34 +428,12 @@ func restore(data: Dictionary) -> void:
 	if held >= 0:
 		_take(-1, held)
 		_held_bay = int(data.get("bay", -1))
-	if bool(data.get("suit", false)) and _suit == null:
-		_take_suit()
 
 
 ## Dýchací přístroj na zádech postavy.
 func wear_gear(on: bool) -> void:
 	_figure.set_gear(on)
 	_fit(_fitted)
-
-
-## V ruce je prázdný skafandr. Příšery ho nekradou, carried() je pořád -1.
-func _take_suit() -> void:
-	_suit = Figure.gear_item(_hand_height)
-	if _suit == null:
-		return
-	_suit.position = PALM + Vector2(-4.0, -6.0)
-	_suit.scale = Vector2.ONE * SUIT_SCALE
-	add_child(_suit)
-	_set_hold(true)
-	Sound.at("sfx/pickup", global_position, -3.0)
-
-
-## Skafandr si vzal vesničan, ruka je prázdná.
-func _drop_suit() -> void:
-	_suit.queue_free()
-	_suit = null
-	_set_hold(false)
-	Sound.at("sfx/pickup", global_position, -3.0)
 
 
 ## Kámen zůstal na prázdné ploše skladu, ruka je prázdná.

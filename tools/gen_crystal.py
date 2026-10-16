@@ -89,6 +89,25 @@ MATERIALS = {
     "diamant": {"title": "Diamant", "shape": "crystal", "points": 100, "color": "D7E7F6", "sparkle": 1.40, "glint": "FFFFFF",
                 "monster": "ptakojester2", "monster_accent": "8098B4", "monster_speed": 1.15},
 }
+# Jak daleko od svého dolu se příšera materiálu běžně toulá: [od, do] v metrech od středu dolu.
+# Při honičce neplatí.
+MONSTER_RANGE = {
+    "piskovec": [3, 8],
+    "sira": [3, 7],
+    "lavovy": [3, 10],
+    "grafit": [3, 8],
+    "magnetit": [3, 11],
+    "kremen": [3, 11],
+    "stribro": [4, 12],
+    "jantar": [4, 11],
+    "smaragd": [5, 16],
+    "zlato": [5, 15],
+    "rubin": [8, 25],
+    "safir": [8, 22],
+    "diamant": [8, 20],
+}
+for _name, _meters in MONSTER_RANGE.items():
+    MATERIALS[_name]["monster_range"] = _meters
 
 
 def parse_hex(text: str) -> tuple[int, int, int]:

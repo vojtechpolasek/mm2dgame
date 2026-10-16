@@ -23,6 +23,8 @@ var _titles := PackedStringArray()
 var _monster := PackedStringArray()
 var _monster_accent := PackedColorArray()
 var _monster_speed := PackedFloat32Array()
+## Jak daleko od svého dolu se příšera toulá: x od, y do, v metrech.
+var _monster_range := PackedVector2Array()
 
 
 func load_catalog() -> bool:
@@ -75,6 +77,8 @@ func load_catalog() -> bool:
 		_monster.append(str(mat.get("monster", "")))
 		_monster_accent.append(Color.html(str(mat.get("monster_accent", mat.get("glint", "FFFFFF")))))
 		_monster_speed.append(float(mat.get("monster_speed", 1.0)))
+		var area: Array = mat.get("monster_range", [])
+		_monster_range.append(Vector2(float(area[0]), float(area[1])) if area.size() >= 2 else Vector2.ZERO)
 	if _color.is_empty():
 		push_error("Krystal nemá materiály.")
 		return false
@@ -125,6 +129,11 @@ func monster_accent(index: int) -> Color:
 
 func monster_speed(index: int) -> float:
 	return _monster_speed[index]
+
+
+## Oblast toulání příšery kolem jejího dolu: x od, y do, v metrech. Bez údaje v katalogu nula.
+func monster_range(index: int) -> Vector2:
+	return _monster_range[index]
 
 
 func make_sprite() -> Sprite2D:

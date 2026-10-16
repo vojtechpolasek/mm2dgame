@@ -1,6 +1,6 @@
 extends Node
 
-## Vesničané: v každém domě PER_HOUSE.
+## Vesničané: v každém domě jeden.
 ## Při honičce pošle každé honěné postavě na pomoc nejvýš HELPERS vesničanů: ty, kdo jsou
 ## příšeře, která ji honí, nejblíž, nejdál HELP_NEAR metrů. Vesničan v domě se měří ode dveří. Pomoc skončí, když příšera
 ## přestane honit nebo je od pomocníka dál než HELP_FAR metrů. Létající příšeře se do cesty
@@ -19,7 +19,6 @@ const Person := preload("res://scripts/person.gd")
 const Monsters := preload("res://scripts/monsters.gd")
 const Monster := preload("res://scripts/monster.gd")
 
-const PER_HOUSE := Vector2i(1, 3)
 const HELPERS := 2
 const HELP_NEAR := 6.0
 const HELP_FAR := 10.0
@@ -66,8 +65,7 @@ func spawn(
 		homes.append(clampi(int(entry.get("home", 0)), 0, houses - 1))
 	if saved.is_empty():
 		for house in houses:
-			for _i in rng.randi_range(PER_HOUSE.x, PER_HOUSE.y):
-				homes.append(house)
+			homes.append(house)
 	var taken := PackedStringArray()
 	for person in persons:
 		taken.append(str(GameSession.player_colors(person.player_index).get("shirt", "")))
@@ -181,13 +179,10 @@ func leader_threw(person: Person) -> void:
 		villager.leader_threw(person)
 
 
-## Skafandr u dveří domu house si vezme někdo, kdo v něm čeká. Vrátí, jestli se tak stalo.
-func dress(house: int) -> bool:
+## Hráč person použil plochu skladu bay. Kdo ho sleduje, udělá u stejného skladu totéž.
+func leader_used_store(bay: int, left: int, took: int, person: Person) -> void:
 	for villager in members:
-		if villager.waits_in(house):
-			villager.dress()
-			return true
-	return false
+		villager.leader_used_store(bay, left, took, person)
 
 
 ## Vzduch je čistý. Vesničané ve skafandrech ho dojdou odložit před výstupek, ostatní vyjdou
