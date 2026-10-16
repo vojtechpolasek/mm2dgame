@@ -5,6 +5,8 @@ extends Node2D
 ## kámen započítá a zmizí. Uprostřed zůstane létat prach v barvě materiálu. Každý materiál
 ## má své řídké mračno, třpytivý k tomu pár jisker. Míry z tovarna.json jsou v px od středu
 ## obrázku, jih (+y) je výstupek.
+## Spodek s pásy, kameny a prachem je na plošině (_deck). Ve výšce nula leží na zemi, zvednutá
+## (lift) se posouvá podle kamery stejně jako vrstvy ve výšce a kreslí se nad postavami.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -35,6 +37,9 @@ var _base: Sprite2D
 var _ring: Sprite2D
 var _riders: Node2D
 var _dust: Node2D
+var _deck: Node2D
+## Výška plošiny v metrech.
+var _deck_height := 0.0
 var _base_material: ShaderMaterial
 var _ring_height := 0.0
 var _belts := PackedInt32Array()
@@ -82,11 +87,14 @@ func setup(info: Dictionary, base: Texture2D, ring: Texture2D, shader: Shader, c
 	_base_material.set_shader_parameter("drum_at", _drum)
 	_base_material.set_shader_parameter("drum_half", float(belts.get("drum_half_px", 4.5)))
 	_base_material.set_shader_parameter("belt_shift", _shift)
-	_base = _sprite(base, _base_material)
+	_deck = Node2D.new()
+	_deck.name = "Deck"
+	add_child(_deck)
+	_base = _sprite(base, _base_material, _deck)
 	_riders = Node2D.new()
-	add_child(_riders)
+	_deck.add_child(_riders)
 	_dust = Node2D.new()
-	add_child(_dust)
+	_deck.add_child(_dust)
 	_ring = _sprite(ring, _material(shader, info, ring_info, _ring_height))
 	# Mezikruží je nad postavou, spodek pod ní.
 	_ring.z_index = 2
@@ -265,21 +273,40 @@ func _material(shader: Shader, info: Dictionary, layer: Dictionary, height: floa
 	return material
 
 
-func _sprite(texture: Texture2D, material: ShaderMaterial) -> Sprite2D:
+func _sprite(texture: Texture2D, material: ShaderMaterial, parent: Node = null) -> Sprite2D:
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
 	sprite.centered = true
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	sprite.material = material
-	add_child(sprite)
+	(parent if parent != null else self).add_child(sprite)
 	return sprite
 
 
+## Zvedne plošinu do výšky deck a mezikruží do výšky ring (metry). Plošina se pak kreslí nad
+## postavami, ať zakryje toho, kdo stojí za ní. Mezikruží je přidané později, je nad ní.
+func lift(deck: float, ring: float) -> void:
+	_deck_height = deck
+	_deck.z_index = 2 if deck > 0.0 else 0
+	_ring_height = ring
+	(_ring.material as ShaderMaterial).set_shader_parameter("height_m", ring)
+	_fit()
+
+
+## Výška plošiny v metrech. Tam dopadají hozené kameny.
+func deck_height() -> float:
+	return _deck_height
+
+
 ## Posun výšky vytáhne mezikruží z obdélníku spritu. Bez širšího obdélníku by ho kraj
-## obrazovky ořízl dřív, než zmizí.
+## obrazovky ořízl dřív, než zmizí. Plošina se posune o tolik, o kolik shader vrstev posouvá
+## vrstvu ve své výšce s kotvou ve středu továrny.
 func _fit() -> void:
 	if _ring == null or _camera == null:
 		return
+	if _deck_height > 0.0:
+		var shift := (global_position - _camera.get_screen_center_position()) * _deck_height * ObjectLayers.PARALLAX * _camera.zoom.x
+		_deck.position = shift.rotated(-global_rotation)
 	var view := _camera.get_viewport_rect().size
 	var rect := _ring.get_rect()
 	RenderingServer.canvas_item_set_custom_rect(_ring.get_canvas_item(), true, rect.grow(ObjectLayers.vertex_pad(view, _ring_height)))

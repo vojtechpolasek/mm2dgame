@@ -33,7 +33,7 @@ const MODES: Array[Dictionary] = [
 	},
 	{
 		"id": "suits", "title": "Skafandry", "goal": "suits", "timed": false, "bottomless": true,
-		"about": "Venku je jedovatý vzduch. Naplň zásobníky továrny, ať vzduch vyčistí. Ze tří nejlevnějších kamenů vyrobíš skafandr pro vesničana. Bez limitu, počítá se nejlepší čas.",
+		"about": "Venku je jedovatý vzduch. Naplň zásobníky továrny, ať vzduch vyčistí. Ze tří nejlevnějších kamenů vyrobíš skafandr pro vesničana. Pak šipka ukáže k další továrně. Cílem je 15. level, hra se ukládá sama.",
 	},
 ]
 
@@ -48,7 +48,8 @@ const SUIT_BAND_M := 8.0
 ## stoupá, levnější se už nevrátí. Od pořadí 4 (magnetit) chce každý materiál až po
 ## nejdražší aspoň jednou.
 ## Na mapě jsou všechny materiály od nejlevnějšího po nejdražší ze zásobníků, aspoň tři:
-## recept skafandru chce tři nejlevnější. Za posledním řádkem se opakuje poslední.
+## recept skafandru chce tři nejlevnější. Poslední, patnáctý level je výjimka: limity překračuje,
+## chce 26 kamenů a nejdražší materiály po čtyřech. Po něm hra končí.
 const SUIT_LEVELS: Array = [
 	[[0, 1], [1, 1]],
 	[[0, 2], [1, 2], [2, 1]],
@@ -64,6 +65,7 @@ const SUIT_LEVELS: Array = [
 	[[4, 2], [5, 2], [6, 2], [7, 3], [8, 3], [9, 3], [10, 3], [11, 2], [12, 1]],
 	[[4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 2]],
 	[[4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3]],
+	[[5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 4], [11, 4], [12, 4]],
 ]
 ## Recept skafandru: po jednom z tolika nejlevnějších materiálů.
 const SUIT_RECIPE := 3
@@ -107,6 +109,14 @@ const VIEW_METERS := 7.0
 const PLAYER_TARGET := 0.5
 ## Nejvíc hráčů. Ovladačů je tolik: šipky, WASD a čtyři gamepady.
 const MAX_PLAYERS := 6
+
+## Typ hry Skafandry: identifikátor a jméno hry (kdo hraje) a uložený stav, ze kterého hra
+## pokračuje. Prázdný stav je nová hra. Viz SuitSaves.
+var suit_id := ""
+var suit_name := ""
+var suit_resume := {}
+## Oblečení hráčů pokračující hry podle pořadí. Hrát ji musí stejný počet hráčů.
+var suit_outfits: Array = []
 
 ## Hráči nové hry. Slovník s klíči pants, shirt a hair (hex bez mřížky) a device (číslo
 ## ovladače z Controls). Pořadí je pořadí připojení v menu.

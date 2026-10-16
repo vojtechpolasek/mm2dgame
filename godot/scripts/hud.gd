@@ -11,6 +11,9 @@ const THEME := preload("res://themes/menu.tres")
 ## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře víc, jsou tam panely.
 const ARROW_EDGE := 44.0
 const ARROW_TOP := 120.0
+## Blikání šipky u kraje čtverce za sekundu, výrazné je rychlejší.
+const BLINK_HZ := 2.0
+const BLINK_STRONG_HZ := 4.5
 ## Pod tolik sekund zčervená čas.
 const HURRY := 10.0
 const EDGE := 20.0
@@ -49,8 +52,8 @@ var _arrow: FactoryArrow
 var _notice: PanelContainer
 var _notice_text: Label
 var _notice_left := 0.0
-## U kraje čtverce šipka na továrnu bliká.
-var _blink := false
+## U kraje čtverce šipka na továrnu bliká: 1 bliká, 2 bliká rychle, větší a červeně.
+var _blink := 0
 var _blink_age := 0.0
 var _result: Control
 var _result_title: Label
@@ -159,10 +162,11 @@ func point_factory(from: Vector2, to: Vector2) -> void:
 
 ## note je řádek pod nadpisem, skládá ho svět podle typu hry. last je poslední level hry,
 ## po jeho splnění už další level není. replay nabídne i po výhře hrát level znovu (o rekord).
-func show_result(won: bool, note: String, last: bool, replay: bool) -> void:
+## title nahradí nadpis okna.
+func show_result(won: bool, note: String, last: bool, replay: bool, title: String = "") -> void:
 	for child in _result_buttons.get_children():
 		child.queue_free()
-	_result_title.text = "Výborně" if won else "Nesplnil jsi cíl"
+	_result_title.text = title if title != "" else "Výborně" if won else "Nesplnil jsi cíl"
 	_result_note.text = note
 	if won and last:
 		_result_button("Návrat do menu", menu_pressed).grab_focus()
@@ -307,6 +311,14 @@ func hide_clock() -> void:
 		_record.visible = false
 
 
+## Nový cíl: nadpis vpravo nahoře a kolik je potřeba. Postup začne od nuly.
+func set_goal(title: String, target: int) -> void:
+	_level.text = title
+	_target = maxi(target, 1)
+	_bar.max_value = _target
+	set_progress(0)
+
+
 ## Úkol čtverce, na kterém stojí první hráč. total 0 je čtverec bez kamenů.
 func show_square(title: String, delivered: int, total: int) -> void:
 	_level.text = title
@@ -322,7 +334,12 @@ func show_square(title: String, delivered: int, total: int) -> void:
 
 
 func set_edge_blink(on: bool) -> void:
-	_blink = on
+	set_edge_alarm(1 if on else 0)
+
+
+## 0 šipka nebliká, 1 bliká, 2 bliká výrazně: rychleji, je větší a červená.
+func set_edge_alarm(level: int) -> void:
+	_blink = level
 
 
 func _process(delta: float) -> void:
@@ -332,12 +349,16 @@ func _process(delta: float) -> void:
 			_notice.visible = false
 	if _arrow == null:
 		return
-	if _blink and _arrow.visible:
+	if _blink > 0 and _arrow.visible:
+		var strong := _blink >= 2
 		_blink_age += delta
-		var wave := 0.5 + 0.5 * sin(_blink_age * TAU * 2.0)
-		_arrow.modulate.a = lerpf(0.25, 1.0, wave)
+		var wave := 0.5 + 0.5 * sin(_blink_age * TAU * (BLINK_STRONG_HZ if strong else BLINK_HZ))
+		_arrow.modulate = HURRY_COLOR if strong else Color.WHITE
+		_arrow.modulate.a = lerpf(0.1 if strong else 0.25, 1.0, wave)
+		_arrow.scale = Vector2.ONE * (lerpf(1.2, 1.6, wave) if strong else 1.0)
 	else:
-		_arrow.modulate.a = 1.0
+		_arrow.modulate = Color.WHITE
+		_arrow.scale = Vector2.ONE
 
 
 func _build_notice() -> void:

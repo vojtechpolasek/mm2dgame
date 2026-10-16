@@ -19,7 +19,7 @@ const Walker := preload("res://scripts/walker.gd")
 const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
 const PondLabels := preload("res://scripts/pond_labels.gd")
 const WorldBoard := preload("res://scripts/world_board.gd")
-const SuitGame := preload("res://scripts/suit_game.gd")
+const SuitBoard := preload("res://scripts/suit_board.gd")
 
 ## Další hráči se objeví v kruhu kolem prvního, tak daleko v metrech.
 const SPAWN_RING := 1.5
@@ -34,11 +34,6 @@ const POINTS_RISE := 70.0
 const POINTS_TIME := 1.1
 ## Posledních tolik sekund limitu tiká.
 const TICK_FROM := 10
-## Hudba při honičce začne se zařváním honící příšery na obrazovce (Monster.CHASE_KEEP).
-## Když příšera zmizí, normální hudba se vrátí až po CHASE_HOLD sekundách. Je to déle než
-## klid příšery po krádeži (Monster.CALM_SECONDS), jinak by hudba přeskočila na normální
-## a hned zpátky, když příšera honí dalšího hráče se stejným kamenem.
-const CHASE_HOLD := 6.0
 
 ## Terén po chuncích předpečených z corner_map katalogu, voda se vlní nad nimi.
 @onready var ground: TerrainChunks = $Ground
@@ -75,21 +70,19 @@ var _monsters: Monsters
 var _water_far := PackedInt32Array()
 var _water_side := 0
 var _ticked := -1
-var _chase_hold := 0.0
 ## Kolik sekund ještě druhý stisk Esc nebo Startu opustí hru. 0 je bez prvního stisku.
 var _leave_left := 0.0
-## Otevřený svět. Klasické levely ho nemají a jejich smyčka běží dál sama.
+## Otevřený svět (Svět a Skafandry). Klasické levely ho nemají a jejich smyčka běží dál sama.
 var _board: WorldBoard
-## Typ hry Skafandry, jinak null.
-var _suits: SuitGame
 
 
 func _ready() -> void:
 	# Kamera na skupinu hráčů až po tom, co se postavy v tomhle snímku pohnuly.
 	process_priority = 10
 	await get_tree().process_frame
-	if str(GameSession.rules().get("id", "")) == "world":
-		_board = WorldBoard.new()
+	var mode_id := str(GameSession.rules().get("id", ""))
+	if mode_id == "world" or mode_id == "suits":
+		_board = SuitBoard.new() if mode_id == "suits" else WorldBoard.new()
 		_board.name = "Board"
 		add_child(_board)
 		_board.start(self)
@@ -126,8 +119,6 @@ func _ready() -> void:
 	rocks.bottomless = bool(_rules["bottomless"])
 	_crystal = crystal
 	rocks.set_available(GameSession.mode_materials(_level))
-	if _rules["goal"] == "suits":
-		_plan_suits(rocks, town)
 	var size := maxi(GameSession.mode_size(_level), 2)
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
@@ -184,12 +175,6 @@ func _ready() -> void:
 	var music_rng := RandomNumberGenerator.new()
 	music_rng.randomize()
 	Sound.play_level_music(music_rng)
-	if _rules["goal"] == "suits":
-		_suits = SuitGame.new()
-		_suits.name = "Suits"
-		add_child(_suits)
-		if not _suits.setup(town, villagers, _persons, monsters):
-			_suits = null
 	_start_level(rocks)
 	_map_ready = true
 
@@ -217,34 +202,9 @@ func _spawn_players(rocks: Rocks, forest: Forest, crystal: Crystal, props: Node2
 	_party.frame()
 
 
-## Skafandry: zásobníky továrny a recept podle levelu. Každý materiál na mapě má svůj důl,
-## materiál, kterého zásobníky chtějí tři a víc, dva. Pás dolů kolem továrny je úzký,
-## levné materiály jsou blízko.
-func _plan_suits(rocks: Rocks, town: Town) -> void:
-	var order := rocks.by_points()
-	var lanes := GameSession.suit_lanes(_level)
-	var need := {}
-	var plan: Array = []
-	for pair: Array in lanes:
-		var at := mini(int(pair[0]), order.size() - 1)
-		need[at] = int(need.get(at, 0)) + int(pair[1])
-		plan.append([order[at], int(pair[1])])
-	var mines := PackedInt32Array()
-	for at in mini(GameSession.mode_materials(_level), order.size()):
-		mines.append(2 if int(need.get(at, 0)) >= 3 else 1)
-	rocks.mine_plan = mines
-	rocks.band_max = GameSession.SUIT_BAND_M
-	town.suit_plan = plan
-	town.suit_recipe = order.slice(0, mini(GameSession.SUIT_RECIPE, order.size()))
-
-
 func _start_level(rocks: Rocks) -> void:
 	_rocks = rocks
-	if _suits != null:
-		_target = _suits.target()
-		_suits.progressed.connect(_on_suit_progress)
-		_suits.completed.connect(_finish.bind(true))
-	elif _rules["goal"] == "ponds":
+	if _rules["goal"] == "ponds":
 		_target = rocks.gem_total()
 	else:
 		_target = GameSession.level_target(_level, GameSession.players.size())
@@ -300,13 +260,9 @@ func _process(delta: float) -> void:
 		_finish(false)
 
 
-## Honící příšera na obrazovce přepne hudbu, blízkost vody řídí šumění.
-func _update_sound(delta: float) -> void:
-	if _monsters != null and _monsters.any_chasing_in_view():
-		_chase_hold = CHASE_HOLD
-	else:
-		_chase_hold = maxf(_chase_hold - delta, 0.0)
-	Sound.set_chase(_chase_hold > 0.0)
+## Kámen v ruce kohokoli přepne na hudbu při honičce, blízkost vody řídí šumění.
+func _update_sound(_delta: float) -> void:
+	Sound.set_chase(Monsters.anyone_carrying(_persons, _monsters.carriers if _monsters != null else []))
 	if _water_far.is_empty():
 		Sound.set_water(0.0)
 		return
@@ -379,14 +335,6 @@ func _on_settled(mat: int, pos: Vector2) -> void:
 	_hud.set_progress(_progress)
 	if _progress >= _target:
 		_finish(true)
-
-
-## Skafandry: kámen dopadl do zásobníku továrny.
-func _on_suit_progress(done: int) -> void:
-	if not _playing:
-		return
-	_progress = done
-	_hud.set_progress(_progress)
 
 
 ## Nápis „+N“ u místa dopadu: vystoupá a zmizí. Velikost drží stejnou na
@@ -464,7 +412,14 @@ func _next_level() -> void:
 
 func _to_menu() -> void:
 	get_tree().paused = false
-	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+	get_tree().change_scene_to_file(_menu_scene())
+
+
+## Skafandry se vracejí do svého menu, kde je vidět uložená hra a výkony.
+func _menu_scene() -> String:
+	if str(GameSession.rules().get("id", "")) == "suits":
+		return "res://scenes/suit_menu.tscn"
+	return "res://scenes/main_menu.tscn"
 
 
 ## Běží ve vlákně. Nesahá na strom scény, jen počítá data.
@@ -511,7 +466,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 	if _leave_left > 0.0:
 		Sound.ui("back")
-		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		get_tree().change_scene_to_file(_menu_scene())
 		return
 	_leave_left = LEAVE_WINDOW
 	if _hud != null:

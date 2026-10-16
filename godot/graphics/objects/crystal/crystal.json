@@ -61,7 +61,7 @@
       "color": "4A5158",
       "sparkle": 0.38,
       "glint": "E4E8EE",
-      "monster": "vlk2",
+      "monster": "koule2",
       "monster_speed": 1.0
     },
     "kremen": {
@@ -71,7 +71,7 @@
       "color": "E6D6B8",
       "sparkle": 0.55,
       "glint": "FFFFFF",
-      "monster": "vlk2",
+      "monster": "koule2",
       "monster_accent": "8C7458",
       "monster_speed": 1.08
     },
@@ -84,7 +84,7 @@
       "glint": "FFFFFF",
       "monster": "vlk2",
       "monster_accent": "4E5A6C",
-      "monster_speed": 1.15
+      "monster_speed": 1.0
     },
     "jantar": {
       "title": "Jantar",
@@ -93,9 +93,9 @@
       "color": "B4621C",
       "sparkle": 0.62,
       "glint": "FFE1B0",
-      "monster": "rex2",
+      "monster": "vlk2",
       "monster_accent": "5A2410",
-      "monster_speed": 1.0
+      "monster_speed": 1.08
     },
     "smaragd": {
       "title": "Smaragd",
@@ -106,7 +106,7 @@
       "glint": "E7FFE8",
       "monster": "rex2",
       "monster_accent": "E2B33A",
-      "monster_speed": 1.08
+      "monster_speed": 1.0
     },
     "zlato": {
       "title": "Zlato",
@@ -117,7 +117,7 @@
       "glint": "FFF0A8",
       "monster": "rex2",
       "monster_accent": "B8302A",
-      "monster_speed": 1.15
+      "monster_speed": 1.08
     },
     "rubin": {
       "title": "Rubín",

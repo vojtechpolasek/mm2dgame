@@ -165,7 +165,7 @@
       "frames": 8,
       "atlas_columns": 8,
       "wander_meters": 1.0,
-      "chase_meters": 4.5,
+      "chase_meters": 5.0,
       "body_meters": 0.383,
       "height_meters": 0.7,
       "jump_meters": 2.1,
@@ -226,7 +226,7 @@
       "frames": 24,
       "atlas_columns": 8,
       "wander_meters": 1.5,
-      "chase_meters": 5.0,
+      "chase_meters": 5.5,
       "body_meters": 0.96,
       "height_meters": 1.0,
       "jump_meters": 0.0,
@@ -287,7 +287,7 @@
       "frames": 16,
       "atlas_columns": 8,
       "wander_meters": 0.8,
-      "chase_meters": 5.3,
+      "chase_meters": 5.5,
       "body_meters": 0.55,
       "height_meters": 3.0,
       "jump_meters": 4.1,
@@ -311,6 +311,37 @@
       },
       "colors": {
         "eye": "FFC21A"
+      }
+    },
+    "koule2": {
+      "cycle_meters": 2.5447,
+      "frames": 24,
+      "atlas_columns": 8,
+      "wander_meters": 1.0,
+      "chase_meters": 4.5,
+      "body_meters": 0.405,
+      "height_meters": 0.81,
+      "jump_meters": 0.0,
+      "shader": "stone",
+      "sound": "koule",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "koule2/layer_1.png",
+          "cell": 68,
+          "center": 34,
+          "sparkle_file": "koule2/layer_1_spark.png"
+        },
+        "2": {
+          "height": 0.55,
+          "file": "koule2/layer_2.png",
+          "cell": 72,
+          "center": 36,
+          "sparkle_file": "koule2/layer_2_spark.png"
+        }
+      },
+      "colors": {
+        "eye": "FF3A1A"
       }
     }
   }

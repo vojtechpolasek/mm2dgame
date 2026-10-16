@@ -32,6 +32,8 @@ var _terrain := PackedByteArray()
 var _names := PackedStringArray()
 ## Tvorové, kteří nechodí přes sebe. Nastaví svět, než se kdo pohne.
 var crowd: Crowd
+## Ohrada ve světě: střed těla z ní nevyjde. Prázdná nic nehlídá. Nastaví svět.
+var fence := Rect2()
 
 
 func _init(rocks: Rocks, forest: Forest, town_at: Town, map: MapData) -> void:
@@ -107,6 +109,8 @@ func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) ->
 		pos = world_board.move_body(pos, body, clearance)
 		if crowd != null and who >= 0:
 			pos = crowd.avoid(pos, body, who, clearance)
+		if fence.has_area():
+			pos = pos.clamp(fence.position, fence.end)
 		return pos
 	for _pass in 2:
 		pos = _rocks.avoid(pos, body, clearance)

@@ -146,6 +146,27 @@ func spawn(
 			monster.crowd_id = walker.crowd.join(monster)
 
 
+## Stav k uložení: materiál a místo každé příšery.
+func snapshot() -> Array:
+	var out: Array = []
+	for monster in members:
+		if is_instance_valid(monster):
+			out.append(monster.snapshot())
+	return out
+
+
+## Příšery z uložené hry stojí, kde stály. Páruje se podle materiálu. calm viz Monster.settle.
+func restore(saved: Array, calm: float) -> void:
+	var left := saved.duplicate()
+	for monster in members:
+		for i in left.size():
+			var entry: Dictionary = left[i]
+			if int(entry.get("mat", -1)) == monster.material_index:
+				monster.settle(entry.get("pos", monster.position), calm)
+				left.remove_at(i)
+				break
+
+
 ## Honí teď nějaká příšera?
 func any_chasing() -> bool:
 	for monster in members:
@@ -154,11 +175,13 @@ func any_chasing() -> bool:
 	return false
 
 
-## Honí nějaká příšera, která už na obrazovce zařvala a je pořád vidět? Podle toho hraje
-## hudba při honičce.
-func any_chasing_in_view() -> bool:
-	for monster in members:
-		if monster.is_chasing_in_view():
+## Nese někdo kámen? Hráč z persons, nebo vesničan z carriers. Podle toho hraje hudba při
+## honičce, ať je příšera vidět, nebo ne.
+static func anyone_carrying(persons: Array, carriers: Array) -> bool:
+	if not carriers.is_empty():
+		return true
+	for person in persons:
+		if is_instance_valid(person) and person.carried() >= 0:
 			return true
 	return false
 

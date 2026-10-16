@@ -13,8 +13,11 @@ extends "res://scripts/factory.gd"
 ## se na výstupek vracejí (store_suit).
 ## Zásobník je číslo strana * 2 + z: strana k míří na k * 45°, z 0 je na záporné kolmici
 ## (-sin, cos), 1 na kladné (tovarna.json, suits). Pás výstupkem je DOCK_LANE.
+## Plošina továrny je DECK_M metrů vysoko, mezikruží RING_M. Vedle pásu na skafandry ukazují
+## šipky na plošině k nejbližšímu dolu s materiálem, který pásu ještě chybí (point_mines).
 
 const Figure := preload("res://scripts/figure.gd")
+const Rocks := preload("res://scripts/rocks.gd")
 
 ## Kámen dopadl do obyčejného zásobníku. world je místo dopadu.
 signal stored(mat: int, world: Vector2)
@@ -53,6 +56,18 @@ const SIGN_STEP := 32.0
 const DOCK_SIGN_PAST := 26.0
 const DOCK_SIGN_STEP := 34.0
 const SIGN_ICON := 0.72
+const DECK_M := 1.0
+const RING_M := 2.5
+## Šipky k dolům: řada na plošině vedle pásu na skafandry, MINE_ARROW_SIDE px od jeho osy,
+## první MINE_ARROW_FROM px od středu, další po MINE_ARROW_STEP. Obrázek materiálu je blíž
+## k pásu, šipka vedle něj. Míří se jednou za MINE_ARROW_CHECK sekund.
+const MINE_ARROW_SIDE := Vector2(34.0, 58.0)
+const MINE_ARROW_FROM := 138.0
+const MINE_ARROW_STEP := 20.0
+const MINE_ARROW_ICON := 0.5
+const MINE_ARROW_CHECK := 0.5
+## Kámen, který se nikam nevejde, se za tolik sekund rozplyne.
+const VANISH_TIME := 0.45
 const NEON := Color(0.55, 1.0, 0.95)
 const NEON_GLOW := Color(0.1, 0.85, 1.0, 0.55)
 const NEON_DONE := Color(0.55, 1.0, 0.45)
@@ -73,6 +88,11 @@ var _rng := RandomNumberGenerator.new()
 var _running := false
 var _done := false
 var _suits_lying: Array[Sprite2D] = []
+## Doly čtverce, ke kterým míří šipky u pásu na skafandry.
+var _rocks: Rocks
+## Materiál receptu -> [řádek se šipkou, šipka].
+var _mine_arrows := {}
+var _mine_check := 0.0
 
 
 ## plan jsou dvojice [materiál, počet] pro obyčejné zásobníky, recipe materiály skafandru.
@@ -121,6 +141,66 @@ func configure(info: Dictionary, plan: Array, recipe: PackedInt32Array, seed_val
 		need[mat] = int(need.get(mat, 0)) + 1
 	_add_lane(DOCK_LANE, need, true)
 	_straighten()
+	lift(DECK_M, RING_M)
+
+
+## Šipky u pásu na skafandry budou mířit k dolům rocks.
+func point_mines(rocks: Rocks) -> void:
+	_rocks = rocks
+	var lane: Lane = _lanes.get(DOCK_LANE)
+	if lane == null or not _mine_arrows.is_empty():
+		return
+	var mats: Array = lane.need.keys()
+	mats.sort_custom(func(a: int, b: int) -> bool: return _crystal.points_of(a) < _crystal.points_of(b))
+	for i in mats.size():
+		var mat: int = mats[i]
+		var along := MINE_ARROW_FROM + MINE_ARROW_STEP * float(i)
+		var row := Node2D.new()
+		row.name = "MineArrow%d" % mat
+		_deck.add_child(row)
+		var plate := SignPlate.new()
+		plate.position = Vector2(MINE_ARROW_SIDE.x, along)
+		plate.scale = Vector2.ONE * 0.62
+		row.add_child(plate)
+		var icon := _crystal.make_sprite()
+		icon.position = plate.position
+		icon.scale = Vector2.ONE * MINE_ARROW_ICON
+		_crystal.paint(icon, mat, 0.0, _rng.randf() * TAU)
+		row.add_child(icon)
+		var arrow := MineArrow.new()
+		arrow.position = Vector2(MINE_ARROW_SIDE.y, along)
+		row.add_child(arrow)
+		row.visible = false
+		_mine_arrows[mat] = [row, arrow]
+	_mine_check = 0.0
+
+
+## Každá šipka míří k dolu s jejím materiálem, který je nejblíž továrně. Ukáže se, jen když
+## pás ten materiál ještě chce a nějaký důl ho má.
+func _aim_arrows(delta: float) -> void:
+	if _mine_arrows.is_empty():
+		return
+	_mine_check -= delta
+	if _mine_check > 0.0:
+		return
+	_mine_check = MINE_ARROW_CHECK
+	var lane: Lane = _lanes.get(DOCK_LANE)
+	var active := lane != null and not lane.busy and not _running and not _done and is_instance_valid(_rocks)
+	for mat: int in _mine_arrows:
+		var parts: Array = _mine_arrows[mat]
+		var row := parts[0] as Node2D
+		var arrow := parts[1] as Node2D
+		var slot := -1
+		if active and int(lane.got.get(mat, 0)) < int(lane.need[mat]):
+			var best := INF
+			for candidate in _rocks.ponds_holding(mat):
+				var dist := global_position.distance_squared_to(_rocks.pond_center(candidate))
+				if dist < best:
+					best = dist
+					slot = candidate
+		row.visible = slot >= 0
+		if slot >= 0:
+			arrow.global_rotation = (_rocks.pond_center(slot) - to_global(arrow.position)).angle()
 
 
 func _add_lane(id: int, need: Dictionary, special: bool) -> void:
@@ -185,6 +265,41 @@ func accepts(id: int, mat: int) -> bool:
 	if _done or _running or lane == null or lane.busy:
 		return false
 	return int(lane.claimed.get(mat, 0)) < int(lane.need.get(mat, 0))
+
+
+## Vejde se kámen mat ještě někam do továrny?
+func wanted(mat: int) -> bool:
+	for id: int in _lanes:
+		if accepts(id, mat):
+			return true
+	return false
+
+
+## Použitý zásobník, jehož vnější konec je nejblíž k near, i když už nic nechce. Tam letí
+## kámen, který se nikam nevejde.
+func nearest_lane(near: Vector2) -> int:
+	var best := DOCK_LANE
+	var best_dist := INF
+	for id: int in _lanes:
+		var dist := lane_front(id, 0.0).distance_squared_to(near)
+		if dist < best_dist:
+			best_dist = dist
+			best = id
+	return best
+
+
+## Kámen se nikam nevejde: dopadne na konec zásobníku a rozplyne se.
+func discard(mat: int, world: Vector2, rot: float) -> void:
+	var sprite := _crystal.make_sprite()
+	_riders.add_child(sprite)
+	sprite.position = to_local(world)
+	sprite.rotation = rot - global_rotation
+	sprite.scale = Vector2.ONE * STONE_SCALE
+	_crystal.paint(sprite, mat, 0.0, rot)
+	Sound.at("sfx/steal", world)
+	var tween := sprite.create_tween()
+	tween.tween_property(sprite, "scale", Vector2.ZERO, VANISH_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tween.tween_callback(sprite.queue_free)
 
 
 ## Zásobník pro kámen mat, který nese vesničan: na straně u near, jinak kterýkoli, kam se
@@ -262,7 +377,8 @@ func take_suit(pos: Vector2, reach: float) -> bool:
 	var best := -1
 	var best_dist := reach * reach
 	for i in _suits_lying.size():
-		var dist := _suits_lying[i].global_position.distance_squared_to(pos)
+		# Plošina je posunutá podle kamery, skafandr leží na místě bez posunu.
+		var dist := to_global(_suits_lying[i].position).distance_squared_to(pos)
 		if dist <= best_dist:
 			best_dist = dist
 			best = i
@@ -297,8 +413,70 @@ func at_dock(pos: Vector2, body: float) -> bool:
 	return local.y >= _dock_from and local.y <= _dock_to + reach and absf(local.x) <= _dock_half + reach
 
 
+## Stav k uložení: kolik kamenů je v každém zásobníku, kolik skafandrů leží na výstupku
+## a jestli je vzduch čistý. Kámen, který do zásobníku zrovna letí, se počítá, jako by dopadl.
+## Zásobník, který zrovna drtí, je plný a po obnovení se rozjede znovu.
+func snapshot() -> Dictionary:
+	var lanes := {}
+	for lane: Lane in _lanes.values():
+		var stones := {}
+		for mat: int in lane.need:
+			var count := maxi(int(lane.claimed.get(mat, 0)), int(lane.got.get(mat, 0)))
+			if count > 0:
+				stones[mat] = count
+		lanes[lane.id] = stones
+	return {"lanes": lanes, "suits": _suits_lying.size(), "done": _done}
+
+
+## Obnoví stav ze snapshot. Kameny leží rovnou na svých místech na hromadě.
+func restore(data: Dictionary) -> void:
+	if bool(data.get("done", false)):
+		_done = true
+		for lane: Lane in _lanes.values():
+			_hide_sign(lane, true)
+	else:
+		var lanes: Dictionary = data.get("lanes", {})
+		for id: int in lanes:
+			var lane: Lane = _lanes.get(id)
+			if lane == null:
+				continue
+			var stones: Dictionary = lanes[id]
+			for mat: int in stones:
+				for _i in mini(int(stones[mat]), int(lane.need.get(mat, 0))):
+					_lay_stone(lane, mat)
+			_update_sign(lane)
+	for _i in int(data.get("suits", 0)):
+		var sprite := _suit_sprite()
+		if sprite == null:
+			break
+		sprite.position = _suit_slot()
+		_suits_lying.append(sprite)
+
+
+## Kámen z uložené hry: leží hned na svém místě na hromadě, nic nezazní.
+func _lay_stone(lane: Lane, mat: int) -> void:
+	var sprite := _crystal.make_sprite()
+	_riders.add_child(sprite)
+	sprite.scale = Vector2.ONE * STONE_SCALE
+	var slot := lane.stones.size()
+	var stone := Stone.new()
+	stone.sprite = sprite
+	stone.mat = mat
+	stone.stop = _stack_at(lane, slot)
+	stone.along = stone.stop
+	stone.aside = _lane_shift(lane.id) + (float(slot % 3) - 1.0) * _lane_half * 0.35 + _rng.randf_range(-1.5, 1.5)
+	var rot := _rng.randf() * TAU
+	sprite.position = _lane_point(lane.id, stone.along, stone.aside - _lane_shift(lane.id))
+	sprite.rotation = rot
+	_crystal.paint(sprite, mat, 0.0, rot)
+	lane.stones.append(stone)
+	lane.got[mat] = int(lane.got.get(mat, 0)) + 1
+	lane.claimed[mat] = int(lane.claimed.get(mat, 0)) + 1
+
+
 func _process(delta: float) -> void:
 	super._process(delta)
+	_aim_arrows(delta)
 	if _lanes.is_empty():
 		return
 	var speed := BELT_METERS * float(TerrainCatalog.TILE_SIZE) * delta
@@ -589,6 +767,23 @@ class Stone:
 	var stop := 0.0
 	var aside := 0.0
 	var wait := 0.0
+
+
+## Neonová šipka k dolu, míří po své ose x.
+class MineArrow:
+	extends Node2D
+
+	const SHAPE: PackedVector2Array = [
+		Vector2(-9.0, -2.6), Vector2(2.0, -2.6), Vector2(2.0, -6.5), Vector2(11.0, 0.0),
+		Vector2(2.0, 6.5), Vector2(2.0, 2.6), Vector2(-9.0, 2.6),
+	]
+
+	func _draw() -> void:
+		draw_circle(Vector2.ZERO, 12.5, Color(0.06, 0.07, 0.08, 0.6))
+		var outline := SHAPE.duplicate()
+		outline.append(SHAPE[0])
+		draw_polyline(outline, Color(0.1, 0.85, 1.0, 0.55), 3.0, true)
+		draw_colored_polygon(SHAPE, Color(0.55, 1.0, 0.95))
 
 
 ## Tmavý kruh pod obrázkem materiálu, ať je cedulka vidět na každé zemi.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Příšery z pohledu shora: had, pavouk, vlk, ptakoještěr a tyranosaurus.
+"""Příšery z pohledu shora: had, pavouk, vlk, ptakoještěr, tyranosaurus a kamenná koule.
 
 64 px je 1 m, stejně jako u postavy, skal a stromů. Kreslí se ve čtyřnásobném
 rozlišení do plátna druhu (canvas). Uložená buňka vrstvy je ořezaná na obsah,
@@ -55,6 +55,21 @@ nepůsobil jako zespodu. Konce křídel jsou v akcentu.
 Tyranosaurus: vrstva 1 (nohy, 0 m), vrstva 2 (stehna, trup, ocas, ruce a hlava,
 1,2 m). Holeň začíná pod stehnem, chodidlo vykukuje vedle břicha a kořene ocasu.
 Kyčle se kývají k noze na zemi, ocas se vlní a hlava kývá proti kyčlím.
+
+Kamenná koule (koule2) je jen z kamenů, valí se a nemá kamennou předlohu. Vrstva 1
+(0 m) je celá koule tmavší, vrstva 2 (0,55 m) světlejší vršek s očima. U kraje obrazovky
+spodní vrstva vykoukne jako bok koule. Kameny leží na povrchu koule a za cyklus se koule
+jednou otočí dopředu, takže urazí svůj obvod a kameny po zemi neklouzají. U horizontu se
+kameny zploští, vpředu zmizí a zezadu se vynoří. Rudé oči v tmavých důlcích se netočí, kameny
+se valí pod nimi. Šikmé víčko a kamenné obočí je zamračí. Úplně vpředu je zamračená tlama
+s kamennými zuby, uvnitř žhne. Za cyklus dvakrát kousne: spodní čelist pomalu klesne dopředu,
+žár se rozsvítí a tlama rychle cvakne, zuby se zaklesnou do sebe. Oči a tlama jsou na pevné obličejové desce, která
+se netočí, valící se kameny zajíždějí pod její okraj. Okraj desky na kouli je poloprůhledný
+přechod, kameny pod ním postupně prosvítají. Deska je vysunutá dopředu a vpředu
+trochu přečnívá přes obrys koule jako vystrčená čelist. Za obličejem vede přes vršek
+hřbetní hřeben, nepravidelný pás kamenů, který se valí stejným směrem jako koule, ale
+čtyřikrát pomaleji. Vede jen od obličeje kousek za střed koule a ke konci plynule zmizí.
+Zvuky má vlastní (kamenné dunění v gen_sounds).
 
 Atlasy jdou do godot/graphics/characters/monsters, náhledy do tools/preview.
 
@@ -489,6 +504,79 @@ SNAKE_STONE_STRETCH = 1.25
 # Kameny hlavy a krku od krku k čenichu: s a poloměr jako díl šířky.
 SNAKE_HEAD_STONES = ((20.0, 1.1), (15.5, 1.15), (10.5, 1.0), (6.5, 0.95), (2.6, 0.95))
 
+# Kamenná koule (koule2). Tělo je o desetinu menší než pavoukovo, poloměr koule v px je stejný
+# jako poloměr těla. Střed koule je ve středu plátna.
+BALL_CANVAS = 80
+BALL_BODY = round(0.45 * 0.9, 3)
+BALL_R = BALL_BODY * PX_PER_METER
+BALL_HEIGHT = 0.55
+BALL_FRAMES = 24
+# Kameny jsou rozložené po kouli rovnoměrně (Fibonacciho spirála), poloměr v px kolísá o 30 %.
+# Kámen pod horizontem do -BALL_HIDE ještě vykukuje na obrysu.
+BALL_STONES = 64
+BALL_STONE_R = 6.0
+BALL_HIDE = 0.2
+# Světlost kamene podle výšky na kouli a ztmavení spodní vrstvy.
+BALL_LIGHT = (0.42, 0.58)
+BALL_LOW_DIM = 0.55
+# Pravé oko: bod na kouli. Oko je šikmá mandle (poloosy v px), vnitřní koutek je níž na tváři,
+# tedy víc vpředu, o BALL_EYE_TILT stupňů. Tmavý důlek je o BALL_SOCKET px větší.
+BALL_EYE = (0.37, -0.69, 0.62)
+BALL_EYE_SIZE = (4.2, 2.7)
+BALL_EYE_TILT = 30.0
+BALL_SOCKET = 1.1
+# Zornice je svislá štěrbina: poloviční délka a poloměr v px.
+BALL_PUPIL = (1.5, 0.45)
+# Víčko uřízne oko rovnou hranou: výška hrany u vnitřního a vnějšího koutku jako díl výšky oka.
+# U nosu zbude špička, ven se oko rozšíří do zamračeného klínu.
+BALL_LID = (-0.05, 0.85)
+# Obočí je protažený kámen na hraně víčka: posun nad hranu, poloměr a protažení.
+BALL_BROW = (1.9, 2.5, 1.9)
+# Obličej (oči a tlama) je pevná kamenná deska, která se netočí: čepička koule kolem směru
+# BALL_FACE s úhlovým poloměrem BALL_FACE_ANGLE stupňů. Valící se kameny zajíždějí pod její okraj.
+BALL_FACE = (0.0, -0.86, 0.5)
+BALL_FACE_ANGLE = 40.0
+# Deska má kameny hustší než zbytek koule (tolik bodů na celou kouli) a o kus světlejší.
+BALL_FACE_DENSITY = 84
+BALL_FACE_LIGHT = 1.08
+# Deska i s očima a tlamou je vysunutá o tolik px dopředu a vpředu přečnívá přes obrys koule.
+BALL_FACE_SHIFT = 3.0
+# Na okraji, kde deska leží na kouli, deska na tolik px plynule průhlední a valící se kameny
+# pod ní prosvítají. Kde deska přečnívá přes obrys koule, zůstane okraj ostrý.
+BALL_FACE_FEATHER = 4.0
+# Tlama úplně vpředu pod očima: bod na kouli, poloviční šířka a výška horního rtu v px a o kolik
+# px klesnou koutky k přední straně (zamračení). Uvnitř žhne barvou očí, otevřená víc.
+BALL_MOUTH = (0.0, -0.93, 0.37)
+BALL_MOUTH_SIZE = (7.6, 1.6)
+BALL_MOUTH_FROWN = 2.0
+BALL_MOUTH_GLOW = (0.35, 0.9)
+# Kousání: za cyklus BALL_BITES kousnutí (celé číslo, ať smyčka nemá skok). Spodní čelist
+# klesá dopředu, výška spodního rtu zavřené a otevřené tlamy v px. Otvírá se pomalu a cvakne
+# rychle: otevřená je nejvíc v BALL_BITE_PEAK kousnutí.
+BALL_BITES = 2
+BALL_JAW = (0.8, 5.6)
+BALL_BITE_PEAK = 0.7
+# Hřbetní hřeben: nepravidelný pás kamenů podél horní osy koule zezadu přes vršek až pod obličej.
+# Valí se stejným směrem jako koule, ale pomaleji: za cyklus o BALL_RIDGE_SPEED otáčky. Pás se
+# skládá z 1 / BALL_RIDGE_SPEED stejných úseků, za cyklus se posune právě o jeden, takže smyčka
+# nemá skok. V úseku je BALL_RIDGE_STONES kamenů rozházených podél i napříč.
+BALL_RIDGE_SPEED = 0.25
+BALL_RIDGE_STONES = 13
+# Poloviční šířka pásu jako díl poloměru: střed a zvlnění okraje.
+BALL_RIDGE_WIDTH = (0.38, 0.07)
+# Kameny: největší vybočení do strany (díl poloměru), poloměr v px od do a světlost od do.
+BALL_RIDGE_ACROSS = 0.26
+BALL_RIDGE_SIZE = (4.0, 7.0)
+BALL_RIDGE_LIGHT = (0.88, 1.15)
+# Pás vede jen od obličeje přes vršek kousek za střed koule, zadní část je bez něj. Konec je
+# BALL_RIDGE_END poloměru za středem a pás k němu plynule průhlední na BALL_RIDGE_FADE px.
+BALL_RIDGE_END = 0.2
+BALL_RIDGE_FADE = 6.0
+# Zuby: počet nahoře a dole, délka v px. Zavřené se zaklesnou do sebe.
+BALL_TEETH = (4, 3, 2.4)
+# Zuby jsou obarvené akcentem jako kresba ostatních golemů.
+BALL_TEETH_ACCENT = 0.7
+
 # Druhy. Materiály druhu a jejich barvy jsou v gen_crystal.MATERIALS.
 # preview_shadow je obdélník elipsy stínu jen v náhledech, ve hře se nekreslí.
 # Vrstva se shadow je skutečný stín v atlasu. info se zkopíruje do katalogu.
@@ -592,7 +680,7 @@ MONSTERS = {
         "jump_meters": 2.1,
         "eye": "FFD23A",
     },
-    # Kamenný vlk místo vlka. Zvuky má vlčí.
+    # Kamenný vlk místo vlka, rychlejší než původní. Zvuky má vlčí.
     "vlk2": {
         "canvas": WOLF_CANVAS,
         "info": {"shader": "stone", "sound": "vlk"},
@@ -605,7 +693,7 @@ MONSTERS = {
         "cycle_meters": 2.0 * WOLF_STRIDE * WOLF_ZOOM / PX_PER_METER,
         "frames": 8,
         "wander_meters": 1.0,
-        "chase_meters": 4.5,
+        "chase_meters": 5.0,
         "body_meters": round(0.45 * WOLF_ZOOM, 3),
         "height_meters": 0.7,
         "jump_meters": 2.1,
@@ -630,7 +718,7 @@ MONSTERS = {
         "height_meters": 1.0,
         "eye": "7DF2FF",
     },
-    # Kamenný ptakoještěr místo ptakoještěra, o pětinu větší. Zvuky má ptakoještěří.
+    # Kamenný ptakoještěr místo ptakoještěra, o pětinu větší a rychlejší. Zvuky má ptakoještěří.
     "ptakojester2": {
         "canvas": PTERO_CANVAS,
         "zoom": PTERO_STONE_ZOOM,
@@ -644,7 +732,7 @@ MONSTERS = {
         "info": {"flying": True, "glide_frame": PTERO_GLIDE_FRAME, "shader": "stone", "sound": "ptakojester"},
         "preview_cycle_ms": 1600,
         "wander_meters": 1.5,
-        "chase_meters": 5.0,
+        "chase_meters": 5.5,
         "body_meters": round(0.8 * PTERO_STONE_ZOOM, 3),
         "height_meters": 1.0,
         "eye": "7DF2FF",
@@ -667,7 +755,7 @@ MONSTERS = {
         "jump_meters": 4.1,
         "eye": "FFC21A",
     },
-    # Kamenný tyranosaurus místo tyranosaura. Zvuky má tyranosauří.
+    # Kamenný tyranosaurus místo tyranosaura, rychlejší než původní. Zvuky má tyranosauří.
     "rex2": {
         "canvas": REX_CANVAS,
         "info": {"shader": "stone", "sound": "tyranosaurus"},
@@ -679,11 +767,31 @@ MONSTERS = {
         "cycle_meters": 2.0 * REX_STRIDE / PX_PER_METER,
         "frames": 16,
         "wander_meters": 0.8,
-        "chase_meters": 5.3,
+        "chase_meters": 5.5,
         "body_meters": 0.55,
         "height_meters": 3.0,
         "jump_meters": 4.1,
         "eye": "FFC21A",
+    },
+    # Kamenná koule místo kamenného vlka, o desetinu menší než pavouk. Za cyklus se jednou otočí.
+    # Zvuky má vlastní, kamenné dunění.
+    "koule2": {
+        "canvas": BALL_CANVAS,
+        "preview_shadow": ((-BALL_R * 1.05, -BALL_R * 0.9), (BALL_R * 1.05, BALL_R * 1.15)),
+        "preview_materials": ("lavovy", "zlato"),
+        "info": {"shader": "stone", "sound": "koule"},
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": BALL_HEIGHT, "file": "layer_2.png"},
+        },
+        "cycle_meters": math.tau * BALL_R / PX_PER_METER,
+        "frames": BALL_FRAMES,
+        "preview_cycle_ms": 900,
+        "wander_meters": 1.0,
+        "chase_meters": 4.5,
+        "body_meters": BALL_BODY,
+        "height_meters": round(2.0 * BALL_BODY, 3),
+        "eye": "FF3A1A",
     },
 }
 
@@ -824,6 +932,17 @@ class Layer:
             self.polygon(left + right[::-1], value, accent)
             self.disk(spine[0], widths[0] * outer, value, accent)
             self.disk(spine[-1], widths[-1] * outer, value, accent)
+
+    def blend(self, other: Layer, mask: Image.Image) -> None:
+        """Vmíchá jinou vrstvu přes tuhle. mask (L ve čtyřnásobném rozlišení) je krytí other,
+        násobí se jejím vlastním krytím. Semínka odlesků se převezmou, kde other převažuje."""
+        cover = ImageChops.multiply(mask, other.channels[3])
+        for index in range(3):
+            self.channels[index] = Image.composite(other.channels[index], self.channels[index], cover)
+        self.channels[3] = ImageChops.lighter(self.channels[3], cover)
+        self.spark = Image.composite(other.spark, self.spark, cover.point(lambda value: 255 if value >= 128 else 0))
+        self.draws = [ImageDraw.Draw(channel) for channel in self.channels]
+        self.spark_draw = ImageDraw.Draw(self.spark)
 
     def shadow(self, blur: float = 1.2) -> Layer:
         """Stín vrstvy na zemi: jen krytí, rozmazané o blur px."""
@@ -2051,6 +2170,287 @@ SNAKE_STONES = snake_stones()
 PTERO_WING_STONES = ptero_wing_stones()
 
 
+def ball_stones() -> tuple[tuple[float, float, float], ...]:
+    """Body kamenů na kouli o poloměru 1 (Fibonacciho spirála s drobným posunem)."""
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+    points = []
+    for index in range(BALL_STONES):
+        z = 1.0 - 2.0 * (index + 0.5) / BALL_STONES
+        r = math.sqrt(1.0 - z * z)
+        a = golden * index + 0.4 * (facet_factor(900 + index, 3) - 0.5)
+        points.append((math.cos(a) * r, math.sin(a) * r, z))
+    return tuple(points)
+
+
+BALL_STONE_POINTS = ball_stones()
+
+
+def unit(vector: tuple[float, float, float]) -> tuple[float, float, float]:
+    length = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return (vector[0] / length, vector[1] / length, vector[2] / length)
+
+
+BALL_FACE_DIR = unit(BALL_FACE)
+BALL_FACE_COS = math.cos(math.radians(BALL_FACE_ANGLE))
+
+
+def face_stones() -> tuple[tuple[float, float, float], ...]:
+    """Kameny obličejové desky: hustší Fibonacciho spirála, jen body uvnitř čepičky a nad horizontem."""
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+    points = []
+    for index in range(BALL_FACE_DENSITY):
+        z = 1.0 - 2.0 * (index + 0.5) / BALL_FACE_DENSITY
+        r = math.sqrt(1.0 - z * z)
+        a = golden * index + 0.4 * (facet_factor(1200 + index, 3) - 0.5)
+        point = (math.cos(a) * r, math.sin(a) * r, z)
+        if point[2] >= -BALL_HIDE and sum(p * f for p, f in zip(point, BALL_FACE_DIR)) > BALL_FACE_COS - 0.02:
+            points.append(point)
+    return tuple(points)
+
+
+BALL_FACE_STONES = face_stones()
+
+
+def ball_stone(layer: Layer, point: tuple[float, float, float], index: int, dim: float, shift: float = 0.0) -> None:
+    """Kámen na kouli v bodě point (poloměr 1), posunutý o shift px dopředu. U horizontu se zploští
+    ve směru od středu."""
+    x, y, z = point
+    radial = math.atan2(y, x) if abs(x) + abs(y) > 1e-6 else 0.0
+    radius = BALL_STONE_R * (0.85 + 0.3 * facet_factor(index, 5))
+    light = (BALL_LIGHT[0] + BALL_LIGHT[1] * max(0.0, z) ** 0.7) * dim
+    paint_stone(layer, (x * BALL_R, y * BALL_R - shift), radius, radial, 700 + index, light, SPARK_BODY, max(0.35, z))
+
+
+def face_outline() -> list[Point]:
+    """Obrys obličejové desky na obrazovce. Část za horizontem se přitiskne na obrys koule."""
+    fx, fy, fz = BALL_FACE_DIR
+    side = (1.0, 0.0, 0.0)
+    up = unit((fy * side[2] - fz * side[1], fz * side[0] - fx * side[2], fx * side[1] - fy * side[0]))
+    spread = math.sin(math.radians(BALL_FACE_ANGLE))
+    points = []
+    for k in range(48):
+        a = math.tau * k / 48
+        x, y, z = (
+            BALL_FACE_COS * f + spread * (math.cos(a) * e1 + math.sin(a) * e2)
+            for f, e1, e2 in zip(BALL_FACE_DIR, side, up)
+        )
+        if z < 0.0:
+            flat = math.hypot(x, y) or 1.0
+            x, y = x / flat, y / flat
+        points.append((x * BALL_R, y * BALL_R - BALL_FACE_SHIFT))
+    return points
+
+
+def paint_ball(layer: Layer, t: float, dim: float) -> None:
+    """Koule z kamenů na tmavém jádru, otočená o fázi t dopředu. Vzdálenější kameny se kreslí dřív.
+
+    Přes ni pevná obličejová deska: tmavá čepička a na ní kameny v poloze z fáze 0.
+    """
+    layer.dome((0.0, 0.0), (BALL_R * 0.97, BALL_R * 0.97), 0.0, 0.04, 0.16)
+    c, s = math.cos(math.tau * t), math.sin(math.tau * t)
+    placed = []
+    for index, (x, y, z) in enumerate(BALL_STONE_POINTS):
+        # Valí se na sever: vršek koule jede dopředu (-Y).
+        turned = (x, y * c - z * s, y * s + z * c)
+        if turned[2] >= -BALL_HIDE:
+            placed.append((turned[2], turned, index))
+    placed.sort()
+    for _z, point, index in placed:
+        ball_stone(layer, point, index, dim)
+    ridge = Layer(layer.canvas)
+    paint_ball_ridge(ridge, t, dim)
+    layer.blend(ridge, ridge_mask(layer.canvas))
+    plate = Layer(layer.canvas)
+    plate.polygon(face_outline(), 0.04)
+    for _z, point, index in sorted((point[2], point, index) for index, point in enumerate(BALL_FACE_STONES)):
+        ball_stone(plate, point, 1000 + index, dim * BALL_FACE_LIGHT, BALL_FACE_SHIFT)
+    layer.blend(plate, face_mask(layer.canvas))
+
+
+def ridge_mask(canvas: int) -> Image.Image:
+    """Krytí hřbetního pásu: vpředu plné, ke konci za středem koule plynule klesá k nule."""
+    size = canvas * SS
+    layer = Layer(canvas)
+    _x, end = layer.px((0.0, BALL_RIDGE_END * BALL_R))
+    fade = BALL_RIDGE_FADE * SS
+    mask = Image.new("L", (size, size), 0)
+    draw = ImageDraw.Draw(mask)
+    for row in range(size):
+        s = max(0.0, min(1.0, (end - row) / fade))
+        draw.line((0, row, size, row), fill=byte(s * s * (3.0 - 2.0 * s)))
+    return mask
+
+
+def face_mask(canvas: int) -> Image.Image:
+    """Krytí obličejové desky: uvnitř plné, k okraji na kouli plynule klesá k nule. Mimo kouli
+    (kde deska přečnívá) je plné, takže tam okraj zůstane ostrý."""
+    size = canvas * SS
+    feather = BALL_FACE_FEATHER * SS
+    inside = Image.new("L", (size, size), 0)
+    layer = Layer(canvas)
+    ImageDraw.Draw(inside).polygon([layer.px(point) for point in face_outline()], fill=255)
+    # Okraj se nejdřív zúží o polovinu přechodu a pak rozmaže, takže na obrysu je krytí skoro nula.
+    shrink = 2 * round(feather / 2) + 1
+    mask = inside.filter(ImageFilter.MinFilter(shrink)).filter(ImageFilter.GaussianBlur(feather / 2))
+    ball = Image.new("L", (size, size), 0)
+    cx, cy = layer.px((0.0, 0.0))
+    r = BALL_R * 0.96 * SS
+    ImageDraw.Draw(ball).ellipse((cx - r, cy - r, cx + r, cy + r), fill=255)
+    outside = ImageChops.invert(ball.filter(ImageFilter.GaussianBlur(SS)))
+    return ImageChops.lighter(mask, outside)
+
+
+def ridge_stones() -> tuple[tuple[float, float, float, float], ...]:
+    """Kameny jednoho úseku hřebene: (díl úseku podél, vybočení, poloměr, světlost). Menší první,
+    větší se kreslí přes ně."""
+    stones = []
+    for k in range(BALL_RIDGE_STONES):
+        along = (k + 0.15 + 0.7 * facet_factor(1500 + k, 1)) / BALL_RIDGE_STONES
+        across = BALL_RIDGE_ACROSS * (2.0 * facet_factor(1500 + k, 2) - 1.0)
+        size = BALL_RIDGE_SIZE[0] + (BALL_RIDGE_SIZE[1] - BALL_RIDGE_SIZE[0]) * facet_factor(1500 + k, 3)
+        # Kameny u osy jsou větší, ať pás tvoří hřeben.
+        size *= 1.0 - 0.35 * abs(across) / BALL_RIDGE_ACROSS
+        light = BALL_RIDGE_LIGHT[0] + (BALL_RIDGE_LIGHT[1] - BALL_RIDGE_LIGHT[0]) * facet_factor(1500 + k, 4)
+        stones.append((along, across, size, light))
+    return tuple(sorted(stones, key=lambda stone: stone[2]))
+
+
+BALL_RIDGE = ridge_stones()
+
+
+def paint_ball_ridge(layer: Layer, t: float, dim: float) -> None:
+    """Hřbetní hřeben: tmavý pás se zvlněným okrajem přes vršek a na něm nepravidelně rozházené
+    kameny. Valí se dopředu pomaleji než koule, přední konec zajede pod obličejovou desku.
+    Kreslí se kolem celé koule, zadní část pak ořízne ridge_mask."""
+    tiles = round(1.0 / BALL_RIDGE_SPEED)
+    tile = math.tau / tiles
+    # Za cyklus se pás posune o jeden úsek.
+    roll = tile * t
+
+    def on_ball(angle: float, across: float) -> tuple[float, float, float]:
+        # Stejný směr jako koule: vršek jede dopředu (-Y).
+        ring = math.sqrt(1.0 - across * across)
+        return (across, -math.sin(angle) * ring, math.cos(angle) * ring)
+
+    def width(angle: float) -> float:
+        middle, wobble = BALL_RIDGE_WIDTH
+        phase = (angle - roll) * tiles
+        return middle + wobble * (0.6 * math.sin(phase) + 0.4 * math.sin(2.0 * phase + 1.3))
+
+    angles = [-math.pi / 2 + math.pi * k / 40 for k in range(41)]
+    right = [on_ball(angle, width(angle)) for angle in angles]
+    left = [on_ball(angle, -width(angle)) for angle in reversed(angles)]
+    layer.polygon([(x * BALL_R, y * BALL_R) for x, y, _z in right + left], 0.05)
+
+    placed = []
+    for repeat in range(tiles):
+        for index, (along, across, size, light) in enumerate(BALL_RIDGE):
+            point = on_ball(tile * (repeat + along) + roll, across)
+            if point[2] >= -BALL_HIDE:
+                placed.append((point[2], size, point, index, light))
+    for _z, size, (x, y, z), index, light in sorted(placed):
+        lit = (BALL_LIGHT[0] + BALL_LIGHT[1] * max(0.0, z) ** 0.7) * light * dim
+        radial = math.atan2(y, x) if abs(x) + abs(y) > 1e-6 else 0.0
+        # U horizontu se kámen zploští ve směru od středu.
+        paint_stone(layer, (x * BALL_R, y * BALL_R), size, radial, 1400 + index, min(1.0, lit), SPARK_BODY, max(0.35, z))
+
+
+def bite_open(t: float) -> float:
+    """Jak moc je tlama otevřená ve fázi t, 0 až 1. Pomalu se otvírá, rychle cvakne."""
+    phase = (t * BALL_BITES) % 1.0
+    skew = phase ** (math.log(0.5) / math.log(BALL_BITE_PEAK))
+    return math.sin(math.pi * skew) ** 1.5
+
+
+def paint_ball_mouth(layer: Layer, t: float) -> None:
+    """Zamračená tlama vpředu, která kouše: horní ret stojí, spodní čelist klesá dopředu.
+    Uvnitř žhne, nahoře a dole kamenné zuby, zavřené se zaklesnou do sebe.
+
+    Nahoru po tváři je k vršku koule (+Y), koutky klesají dopředu (-Y).
+    """
+    x, y, z = unit(BALL_MOUTH)
+    cx, cy = x * BALL_R, y * BALL_R - BALL_FACE_SHIFT
+    w, top = BALL_MOUTH_SIZE
+    opened = bite_open(t)
+    jaw = BALL_JAW[0] + (BALL_JAW[1] - BALL_JAW[0]) * opened
+
+    def at(u: float, v: float) -> Point:
+        return (cx + u, cy + v - BALL_MOUTH_FROWN * (u / w) ** 2)
+
+    def outline(grow: float) -> list[Point]:
+        # Horní půlka má výšku horního rtu, spodní výšku čelisti.
+        points = []
+        for k in range(32):
+            q = math.tau * k / 32
+            height = (top if math.sin(q) > 0.0 else jaw) + grow
+            points.append(at((w + grow) * math.cos(q), height * math.sin(q)))
+        return points
+
+    layer.polygon(outline(1.0), 0.03)
+    glow = BALL_MOUTH_GLOW[0] + (BALL_MOUTH_GLOW[1] - BALL_MOUTH_GLOW[0]) * opened
+    layer.polygon(outline(0.0), 0.04, 0.0, glow)
+    upper, lower, size = BALL_TEETH
+    # Spodní zuby první, horní přes ně, ať se zavřené zaklesnou.
+    for count, edge, height in ((lower, -1.0, jaw), (upper, 1.0, top)):
+        span = 2.0 * w * 0.82 / count
+        for k in range(count):
+            u = -w * 0.82 + span * (k + 0.5)
+            root = height * edge * math.sqrt(max(0.0, 1.0 - (u / w) ** 2))
+            tip = root - edge * size * (0.75 + 0.25 * facet_factor(950 + k, int(edge + 2)))
+            half = span * 0.42
+            # Tmavý obrys oddělí zub od žáru i od souseda.
+            layer.polygon([at(u - half - 0.6, root + edge * 0.8), at(u + half + 0.6, root + edge * 0.8), at(u, tip - edge * 0.7)], 0.03)
+            layer.polygon([at(u - half, root + edge * 0.6), at(u + half, root + edge * 0.6), at(u, tip)], 1.0, BALL_TEETH_ACCENT)
+
+
+def ball_layers(t: float) -> dict[int, Layer]:
+    """Kamenná koule: spodní vrstva je tatáž koule tmavší, horní má navíc oči."""
+    low, top = Layer(BALL_CANVAS), Layer(BALL_CANVAS)
+    paint_ball(low, t, BALL_LOW_DIM)
+    paint_ball(top, t, 1.0)
+    for side in (-1.0, 1.0):
+        paint_ball_eye(top, side)
+    paint_ball_mouth(top, t)
+    return {1: low, 2: top}
+
+
+def paint_ball_eye(layer: Layer, side: float) -> None:
+    """Zlověstné oko: šikmá svítící mandle v důlku, štěrbina zornice a zamračené kamenné obočí.
+
+    Nahoru po tváři je k vršku koule (+Y), vnitřní koutek míří ke středu a dopředu.
+    """
+    x, y, z = BALL_EYE
+    length = math.sqrt(x * x + y * y + z * z)
+    center = (side * x / length * BALL_R, y / length * BALL_R - BALL_FACE_SHIFT)
+    # Osa oka ven od nosu: ven a zároveň nahoru po tváři.
+    tilt = math.radians(BALL_EYE_TILT)
+    along = (side * math.cos(tilt), math.sin(tilt))
+    up = (-along[1] * side, along[0] * side)
+
+    def at(u: float, v: float) -> Point:
+        return (center[0] + along[0] * u + up[0] * v, center[1] + along[1] * u + up[1] * v)
+
+    def almond(grow: float) -> list[Point]:
+        a, b = BALL_EYE_SIZE[0] + grow, BALL_EYE_SIZE[1] + grow
+        # Mandle: špičaté koutky, víčka se zužují ke krajům.
+        return [at(a * math.cos(q), b * math.sin(q) * abs(math.sin(q)) ** 0.35)
+                for q in (math.tau * k / 24 for k in range(24))]
+
+    a, b = BALL_EYE_SIZE
+    inner, outer = (BALL_LID[0] * b, BALL_LID[1] * b)
+    reach = a + BALL_SOCKET + 1.0
+    layer.polygon(almond(BALL_SOCKET), 0.03)
+    layer.polygon(almond(0.0), None, 0.0, 1.0)
+    layer.capsule(at(0.6, -BALL_PUPIL[0]), at(0.6, BALL_PUPIL[0]), BALL_PUPIL[1], BALL_PUPIL[1], 0.02, 0.0, 0.0)
+    # Víčko: všechno nad šikmou hranou je tmavý důlek.
+    rise = (outer - inner) / (2.0 * a)
+    edge = lambda u: inner + (u + a) * rise
+    layer.polygon([at(-reach, edge(-reach)), at(reach, edge(reach)), at(reach, edge(reach) + 6.0), at(-reach, edge(-reach) + 6.0)], 0.03)
+    lift, radius, stretch = BALL_BROW
+    brow_angle = math.atan2(along[1] + up[1] * rise, along[0] + up[0] * rise)
+    paint_stone(layer, at(0.0, edge(0.0) + lift), radius, brow_angle, 880 + (1 if side > 0 else 0), 0.62, 0.0, stretch)
+
+
 # Kreslení druhu dostane fázi cyklu 0 až 1, ne číslo snímku.
 RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
     "had": snake_layers,
@@ -2063,6 +2463,7 @@ RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
     "ptakojester2": stone_ptero_layers,
     "tyranosaurus": rex_layers,
     "rex2": stone_rex_layers,
+    "koule2": ball_layers,
 }
 
 

@@ -858,6 +858,17 @@ func receive(mat: int, world: Vector2, rot: float, lane: int = -1) -> void:
 	_factory.receive(mat, world, rot)
 
 
+## Výška plošiny továrny v metrech, tam dopadají hozené kameny.
+func deck_height() -> float:
+	return _factory.deck_height() if _factory != null else 0.0
+
+
+## Kámen, který se do továrny Skafandrů nikam nevejde, dopadl na konec zásobníku a rozplyne se.
+func discard(mat: int, world: Vector2, rot: float) -> void:
+	if suit_factory() != null:
+		suit_factory().discard(mat, world, rot)
+
+
 ## Továrna typu Skafandry, jinak null.
 func suit_factory() -> SuitFactory:
 	return _factory as SuitFactory

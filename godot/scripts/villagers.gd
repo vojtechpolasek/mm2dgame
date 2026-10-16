@@ -56,16 +56,23 @@ func spawn(
 	host: Node2D,
 	monsters: Monsters,
 	rng: RandomNumberGenerator,
+	saved: Array = [],
 ) -> void:
 	_monsters = monsters
 	var houses := town.house_count()
 	if houses == 0:
 		return
+	# Uložená hra: stejní vesničané ve stejných domech (Villager.origin).
 	var homes := PackedInt32Array()
-	for house in houses:
-		for _i in rng.randi_range(PER_HOUSE.x, PER_HOUSE.y):
-			homes.append(house)
-	var mats := _materials(rocks, crystal, homes.size(), rng)
+	var mats := PackedInt32Array()
+	for entry: Dictionary in saved:
+		homes.append(clampi(int(entry.get("home", 0)), 0, houses - 1))
+		mats.append(int(entry.get("mat", -1)))
+	if saved.is_empty():
+		for house in houses:
+			for _i in rng.randi_range(PER_HOUSE.x, PER_HOUSE.y):
+				homes.append(house)
+		mats = _materials(rocks, crystal, homes.size(), rng)
 	var taken := PackedStringArray()
 	for person in persons:
 		taken.append(str(GameSession.player_colors(person.player_index).get("shirt", "")))
@@ -75,7 +82,9 @@ func spawn(
 		host.add_child(villager)
 		if walker.crowd != null:
 			villager.crowd_id = walker.crowd.join(villager)
-		var colors := Villager.outfit(rng, taken)
+		var colors: Dictionary = saved[i].get("colors", {}) if not saved.is_empty() else Villager.outfit(rng, taken)
+		if colors.is_empty():
+			colors = Villager.outfit(rng, taken)
 		if not villager.setup(walker, _nav, town, rocks, crystal, camera, persons, host, homes[i], mats[i], colors, rng):
 			villager.queue_free()
 			continue
@@ -129,6 +138,23 @@ func _process(delta: float) -> void:
 			break
 		best.help(best_monster)
 		guards[best_monster.prey()] = int(guards.get(best_monster.prey(), 0)) + 1
+
+
+# --- Uložení ---
+
+## Stav všech vesničanů k uložení, po pořadí. Viz Villager.snapshot.
+func snapshot(persons: Array[Person]) -> Array:
+	var out: Array = []
+	for villager in members:
+		if is_instance_valid(villager):
+			out.append(villager.snapshot(persons))
+	return out
+
+
+## Stav vesničanů ze snapshot. Vesničané vznikli spawn se stejným saved, pořadí sedí.
+func restore(saved: Array, persons: Array[Person]) -> void:
+	for i in mini(saved.size(), members.size()):
+		members[i].restore(saved[i], persons)
 
 
 # --- Skafandry ---

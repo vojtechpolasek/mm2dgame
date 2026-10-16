@@ -16,7 +16,7 @@ const NavGrid := preload("res://scripts/nav_grid.gd")
 ## Dosah chňapnutí v metrech navíc k tělům. Postava přitisknutá k překážce jinak nejde dosáhnout.
 const BITE := 0.6
 ## Po krádeži si příšera tolik sekund postavy nevšímá, ať ji hned znovu nehoní.
-const CALM_SECONDS := 3.0
+const CALM_SECONDS := 1.0
 ## Toulání: další cíl je tak daleko v metrech, u něj chvíli postojí.
 const WANDER_NEAR := 4.0
 const WANDER_FAR := 14.0
@@ -53,11 +53,8 @@ const JUMP_GROW := 0.15
 const JUMP_REACH := 10.0
 const JUMP_STEP := 0.25
 ## Hlasitost kroků podle druhu v dB. Chodící dupne dvakrát za cyklus, létající mávne jednou.
-const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "tyranosaurus": 0.0, "ptakojester": -5.0}
+const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "koule": -8.0}
 const STEP_VARIANTS := 3
-## Hudba při honičce začne se zařváním, až je honící příšera na obrazovce. Pak hraje, dokud je
-## příšera vidět nebo nejdál CHASE_KEEP metrů za okrajem, ať hudba u okraje nepřeskakuje.
-const CHASE_KEEP := 3.0
 ## Vysunutí z překážky jako u postavy, v metrech a pixelech.
 const ESCAPE_METERS := 4.0
 const ESCAPE_REACH := 10.0
@@ -121,7 +118,6 @@ var _step_travel := 0.0
 ## Zařvala už v téhle honičce? Zařve, až je honící příšera poprvé na obrazovce.
 var _roared := false
 ## Patří honička k hudbě? Zapne se se zařváním, vypne, když příšera přestane honit nebo odejde z obrazovky.
-var _in_view := false
 
 
 ## info je druh z monsters.json, textures vrstvy podle pořadí klíčů, colors klíče body, accent, eye.
@@ -214,8 +210,6 @@ func _process(delta: float) -> void:
 	elif not _roared and _on_screen():
 		_roared = true
 		Sound.at("monsters/%s_roar" % kind_name, global_position, 2.0)
-	var keep := CHASE_KEEP * float(TerrainCatalog.TILE_SIZE) if _in_view else 0.0
-	_in_view = _roared and _on_screen(keep)
 	if _jumping:
 		_step_jump(delta)
 		if _prey != null:
@@ -482,6 +476,19 @@ func _pick_target() -> void:
 	_rest()
 
 
+## Stav k uložení: materiál a kde stojí.
+func snapshot() -> Dictionary:
+	return {"mat": material_index, "pos": position}
+
+
+## Příšera z uložené hry stojí na pos a calm sekund si postav nevšímá, ať hned po načtení
+## nikoho nehoní.
+func settle(pos: Vector2, calm: float) -> void:
+	position = pos
+	_calm_left = calm
+	_pick_target()
+
+
 ## Pro crowd: kruh o poloměru těla a výšce height_meters. Ve skoku přeskočí tvory do
 ## jump_meters, létající se nepočítá.
 func crowd_body() -> float:
@@ -541,11 +548,6 @@ func prey() -> Node2D:
 ## Létá nad vším? Vesničan jí do cesty nevleze.
 func is_flying() -> bool:
 	return _flying
-
-
-## Honí a hraje k tomu hudba: zařvala na obrazovce a od té doby nezmizela dál než CHASE_KEEP za okraj.
-func is_chasing_in_view() -> bool:
-	return _in_view
 
 
 ## Je příšera vidět na obrazovce? margin obrazovku zvětší o tolik pixelů světa na každou stranu.

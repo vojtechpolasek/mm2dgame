@@ -56,7 +56,8 @@ STONE_SPARKS = (210, 150, 96)
 # jde podle pořadí materiálu.
 # monster je druh příšery z gen_monsters.MONSTERS. Příšera má tělo v barvě color a kresbu
 # v monster_accent, jinak v glint. monster_speed zrychlí honičku příšery dražšího materiálu ve skupině.
-# Skupiny jdou od nejméně po nejvíc nebezpečné: had, pavouk, vlk, tyranosaurus, ptakoještěr.
+# Skupiny jdou od nejméně po nejvíc nebezpečné: had, pavouk, kamenná koule, vlk, tyranosaurus,
+# ptakoještěr. Koule hlídá poslední kameny, krystaly začínají vlkem.
 # Ptakoještěr letí přímo přes všechno, proto hlídá nejvzácnější materiály.
 MATERIALS = {
     "piskovec": {"title": "Pískovec", "shape": "stone", "points": 1, "color": "C4A56A", "sparkle": 0.10, "glint": "F0E0B8",
@@ -68,17 +69,17 @@ MATERIALS = {
     "grafit": {"title": "Grafit", "shape": "stone", "points": 10, "color": "1A1C1E", "sparkle": 0.0, "glint": "3A3A3A",
                "monster": "pavouk2", "monster_accent": "6E767E", "monster_speed": 1.08},
     "magnetit": {"title": "Magnetit", "shape": "stone", "points": 12, "color": "4A5158", "sparkle": 0.38, "glint": "E4E8EE",
-                 "monster": "vlk2", "monster_speed": 1.0},
+                 "monster": "koule2", "monster_speed": 1.0},
     "kremen": {"title": "Křemen", "shape": "stone", "points": 15, "color": "E6D6B8", "sparkle": 0.55, "glint": "FFFFFF",
-               "monster": "vlk2", "monster_accent": "8C7458", "monster_speed": 1.08},
+               "monster": "koule2", "monster_accent": "8C7458", "monster_speed": 1.08},
     "stribro": {"title": "Stříbro", "shape": "crystal", "points": 21, "color": "A8B4C6", "sparkle": 1.0, "glint": "FFFFFF",
-                "monster": "vlk2", "monster_accent": "4E5A6C", "monster_speed": 1.15},
+                "monster": "vlk2", "monster_accent": "4E5A6C", "monster_speed": 1.0},
     "jantar": {"title": "Jantar", "shape": "crystal", "points": 30, "color": "B4621C", "sparkle": 0.62, "glint": "FFE1B0",
-               "monster": "rex2", "monster_accent": "5A2410", "monster_speed": 1.0},
+               "monster": "vlk2", "monster_accent": "5A2410", "monster_speed": 1.08},
     "smaragd": {"title": "Smaragd", "shape": "crystal", "points": 42, "color": "1E8A45", "sparkle": 0.80, "glint": "E7FFE8",
-                "monster": "rex2", "monster_accent": "E2B33A", "monster_speed": 1.08},
+                "monster": "rex2", "monster_accent": "E2B33A", "monster_speed": 1.0},
     "zlato": {"title": "Zlato", "shape": "crystal", "points": 62, "color": "ECC420", "sparkle": 0.80, "glint": "FFF0A8",
-              "monster": "rex2", "monster_accent": "B8302A", "monster_speed": 1.15},
+              "monster": "rex2", "monster_accent": "B8302A", "monster_speed": 1.08},
     "rubin": {"title": "Rubín", "shape": "crystal", "points": 78, "color": "C42030", "sparkle": 0.92, "glint": "FFE8E0",
               "monster": "ptakojester2", "monster_speed": 1.0},
     "safir": {"title": "Safír", "shape": "crystal", "points": 90, "color": "2A5BD7", "sparkle": 1.15, "glint": "E4EEFF",

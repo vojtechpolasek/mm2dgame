@@ -28,8 +28,12 @@ func _describe(index: int) -> void:
 	_about.text = str(GameSession.MODES[index]["about"]) if index >= 0 else ""
 
 
+## Skafandry mají vlastní menu: hraje se od začátku a hra se ukládá.
 func _choose(index: int) -> void:
 	GameSession.mode = index
+	if str(GameSession.MODES[index]["id"]) == "suits":
+		get_tree().change_scene_to_file("res://scenes/suit_menu.tscn")
+		return
 	get_tree().change_scene_to_file("res://scenes/new_game_menu.tscn")
 
 

@@ -115,9 +115,13 @@ var _fly_rot := 0.0
 var _fly_spin := 0.0
 var _fly_age := 0.0
 var _fly_height := 0.0
+## Výška, kam kámen dopadne: plošina továrny.
+var _fly_floor := 0.0
 var _fly_mat := -1
 ## Zásobník továrny Skafandrů, kam kámen letí, -1 obyčejný pás.
 var _fly_lane := -1
+## Kámen se do továrny nikam nevejde, po dopadu se rozplyne.
+var _fly_discard := false
 ## Prázdný skafandr v ruce.
 var _suit: Sprite2D
 ## Továrna, do které kámen letí. Přechod na jiný čtverec ji nezmění.
@@ -363,10 +367,14 @@ func _carry(delta: float) -> void:
 		if _town.suit_factory() == null:
 			_throw()
 			return
-		# Zásobník na straně, u které postava stojí. Když tu kámen nikdo nechce, zůstane v ruce.
+		# Zásobník na straně, u které postava stojí. Když tu kámen nikdo nechce, zůstane v ruce,
+		# ať ho postava donese na správnou stranu. Když ho nechce nikdo v celé továrně, odletí
+		# na nejbližší zásobník a rozplyne se.
 		var lane := _town.claim_lane(position, _held_mat)
 		if lane >= 0:
 			_throw(lane)
+		elif not _town.suit_factory().wanted(_held_mat):
+			_throw(_town.suit_factory().nearest_lane(position), true)
 		return
 	var slot := _rocks.pond_at(position, BODY, _held_mat >= 0)
 	if slot < 0:
@@ -389,6 +397,22 @@ func _carry(delta: float) -> void:
 ## Nese prázdný skafandr?
 func carries_suit() -> bool:
 	return _suit != null
+
+
+## Stav k uložení: kde stojí a co nese. Kámen v letu už patří továrně.
+func snapshot() -> Dictionary:
+	return {"pos": position, "rot": rotation, "held": _held_mat, "suit": _suit != null}
+
+
+## Obnoví stav ze snapshot.
+func restore(data: Dictionary) -> void:
+	position = data.get("pos", position)
+	rotation = float(data.get("rot", rotation))
+	var held := int(data.get("held", -1))
+	if held >= 0:
+		_take(-1, held)
+	if bool(data.get("suit", false)) and _suit == null:
+		_take_suit()
 
 
 ## Dýchací přístroj na zádech postavy.
@@ -555,7 +579,7 @@ func _inside_square() -> bool:
 
 
 ## lane je zásobník továrny Skafandrů, -1 obyčejný pás.
-func _throw(lane: int = -1) -> void:
+func _throw(lane: int = -1, discard: bool = false) -> void:
 	var host := get_parent() as Node2D
 	if host == null or _held == null or _held_mat < 0 or _town == null or _town.center() == Vector2.INF:
 		return
@@ -578,11 +602,13 @@ func _throw(lane: int = -1) -> void:
 	_fly_from = flyer.position
 	_fly_town = _town
 	_fly_lane = lane
+	_fly_discard = discard
 	_fly_to = _fly_town.lane_drop(lane, _rng) if lane >= 0 else _fly_town.drop_spot(position, _rng)
 	_fly_rot = flyer.rotation
 	_fly_spin = sign * TAU * _rng.randf_range(0.75, 1.6)
 	_fly_age = 0.0
 	_fly_height = _hand_height
+	_fly_floor = _town.deck_height()
 	_fly_mat = mat
 	_pad_gem(flyer, _hand_height)
 	threw_gem.emit()
@@ -599,7 +625,7 @@ func _advance_throw(delta: float) -> void:
 		pos += delta_pos.orthogonal().normalized() * sin(t * PI) * bend * minf(THROW_ARC, delta_pos.length() * 0.22)
 	_flyer.position = pos
 	_flyer.rotation = _fly_rot + _fly_spin * eased
-	_fly_height = lerpf(_hand_height, 0.0, eased)
+	_fly_height = lerpf(_hand_height, _fly_floor, eased)
 	_pad_gem(_flyer, _fly_height)
 	if t < 1.0:
 		return
@@ -610,7 +636,9 @@ func _advance_throw(delta: float) -> void:
 	_flyer.queue_free()
 	_flyer = null
 	var town := _fly_town if _fly_town != null else _town
-	if town != null:
+	if town != null and _fly_discard:
+		town.discard(mat, landed, rot)
+	elif town != null:
 		town.receive(mat, landed, rot, _fly_lane)
 
 

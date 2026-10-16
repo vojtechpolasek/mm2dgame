@@ -36,7 +36,6 @@ const CLEAR := 12.0
 const EDGE := 2.0
 const WATER_CELL := 4
 const WATER_HEAR := 14.0
-const CHASE_HOLD := 6.0
 const SPAWN_RING := 1.5
 const NOTICE_SECONDS := 4.5
 ## Váha vesnice: žádná dvakrát, ostatní jednou. Úvodní čtverec je vždy malá.
@@ -62,7 +61,8 @@ var _world_rng := RandomNumberGenerator.new()
 var _next_level := 1
 var _opened := false
 var _closing := false
-var _chase := 0.0
+## Strana čtverce v dlaždicích. Typ hry Skafandry má větší.
+var _side := SQUARE
 
 
 class Square:
@@ -84,6 +84,15 @@ class Square:
 	var villagers
 	var walker
 	var rng: RandomNumberGenerator
+	## Stav rng po nakreslení terénu. Odtud se sází továrna, skály a stromy, takže čtverec
+	## jde z uložené mapy postavit znovu stejně.
+	var plan_state := 0
+	## Uložená mapa (_record), ze které se čtverec staví místo tvoření.
+	var saved := {}
+	## _record zabalený pro soubor uložení a jeho délka před zabalením. Mapa se po vytvoření
+	## nemění, balí se jednou.
+	var blob := PackedByteArray()
+	var blob_size := 0
 	var water_far := PackedInt32Array()
 	var water_side := 0
 
@@ -119,6 +128,11 @@ func start(host) -> void:
 	_chunks.name = "PropChunks"
 	_chunks.setup(_camera)
 	_host.add_child(_chunks)
+	_begin()
+
+
+## První čtverce. Hra se otevře, až je hotový ten, kde hráči začínají (_opens_at).
+func _begin() -> void:
 	_enqueue(Vector2i.ZERO)
 
 
@@ -187,15 +201,21 @@ func _poll() -> void:
 			_finish(sq)
 
 
-func _enqueue(coord: Vector2i) -> void:
+## Nový čtverec. Se saved se postaví z uložené mapy, jinak se vytvoří a naváže na sousedy.
+func _enqueue(coord: Vector2i, saved: Dictionary = {}) -> void:
 	if _closing or _squares.has(coord):
 		return
 	var sq := Square.new()
 	sq.coord = coord
 	sq.rng = RandomNumberGenerator.new()
-	sq.rng.seed = _world_rng.randi()
-	sq.layout = _layout(coord, sq.rng)
-	sq.level = 0 if sq.layout == "empty" else _next_level
+	if saved.is_empty():
+		sq.rng.seed = _world_rng.randi()
+		_plan_square(sq)
+	else:
+		sq.layout = str(saved["layout"])
+		sq.level = int(saved["level"])
+		sq.plan_state = int(saved["plan_state"])
+		sq.saved = saved
 	sq.rocks = Rocks.new()
 	sq.forest = Forest.new()
 	sq.town = Town.new()
@@ -210,14 +230,24 @@ func _enqueue(coord: Vector2i) -> void:
 		sq.rocks.town = sq.town
 		sq.forest.town = sq.town
 	sq.rocks.bind_crystal(_crystal)
-	sq.rocks.bottomless = false
 	sq.rocks.draw_rim = false
 	sq.rocks.edge_guard = EDGE
-	var materials := 0 if sq.layout == "empty" else GameSession.level_materials(sq.level)
-	sq.rocks.set_available(materials)
+	_configure(sq)
 	_squares[coord] = sq
 	_waiting.append(coord)
 	_dispatch()
+
+
+## Vesnice a level nového čtverce.
+func _plan_square(sq: Square) -> void:
+	sq.layout = _layout(sq.coord, sq.rng)
+	sq.level = 0 if sq.layout == "empty" else _next_level
+
+
+## Jezírka čtverce podle levelu. Typ hry Skafandry tu chystá doly a zásobníky továrny.
+func _configure(sq: Square) -> void:
+	sq.rocks.bottomless = false
+	sq.rocks.set_available(0 if sq.layout == "empty" else GameSession.level_materials(sq.level))
 
 
 ## Čtverec se začne tvořit, až žádný z osmi sousedů není rozpracovaný. Hotové sousedy
@@ -228,11 +258,15 @@ func _dispatch() -> void:
 	var i := 0
 	while i < _waiting.size():
 		var coord := _waiting[i]
-		if _neighbor_busy(coord):
+		# Uložený čtverec na sousedy nečeká, mapu už má.
+		if _square(coord).saved.is_empty() and _neighbor_busy(coord):
 			i += 1
 			continue
 		_waiting.remove_at(i)
 		var sq := _square(coord)
+		if not sq.saved.is_empty():
+			sq.task = WorkerThreadPool.add_task(_rebuild.bind(sq), true, "Čtverec")
+			continue
 		var ring := _ring_of(coord)
 		var fixed := _fixed_vertices(coord)
 		sq.task = WorkerThreadPool.add_task(_generate.bind(sq, ring, fixed), true, "Čtverec")
@@ -257,31 +291,31 @@ func _built(coord: Vector2i) -> Square:
 
 ## Krajní řady hotových sousedů kolem čtverce, viz MapGenerator.ring_index.
 func _ring_of(coord: Vector2i) -> PackedByteArray:
-	var ring := MapGenerator.empty_ring(SQUARE)
-	var last := SQUARE - 1
+	var ring := MapGenerator.empty_ring(_side)
+	var last := _side - 1
 	for side: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 		var other := _built(coord + side)
 		if other == null:
 			continue
-		for i in SQUARE:
+		for i in _side:
 			# Dlaždice souseda u společného kraje a kam patří v okolí tohoto čtverce.
 			var from := Vector2i(last if side.x < 0 else 0, i) if side.x != 0 else Vector2i(i, last if side.y < 0 else 0)
-			var to := Vector2i(-1 if side.x < 0 else SQUARE, i) if side.x != 0 else Vector2i(i, -1 if side.y < 0 else SQUARE)
-			ring[MapGenerator.ring_index(SQUARE, to.x, to.y)] = other.map.terrain[from.y * SQUARE + from.x]
+			var to := Vector2i(-1 if side.x < 0 else _side, i) if side.x != 0 else Vector2i(i, -1 if side.y < 0 else _side)
+			ring[MapGenerator.ring_index(_side, to.x, to.y)] = other.map.terrain[from.y * _side + from.x]
 	for corner: Vector2i in [Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)]:
 		var other := _built(coord + corner)
 		if other == null:
 			continue
 		var from := Vector2i(last if corner.x < 0 else 0, last if corner.y < 0 else 0)
-		var to := Vector2i(-1 if corner.x < 0 else SQUARE, -1 if corner.y < 0 else SQUARE)
-		ring[MapGenerator.ring_index(SQUARE, to.x, to.y)] = other.map.terrain[from.y * SQUARE + from.x]
+		var to := Vector2i(-1 if corner.x < 0 else _side, -1 if corner.y < 0 else _side)
+		ring[MapGenerator.ring_index(_side, to.x, to.y)] = other.map.terrain[from.y * _side + from.x]
 	return ring
 
 
 ## Vrcholy terénu na krajích, které už nakreslil soused. Převezmou se beze změny, jinak by
 ## každá strana kreslila přechod jinak a na kraji by byl vidět řez.
 func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
-	var span := SQUARE + 1
+	var span := _side + 1
 	var fixed := PackedByteArray()
 	fixed.resize(span * span)
 	fixed.fill(MapData.UNCLAIMED_TERRAIN)
@@ -291,19 +325,67 @@ func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
 			if other == null or (x == 0 and y == 0):
 				continue
 			var theirs: PackedByteArray = other.painted["vertex"]
-			# Společné vrcholy: tady sloupec 0 je u souseda sloupec SQUARE a naopak.
-			for vy in range(maxi(y * SQUARE, 0), mini(y * SQUARE + SQUARE, SQUARE) + 1):
-				for vx in range(maxi(x * SQUARE, 0), mini(x * SQUARE + SQUARE, SQUARE) + 1):
-					fixed[vy * span + vx] = theirs[(vy - y * SQUARE) * span + (vx - x * SQUARE)]
+			# Společné vrcholy: tady sloupec 0 je u souseda poslední sloupec a naopak.
+			for vy in range(maxi(y * _side, 0), mini(y * _side + _side, _side) + 1):
+				for vx in range(maxi(x * _side, 0), mini(x * _side + _side, _side) + 1):
+					fixed[vy * span + vx] = theirs[(vy - y * _side) * span + (vx - x * _side)]
 	return fixed
 
 
 func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> void:
-	var map := MapGenerator.grow(SQUARE, _catalog.names, sq.rng, _catalog.max_distance, _catalog.max_share, ring)
+	var map := MapGenerator.grow(_side, _catalog.names, sq.rng, _catalog.max_distance, _catalog.max_share, ring)
 	map.surfaces = _catalog.surfaces
 	if sq.layout != "empty":
 		MapGenerator.clear_disk(map, CLEAR)
 	sq.painted = MapGenerator.corner_data(map, sq.rng, _catalog.variant_count, fixed)
+	sq.plan_state = sq.rng.state
+	_furnish(sq, map)
+
+
+## Čtverec z uložené mapy. Rohy dlaždic se dopočítají z vrcholů, objekty se sází od
+## uloženého stavu rng, takže stojí tam, kde stály.
+func _rebuild(sq: Square) -> void:
+	var map := MapData.new()
+	map.size = _side
+	map.names = _catalog.names
+	map.surfaces = _catalog.surfaces
+	map.terrain = sq.saved["terrain"]
+	var halo: Array = sq.saved["halo"]
+	map.halo_w = halo[0]
+	map.halo_e = halo[1]
+	map.halo_n = halo[2]
+	map.halo_s = halo[3]
+	var vertex: PackedByteArray = sq.saved["vertex"]
+	var span := _side + 1
+	var corners := PackedByteArray()
+	corners.resize(_side * _side * 4)
+	for y in _side:
+		for x in _side:
+			var cell := y * _side + x
+			var top := y * span + x
+			corners[cell * 4] = vertex[top]
+			corners[cell * 4 + 1] = vertex[top + 1]
+			corners[cell * 4 + 2] = vertex[top + span]
+			corners[cell * 4 + 3] = vertex[top + span + 1]
+	sq.painted = {"corners": corners, "variants": sq.saved["variants"], "vertex": vertex}
+	sq.rng.state = sq.plan_state
+	_furnish(sq, map)
+
+
+## Mapa čtverce k uložení. Stačí terén, vrcholy, varianty dlaždic a okolí od sousedů.
+func _record(sq: Square) -> Dictionary:
+	return {
+		"layout": sq.layout,
+		"level": sq.level,
+		"plan_state": sq.plan_state,
+		"terrain": sq.map.terrain,
+		"vertex": sq.painted["vertex"],
+		"variants": sq.painted["variants"],
+		"halo": [sq.map.halo_w, sq.map.halo_e, sq.map.halo_n, sq.map.halo_s],
+	}
+
+
+func _furnish(sq: Square, map: MapData) -> void:
 	sq.town.plan(map, sq.rng, sq.layout)
 	sq.rocks.plant(map, sq.rng)
 	sq.forest.plant(map, sq.rng, sq.rocks)
@@ -337,13 +419,23 @@ func _finish(sq: Square) -> void:
 	sq.rocks.spawn(_camera, _props, _chunks)
 	sq.forest.spawn(_camera, _props, _chunks)
 	_chunks.refresh()
-	if sq.town.center() != Vector2.INF:
-		sq.town.settled.connect(_count_gem.bind(sq))
+	_built_square(sq)
 	sq.ready = true
-	if sq.coord == Vector2i.ZERO and not _opened:
+	if not _opened and _opens_at(sq):
 		_open_play(sq)
 	elif _opened and sq.layout != "empty":
 		_add_labels(sq)
+
+
+## Hotový čtverec je ve scéně. Svět počítá kameny donesené do jeho továrny.
+func _built_square(sq: Square) -> void:
+	if sq.town.center() != Vector2.INF:
+		sq.town.settled.connect(_count_gem.bind(sq))
+
+
+## Na tomhle čtverci hra začne, až je hotový.
+func _opens_at(sq: Square) -> bool:
+	return sq.coord == Vector2i.ZERO
 
 
 func _open_play(sq: Square) -> void:
@@ -363,21 +455,16 @@ func _open_play(sq: Square) -> void:
 		_host._persons.append(person)
 		_party.members.append(person)
 		_where[person] = sq.coord
-	var first: Vector2 = _host._persons[0].position
-	var tile := float(TerrainCatalog.TILE_SIZE)
-	for i in range(1, _host._persons.size()):
-		var angle := TAU * float(i - 1) / float(maxi(_host._persons.size() - 1, 1))
-		var person: Person = _host._persons[i]
-		person.position = person._free_spot(first + Vector2.from_angle(angle) * SPAWN_RING * tile)
+	_place_persons(sq)
 	_add_labels(sq)
 	_hud = Hud.new()
 	_hud.name = "Game"
 	_host.get_node("Hint").add_child(_hud)
-	_hud.setup(_crystal, sq.level, "ponds", maxi(sq.rocks.gem_total(), 1), false, GameSession.players)
-	_hud.hide_clock()
+	_setup_hud(sq)
 	_host._hud = _hud
 	for person in _host._persons:
 		person.held_changed.connect(_hud.set_held.bind(person.player_index))
+		_dress(person)
 	var music := RandomNumberGenerator.new()
 	music.randomize()
 	Sound.play_level_music(music)
@@ -388,6 +475,26 @@ func _open_play(sq: Square) -> void:
 	_wake(sq)
 	_party.frame()
 	_show_task()
+
+
+## První postava stojí u továrny, další v kruhu kolem ní.
+func _place_persons(_sq: Square) -> void:
+	var first: Vector2 = _host._persons[0].position
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	for i in range(1, _host._persons.size()):
+		var angle := TAU * float(i - 1) / float(maxi(_host._persons.size() - 1, 1))
+		var person: Person = _host._persons[i]
+		person.position = person._free_spot(first + Vector2.from_angle(angle) * SPAWN_RING * tile)
+
+
+func _setup_hud(sq: Square) -> void:
+	_hud.setup(_crystal, sq.level, "ponds", maxi(sq.rocks.gem_total(), 1), false, GameSession.players)
+	_hud.hide_clock()
+
+
+## Postava je ve scéně a má HUD. Typ hry Skafandry jí dá dýchací přístroj.
+func _dress(_person: Person) -> void:
+	pass
 
 
 func _show_terrain(sq: Square) -> void:
@@ -431,10 +538,21 @@ func _wake(sq: Square) -> void:
 	rng.randomize()
 	sq.monsters.spawn(sq.rocks.pond_materials(), _crystal, sq.walker, sq.rocks, sq.forest, _host._persons, _camera, _props, rng)
 	rng.randomize()
-	sq.villagers.spawn(sq.town, sq.rocks, _crystal, sq.walker, _host._persons, _camera, _props, sq.monsters, rng)
+	sq.villagers.spawn(sq.town, sq.rocks, _crystal, sq.walker, _host._persons, _camera, _props, sq.monsters, rng, _saved_villagers(sq))
 	if not sq.villagers.members.is_empty() and sq.villagers.get_parent() == null:
 		add_child(sq.villagers)
 	sq.awake = true
+	_woke(sq)
+
+
+## Vesničané uložené hry pro čtverec (Villager.origin), prázdné pole vytvoří nové.
+func _saved_villagers(_sq: Square) -> Array:
+	return []
+
+
+## Tvorové čtverce se právě objevili.
+func _woke(_sq: Square) -> void:
+	pass
 
 
 func _sleep(sq: Square) -> void:
@@ -537,6 +655,17 @@ func _show_task() -> void:
 	_hud.set_edge_blink(_edge_meters(person.position) <= BLINK)
 
 
+## Hraje hudba při honičce? Dokud kdokoli nese kámen: hráč nebo vesničan na probuzeném čtverci.
+func _chase_music() -> bool:
+	if Monsters.anyone_carrying(_host._persons, []):
+		return true
+	for key in _squares:
+		var sq: Square = _squares[key]
+		if sq.awake and not sq.monsters.carriers.is_empty():
+			return true
+	return false
+
+
 func _count_gem(_mat: int, _pos: Vector2, sq: Square) -> void:
 	sq.delivered += 1
 	if sq.done or sq.rocks.gem_total() <= 0 or sq.delivered < sq.rocks.gem_total():
@@ -547,18 +676,8 @@ func _count_gem(_mat: int, _pos: Vector2, sq: Square) -> void:
 		_hud.show_notice("Továrna je hotová. Další čtverce jsou level %d." % _next_level, NOTICE_SECONDS)
 
 
-func _sound(delta: float) -> void:
-	var chasing := false
-	for key in _squares:
-		var sq: Square = _squares[key]
-		if sq.awake and sq.monsters.any_chasing_in_view():
-			chasing = true
-			break
-	if chasing:
-		_chase = CHASE_HOLD
-	else:
-		_chase = maxf(_chase - delta, 0.0)
-	Sound.set_chase(_chase > 0.0)
+func _sound(_delta: float) -> void:
+	Sound.set_chase(_chase_music())
 	if _host._persons.is_empty():
 		Sound.set_water(0.0)
 		return
@@ -604,7 +723,7 @@ func _origin_of(coord: Vector2i) -> Vector2:
 
 
 func _span() -> float:
-	return float(SQUARE * TerrainCatalog.TILE_SIZE)
+	return float(_side * TerrainCatalog.TILE_SIZE)
 
 
 func _edge_meters(pos: Vector2) -> float:
