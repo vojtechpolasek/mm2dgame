@@ -38,6 +38,8 @@ const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
 const PondLabels := preload("res://scripts/pond_labels.gd")
 const SuitGame := preload("res://scripts/suit_game.gd")
 const SuitSaves := preload("res://scripts/suit_saves.gd")
+const GroundDecor := preload("res://scripts/ground_decor.gd")
+const SquareAir := preload("res://scripts/square_air.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
@@ -71,6 +73,9 @@ var _status: Label
 var _catalog: TerrainCatalog
 var _crystal: Crystal
 var _road: Node2D
+## Průchozí porost všech čtverců, mezi cestou a objekty.
+var _decor: Node2D
+var _decor_kit := {}
 var _props: Node2D
 var _chunks: PropChunks
 var _hud: Hud
@@ -131,6 +136,10 @@ class Square:
 	var monsters
 	var villagers
 	var walker
+	var decor
+	## Vzduch nad čtvercem (mlha, sníh, jed) a jeho maska terénu z vlákna.
+	var air
+	var air_mask: Image
 	var rng: RandomNumberGenerator
 	## Stav rng po nakreslení terénu. Odtud se sází továrna, skály a stromy, takže čtverec
 	## jde z uložené mapy postavit znovu stejně.
@@ -167,11 +176,16 @@ func start(host) -> void:
 	_road.name = "Road"
 	_host.add_child(_road)
 	_host.move_child(_road, _ground.get_index() + 1)
+	_decor = Node2D.new()
+	_decor.name = "Decor"
+	_host.add_child(_decor)
+	_host.move_child(_decor, _road.get_index() + 1)
+	_decor_kit = GroundDecor.load_kit(_catalog.names, _catalog.surfaces)
 	_props = Node2D.new()
 	_props.name = "Props"
 	_props.y_sort_enabled = true
 	_host.add_child(_props)
-	_host.move_child(_props, _road.get_index() + 1)
+	_host.move_child(_props, _decor.get_index() + 1)
 	_chunks = PropChunks.new()
 	_chunks.name = "PropChunks"
 	_chunks.setup(_camera)
@@ -474,6 +488,10 @@ func _furnish(sq: Square, map: MapData) -> void:
 	sq.town.plan(map, sq.rng, sq.layout)
 	sq.rocks.plant(map, sq.rng)
 	sq.forest.plant(map, sq.rng, sq.rocks)
+	# Porost má vlastní náhodu, ať nemění, co se losuje po něm.
+	sq.decor = GroundDecor.new()
+	sq.decor.plant(_decor_kit, map, sq.painted["corners"], sq.town, _catalog.water_index, sq.coord * _side, hash(sq.plan_state))
+	sq.air_mask = SquareAir.mask(map)
 	sq.walker = Walker.new(sq.rocks, sq.forest, sq.town, map)
 	sq.monsters.prepare(sq.rocks.pond_materials(), _crystal, sq.walker, sq.rocks, sq.forest)
 	sq.villagers.prepare(sq.walker, sq.rocks, sq.forest)
@@ -503,6 +521,13 @@ func _finish(sq: Square) -> void:
 	sq.town.spawn(_camera, _road, _props, _crystal)
 	sq.rocks.spawn(_camera, _props, _chunks)
 	sq.forest.spawn(_camera, _props, _chunks)
+	sq.decor.spawn(_decor_kit, _decor, sq.origin)
+	# Nad čtvercem levelu visí jed, dokud továrna level nesplní.
+	sq.air = SquareAir.new()
+	sq.air.name = "Air_%d_%d" % [sq.coord.x, sq.coord.y]
+	_host.add_child(sq.air)
+	sq.air.setup(sq.air_mask, _side, sq.origin, sq.level > 0 and not _done.has(sq.coord))
+	sq.air_mask = null
 	_chunks.refresh()
 	_built_square(sq)
 	sq.ready = true
@@ -1083,6 +1108,9 @@ func _on_completed(coord: Vector2i) -> void:
 	if coord != _active or _finished:
 		return
 	_done[coord] = 0
+	var cleared := _square(coord)
+	if cleared != null and cleared.air != null:
+		cleared.air.clear_poison()
 	var took := _level_time
 	if _level >= GameSession.last_level():
 		_finish_game()

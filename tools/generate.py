@@ -23,6 +23,7 @@ SURFACES_PATH = ROOT / "godot" / "graphics" / "terrain" / "surfaces.json"
 # Na trávě je jen pár malých balvanů.
 # Sníh má víc stromů než tráva a míň než hlína. Skal je málo, malých kamenů víc.
 # Padlé stromy (padly_strom mezi skálami) leží hlavně na trávě, v lese na hlíně a v močálu.
+# decor je průchozí porost z gen_decor.py, počet trsů na dlaždici. Shlukuje se podle druhu.
 # Čtverec světa si vybere jen pár terénů. avoid jsou terény, se kterými se nevybere
 # společně (platí oběma směry), ať vedle sebe není třeba sníh a poušť.
 TERRAINS = {
@@ -33,8 +34,9 @@ TERRAINS = {
         "contrast": 28.0,
         "coarseness": 1.0,
         "shore": "sand",
-        "forest": {"strom1": 0.073, "strom2": 0.042, "strom3": 0.0235, "ker1": 0.088, "strom_suchy": 0.052},
+        "forest": {"strom1": 0.073, "strom2": 0.042, "strom3": 0.0235, "ker1": 0.088, "strom_suchy": 0.052, "smrk": 0.012, "borovice": 0.01},
         "rocks": {"balvan1": 0.008, "balvan_mech": 0.0024, "padly_strom": 0.002},
+        "decor": {"trava": 1.1, "kvetiny": 0.35},
     },
     "dirt": {
         "name": "dirt",
@@ -43,8 +45,11 @@ TERRAINS = {
         "contrast": 14.0,
         "coarseness": 1.4,
         "shore": "sand",
-        "forest": {"strom1": 1.15, "strom2": 1.0, "strom3": 0.045, "ker1": 0.042, "strom_suchy": 0.55},
+        "forest": {"strom1": 1.15, "strom2": 1.0, "strom3": 0.045, "ker1": 0.042, "strom_suchy": 0.55, "smrk": 0.16, "borovice": 0.08},
+        # Stromy smějí stát blíž sebe (forest.gd DENSE_TREE_GAP).
+        "dense_forest": True,
         "rocks": {"padly_strom": 0.002},
+        "decor": {"kapradi": 0.25, "trava": 0.15, "houby": 0.05},
     },
     "desert": {
         "name": "desert",
@@ -55,6 +60,7 @@ TERRAINS = {
         "shore": "sand",
         "forest": {"strom_suchy": 0.02},
         "rocks": {"skala1": 0.01, "skala2": 0.0075, "skala10": 0.005, "skala15": 0.004, "balvan1": 0.0015},
+        "decor": {"trava_sucha": 0.06},
     },
     "snow": {
         "name": "snow",
@@ -63,8 +69,11 @@ TERRAINS = {
         "contrast": 6.0,
         "coarseness": 1.8,
         "shore": "ice",
-        "forest": {"strom_snih": 0.546, "strom2_snih": 0.39, "ker_snih": 0.1},
+        "forest": {"smrk_snih": 0.5, "borovice_snih": 0.2, "strom_snih": 0.12, "strom2_snih": 0.08, "ker_snih": 0.1},
         "rocks": {"balvan_snih": 0.017, "skala_snih": 0.0017, "skala2_snih": 0.00083},
+        "decor": {"trava_sucha": 0.04},
+        # Nad sněhem padají vločky.
+        "snowfall": 1.0,
         "avoid": ["desert"],
     },
     # Kamenná suť: drobné i větší ostrohranné kameny, hodně skal, skoro žádné stromy.
@@ -77,6 +86,7 @@ TERRAINS = {
         "shore": "sand",
         "forest": {"strom_suchy": 0.012, "ker1": 0.01},
         "rocks": {"balvan1": 0.03, "skala1": 0.006, "skala2": 0.005, "skala10": 0.004},
+        "decor": {"trava_sucha": 0.1, "kvetiny": 0.04},
     },
     # Černý popel po požáru: závěje popela, uhlíky, jen ohořelé suché stromy.
     "ash": {
@@ -87,6 +97,7 @@ TERRAINS = {
         "coarseness": 1.6,
         "forest": {"strom_ohoreny": 0.09, "strom_suchy": 0.012},
         "rocks": {"cedic_maly": 0.01, "cedic": 0.004},
+        "decor": {"vyhonky": 0.15},
     },
     # Močál: bahno, louže a trsy ostřice, keře a pár stromů. Břeh nemá, bahno přejde rovnou do vody.
     "swamp": {
@@ -95,8 +106,12 @@ TERRAINS = {
         "hue": 3.0,
         "contrast": 14.0,
         "coarseness": 1.5,
-        "forest": {"ker_bazina": 0.2, "vrba": 0.05, "strom_suchy": 0.03},
+        "forest": {"vrba": 1.0, "strom1": 1.0, "strom2": 0.5, "ker_bazina": 0.12, "strom_suchy": 0.4},
+        "dense_forest": True,
         "rocks": {"balvan_mech": 0.012, "padly_strom": 0.0027},
+        "decor": {"ostrice": 0.6, "rakos": 0.35},
+        # Nad močálem se válí mlha.
+        "fog": 1.0,
         "avoid": ["snow", "desert"],
         # V bahně se chodí pomaleji: postavy, vesničané i příšery, které nelétají.
         "speed": 0.65,
@@ -111,6 +126,7 @@ TERRAINS = {
         "shore": "sand",
         "forest": {"ker1": 0.07, "strom1": 0.012, "strom_suchy": 0.02},
         "rocks": {"balvan_mech": 0.01, "balvan1": 0.008, "skala_mech": 0.0015, "padly_strom": 0.0007},
+        "decor": {"vres": 0.5, "trava_sucha": 0.25},
         "avoid": ["desert"],
     },
     "water": {
@@ -177,6 +193,9 @@ SHORE = {
 # spacing_from přepíše spacing vůči jednomu druhu. Mezi dvojicí platí větší z obou stran.
 # leaf_hue posune odstín listí ve stupních (záporný ke žluté), leaf_sat a leaf_value násobí
 # sytost a jas listí. bare je úplně holý strom bez občasných lístků.
+# conifer je jehličnan: list je jehličí (gen_needles.py), větve rovné v pravidelném přeslenu.
+# twig_gap je rozestup bočních větviček vůči jejich délce, needles_along po kolika px sedí
+# jehličí i na silné větvi (smrk). Bez něj má jehličí jen větvička (borovice).
 TREES = {
     "strom1": {
         "leaf": "leaf1.png",
@@ -287,6 +306,70 @@ TREES = {
         "spacing_from": {"vrba": 3.2},
         "stump": {"color": "4E3E2C", "radius": 7, "root_length": 16},
     },
+    # Smrk: hustý, pravidelný, tmavé jehličí ve větvičkách.
+    "smrk": {
+        "leaf": "needle1.png",
+        "conifer": True,
+        "twig_gap": 0.3,
+        "needles_along": 9,
+        "layers": 4,
+        "density": {4: 1.05, 3: 0.85, 2: 0.72, 1: 0.62},
+        "widths": {4: 46, 3: 104, 2: 156, 1: 216},
+        "height": {4: 11.0, 3: 8.0, 2: 5.2, 1: 2.6},
+        "leaves": 7,
+        "variants": 9,
+        "branch": "4E3626",
+        "spacing": 3.6,
+        "spacing_from": {"ker1": 2.5, "ker_snih": 2.5},
+        "stump": {"color": "5A4030", "radius": 13, "root_length": 44},
+    },
+    "smrk_snih": {
+        "leaf": "needle1.png",
+        "conifer": True,
+        "twig_gap": 0.3,
+        "needles_along": 9,
+        "layers": 4,
+        "density": {4: 1.05, 3: 0.85, 2: 0.72, 1: 0.62},
+        "widths": {4: 46, 3: 104, 2: 156, 1: 216},
+        "height": {4: 11.0, 3: 8.0, 2: 5.2, 1: 2.6},
+        "leaves": 7,
+        "variants": 9,
+        "branch": "4E3626",
+        "spacing": 3.6,
+        "spacing_from": {"ker1": 2.5, "ker_snih": 2.5},
+        "stump": {"color": "5A4030", "radius": 13, "root_length": 44},
+        "snow": "F4F7FA",
+    },
+    # Borovice: řidší, svazky dlouhých světlejších jehlic, rezavá kůra.
+    "borovice": {
+        "leaf": "needle2.png",
+        "conifer": True,
+        "layers": 4,
+        "density": {4: 1.1, 3: 0.9, 2: 0.75, 1: 0.62},
+        "widths": {4: 70, 3: 130, 2: 180, 1: 224},
+        "height": {4: 12.0, 3: 9.5, 2: 6.5, 1: 3.5},
+        "leaves": 6,
+        "variants": 9,
+        "branch": "7A4A2E",
+        "spacing": 4.5,
+        "spacing_from": {"ker1": 2.5, "ker_snih": 2.5},
+        "stump": {"color": "7A4A30", "radius": 13, "root_length": 44},
+    },
+    "borovice_snih": {
+        "leaf": "needle2.png",
+        "conifer": True,
+        "layers": 4,
+        "density": {4: 1.1, 3: 0.9, 2: 0.75, 1: 0.62},
+        "widths": {4: 70, 3: 130, 2: 180, 1: 224},
+        "height": {4: 12.0, 3: 9.5, 2: 6.5, 1: 3.5},
+        "leaves": 6,
+        "variants": 9,
+        "branch": "7A4A2E",
+        "spacing": 4.5,
+        "spacing_from": {"ker1": 2.5, "ker_snih": 2.5},
+        "stump": {"color": "7A4A30", "radius": 13, "root_length": 44},
+        "snow": "F4F7FA",
+    },
     "strom_snih": {
         "leaf": "leaf1.png",
         "layers": 4,
@@ -360,10 +443,27 @@ def surface_info() -> dict:
             entry["wave"] = preset["wave"]
         if preset.get("shore"):
             entry["shore"] = preset["shore"]
+        for key in ("fog", "snowfall"):
+            if key in preset:
+                if not 0 < float(preset[key]) <= 1:
+                    raise SystemExit(f"{name}: {key} má být mezi 0 a 1")
+                entry[key] = float(preset[key])
+        if preset.get("dense_forest"):
+            entry["dense_forest"] = True
         if "speed" in preset:
             if not 0 < float(preset["speed"]) <= 2:
                 raise SystemExit(f"{name}: speed má být mezi 0 a 2")
             entry["speed"] = float(preset["speed"])
+        from gen_decor import DECOR
+
+        decor = preset.get("decor") or {}
+        for kind, amount in decor.items():
+            if kind not in DECOR:
+                raise SystemExit(f"{name}: porost obsahuje neznámý druh {kind}")
+            if float(amount) <= 0:
+                raise SystemExit(f"{name}: hustota porostu {kind} musí být větší než 0")
+        if decor:
+            entry["decor"] = {kind: float(amount) for kind, amount in decor.items()}
         avoid = preset.get("avoid") or []
         for other in avoid:
             if other not in TERRAINS:

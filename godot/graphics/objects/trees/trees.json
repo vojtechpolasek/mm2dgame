@@ -327,6 +327,186 @@
         "vrba": 3.2
       }
     },
+    "smrk": {
+      "leaf": "needle1.png",
+      "variants": 9,
+      "canvas": 254,
+      "center": 127,
+      "stump": {
+        "height": 0,
+        "color": "5A4030",
+        "radius": 13,
+        "root_length": 44,
+        "canvas": 104
+      },
+      "layers": {
+        "1": {
+          "height": 2.6,
+          "width": 216.0,
+          "density": 0.62,
+          "canvas": 254
+        },
+        "2": {
+          "height": 5.2,
+          "width": 156.0,
+          "density": 0.72,
+          "canvas": 194
+        },
+        "3": {
+          "height": 8.0,
+          "width": 104.0,
+          "density": 0.85,
+          "canvas": 136
+        },
+        "4": {
+          "height": 11.0,
+          "width": 46.0,
+          "density": 1.05,
+          "canvas": 70
+        }
+      },
+      "spacing": 3.6,
+      "leaves": 7,
+      "spacing_from": {
+        "ker1": 2.5,
+        "ker_snih": 2.5
+      }
+    },
+    "smrk_snih": {
+      "leaf": "needle1.png",
+      "variants": 9,
+      "canvas": 262,
+      "center": 131,
+      "stump": {
+        "height": 0,
+        "color": "5A4030",
+        "radius": 13,
+        "root_length": 44,
+        "canvas": 104
+      },
+      "layers": {
+        "1": {
+          "height": 2.6,
+          "width": 216.0,
+          "density": 0.62,
+          "canvas": 262
+        },
+        "2": {
+          "height": 5.2,
+          "width": 156.0,
+          "density": 0.72,
+          "canvas": 190
+        },
+        "3": {
+          "height": 8.0,
+          "width": 104.0,
+          "density": 0.85,
+          "canvas": 136
+        },
+        "4": {
+          "height": 11.0,
+          "width": 46.0,
+          "density": 1.05,
+          "canvas": 62
+        }
+      },
+      "spacing": 3.6,
+      "leaves": 7,
+      "spacing_from": {
+        "ker1": 2.5,
+        "ker_snih": 2.5
+      }
+    },
+    "borovice": {
+      "leaf": "needle2.png",
+      "variants": 9,
+      "canvas": 252,
+      "center": 126,
+      "stump": {
+        "height": 0,
+        "color": "7A4A30",
+        "radius": 13,
+        "root_length": 44,
+        "canvas": 104
+      },
+      "layers": {
+        "1": {
+          "height": 3.5,
+          "width": 224.0,
+          "density": 0.62,
+          "canvas": 252
+        },
+        "2": {
+          "height": 6.5,
+          "width": 180.0,
+          "density": 0.75,
+          "canvas": 220
+        },
+        "3": {
+          "height": 9.5,
+          "width": 130.0,
+          "density": 0.9,
+          "canvas": 158
+        },
+        "4": {
+          "height": 12.0,
+          "width": 70.0,
+          "density": 1.1,
+          "canvas": 88
+        }
+      },
+      "spacing": 4.5,
+      "leaves": 6,
+      "spacing_from": {
+        "ker1": 2.5,
+        "ker_snih": 2.5
+      }
+    },
+    "borovice_snih": {
+      "leaf": "needle2.png",
+      "variants": 9,
+      "canvas": 258,
+      "center": 129,
+      "stump": {
+        "height": 0,
+        "color": "7A4A30",
+        "radius": 13,
+        "root_length": 44,
+        "canvas": 102
+      },
+      "layers": {
+        "1": {
+          "height": 3.5,
+          "width": 224.0,
+          "density": 0.62,
+          "canvas": 258
+        },
+        "2": {
+          "height": 6.5,
+          "width": 180.0,
+          "density": 0.75,
+          "canvas": 216
+        },
+        "3": {
+          "height": 9.5,
+          "width": 130.0,
+          "density": 0.9,
+          "canvas": 162
+        },
+        "4": {
+          "height": 12.0,
+          "width": 70.0,
+          "density": 1.1,
+          "canvas": 88
+        }
+      },
+      "spacing": 4.5,
+      "leaves": 6,
+      "spacing_from": {
+        "ker1": 2.5,
+        "ker_snih": 2.5
+      }
+    },
     "strom_snih": {
       "leaf": "leaf1.png",
       "variants": 9,
@@ -459,6 +639,10 @@
       "strom_ohoreny": 4.5,
       "vrba": 5.5,
       "ker_bazina": 4.5,
+      "smrk": 4.5,
+      "smrk_snih": 4.5,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
       "strom_snih": 4.5,
       "strom2_snih": 4.5,
       "ker_snih": 4.5
@@ -472,6 +656,10 @@
       "strom_ohoreny": 6.0,
       "vrba": 6.0,
       "ker_bazina": 6.0,
+      "smrk": 6.0,
+      "smrk_snih": 6.0,
+      "borovice": 6.0,
+      "borovice_snih": 6.0,
       "strom_snih": 6.0,
       "strom2_snih": 6.0,
       "ker_snih": 6.0
@@ -485,6 +673,10 @@
       "strom_ohoreny": 6.5,
       "vrba": 6.5,
       "ker_bazina": 6.5,
+      "smrk": 6.5,
+      "smrk_snih": 6.5,
+      "borovice": 6.5,
+      "borovice_snih": 6.5,
       "strom_snih": 6.5,
       "strom2_snih": 6.5,
       "ker_snih": 6.5
@@ -498,6 +690,10 @@
       "strom_ohoreny": 4.0,
       "vrba": 5.5,
       "ker_bazina": 2.0,
+      "smrk": 2.5,
+      "smrk_snih": 2.5,
+      "borovice": 2.5,
+      "borovice_snih": 2.5,
       "strom_snih": 3.2,
       "strom2_snih": 4.2,
       "ker_snih": 2.0
@@ -511,6 +707,10 @@
       "strom_ohoreny": 4.5,
       "vrba": 5.5,
       "ker_bazina": 4.5,
+      "smrk": 4.5,
+      "smrk_snih": 4.5,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
       "strom_snih": 4.5,
       "strom2_snih": 4.5,
       "ker_snih": 4.5
@@ -524,6 +724,10 @@
       "strom_ohoreny": 4.0,
       "vrba": 5.5,
       "ker_bazina": 4.0,
+      "smrk": 4.0,
+      "smrk_snih": 4.0,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
       "strom_snih": 4.0,
       "strom2_snih": 4.2,
       "ker_snih": 4.0
@@ -537,6 +741,10 @@
       "strom_ohoreny": 5.5,
       "vrba": 5.5,
       "ker_bazina": 3.2,
+      "smrk": 5.5,
+      "smrk_snih": 5.5,
+      "borovice": 5.5,
+      "borovice_snih": 5.5,
       "strom_snih": 5.5,
       "strom2_snih": 5.5,
       "ker_snih": 5.5
@@ -550,9 +758,81 @@
       "strom_ohoreny": 4.0,
       "vrba": 3.2,
       "ker_bazina": 2.0,
+      "smrk": 3.6,
+      "smrk_snih": 3.6,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
       "strom_snih": 3.2,
       "strom2_snih": 4.2,
       "ker_snih": 2.0
+    },
+    "smrk": {
+      "strom1": 4.5,
+      "strom2": 6.0,
+      "strom3": 6.5,
+      "ker1": 2.5,
+      "strom_suchy": 4.5,
+      "strom_ohoreny": 4.0,
+      "vrba": 5.5,
+      "ker_bazina": 3.6,
+      "smrk": 3.6,
+      "smrk_snih": 3.6,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
+      "strom_snih": 3.6,
+      "strom2_snih": 4.2,
+      "ker_snih": 2.5
+    },
+    "smrk_snih": {
+      "strom1": 4.5,
+      "strom2": 6.0,
+      "strom3": 6.5,
+      "ker1": 2.5,
+      "strom_suchy": 4.5,
+      "strom_ohoreny": 4.0,
+      "vrba": 5.5,
+      "ker_bazina": 3.6,
+      "smrk": 3.6,
+      "smrk_snih": 3.6,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
+      "strom_snih": 3.6,
+      "strom2_snih": 4.2,
+      "ker_snih": 2.5
+    },
+    "borovice": {
+      "strom1": 4.5,
+      "strom2": 6.0,
+      "strom3": 6.5,
+      "ker1": 2.5,
+      "strom_suchy": 4.5,
+      "strom_ohoreny": 4.5,
+      "vrba": 5.5,
+      "ker_bazina": 4.5,
+      "smrk": 4.5,
+      "smrk_snih": 4.5,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
+      "strom_snih": 4.5,
+      "strom2_snih": 4.5,
+      "ker_snih": 2.5
+    },
+    "borovice_snih": {
+      "strom1": 4.5,
+      "strom2": 6.0,
+      "strom3": 6.5,
+      "ker1": 2.5,
+      "strom_suchy": 4.5,
+      "strom_ohoreny": 4.5,
+      "vrba": 5.5,
+      "ker_bazina": 4.5,
+      "smrk": 4.5,
+      "smrk_snih": 4.5,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
+      "strom_snih": 4.5,
+      "strom2_snih": 4.5,
+      "ker_snih": 2.5
     },
     "strom_snih": {
       "strom1": 4.5,
@@ -563,6 +843,10 @@
       "strom_ohoreny": 4.0,
       "vrba": 5.5,
       "ker_bazina": 3.2,
+      "smrk": 3.6,
+      "smrk_snih": 3.6,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
       "strom_snih": 3.2,
       "strom2_snih": 4.2,
       "ker_snih": 2.5
@@ -576,6 +860,10 @@
       "strom_ohoreny": 4.2,
       "vrba": 5.5,
       "ker_bazina": 4.2,
+      "smrk": 4.2,
+      "smrk_snih": 4.2,
+      "borovice": 4.5,
+      "borovice_snih": 4.5,
       "strom_snih": 4.2,
       "strom2_snih": 4.2,
       "ker_snih": 3.0
@@ -589,6 +877,10 @@
       "strom_ohoreny": 4.0,
       "vrba": 5.5,
       "ker_bazina": 2.0,
+      "smrk": 2.5,
+      "smrk_snih": 2.5,
+      "borovice": 2.5,
+      "borovice_snih": 2.5,
       "strom_snih": 2.5,
       "strom2_snih": 3.0,
       "ker_snih": 2.0

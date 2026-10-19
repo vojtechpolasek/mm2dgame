@@ -6,8 +6,9 @@ const Rocks := preload("res://scripts/rocks.gd")
 ## Strom od ležícího kmene drží aspoň svůj pařez nebo keř a tolik pixelů navíc.
 const LOG_GAP := 6.0
 
-## Na hlíně smí strom stát blíž jinému stromu, ať je jich asi dvakrát víc. Keře se nemění.
-const DIRT_TREE_GAP := 0.66
+## V hustém lese (dense_forest v surfaces.json, hlína a močál) smí strom stát blíž jinému
+## stromu, ať je jich asi dvakrát víc. Keře se nemění.
+const DENSE_TREE_GAP := 0.66
 ## Do této výšky je keř pod postavou. Strom je nad ní.
 const LOW := 1.5
 ## Od cesty a staveb drží strom aspoň tuto část koruny, ať je nezakrývá.
@@ -21,7 +22,8 @@ var _solid_height := PackedFloat32Array()
 var _solid_reach := 0.0
 ## Poloměr spodní koruny v pixelech.
 var _crown := PackedFloat32Array()
-var _dirt := -1
+## Podle čísla povrchu: 1, když je na něm hustý les.
+var _dense := PackedByteArray()
 var _rock_pos := PackedVector2Array()
 var _rock_gap := PackedFloat32Array()
 var _rock_grid: Grid
@@ -45,7 +47,9 @@ func plant(map: MapData, rng: RandomNumberGenerator, rocks: Rocks = null) -> voi
 	if _kinds.is_empty():
 		return
 	_begin_plant(map)
-	_dirt = map.names.find("dirt")
+	_dense.resize(map.names.size())
+	for id in map.names.size():
+		_dense[id] = 1 if bool(map.info_of(id).get("dense_forest", false)) else 0
 	_rock_pos = PackedVector2Array()
 	_rock_gap = PackedFloat32Array()
 	_rocks = rocks
@@ -124,11 +128,11 @@ func _pair_gap(left: int, right: int) -> float:
 	return meters * float(TerrainCatalog.TILE_SIZE)
 
 
-## Na hlíně stojí stromy hustěji.
+## V hustém lese stojí stromy blíž.
 func _special_gap(left: int, right: int) -> float:
 	var gap := _gaps[left * _kinds.size() + right]
 	if _tree[left] == 1 and _tree[right] == 1:
-		gap *= DIRT_TREE_GAP
+		gap *= DENSE_TREE_GAP
 	return gap
 
 
@@ -136,7 +140,7 @@ func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var x := clampi(int(pos.x / tile), 0, map.size - 1)
 	var y := clampi(int(pos.y / tile), 0, map.size - 1)
-	if _crowded(pos, kind, map.terrain[y * map.size + x] == _dirt):
+	if _crowded(pos, kind, _dense[map.terrain[y * map.size + x]] == 1):
 		return false
 	if _hits_rock(pos, kind) or _in_town(pos, maxf(_solid[kind], _crown[kind] * TOWN_CROWN)):
 		return false

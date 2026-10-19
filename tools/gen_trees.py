@@ -337,6 +337,13 @@ class Grow:
     leaves_on_branch: int | None = None
     # Úplně holý strom: ani občasný lístek, který mají suché stromy.
     bare: bool = False
+    # Jehličnan: rovné větve v pravidelném přeslenu, boční větvičky střídavě jako rybí kost
+    # a jehličí v řadě podél nich. Se sněhem jehličí zůstane, jen zčásti zbělá.
+    conifer: bool = False
+    # Rozestup bočních větviček jehličnanu vůči jejich délce a po kolika px sedí jehličí
+    # na silné větvi (0 nikde).
+    conifer_gap: float = 0.55
+    needles_along: float = 0.0
     snow: tuple[int, int, int] | None = None
     salt: int = 1
 
@@ -379,12 +386,31 @@ def make_leaf_sprite(
         ctx.sat_bias * ctx.rng.uniform(0.88, 1.12),
         min(1.25, ctx.value_bias * ctx.rng.uniform(*LEAF_VALUE) * value_mul),
     )
+    if ctx.conifer and ctx.snow is not None:
+        tinted = snow_leaf(tinted, ctx.snow, ctx.rng)
     scaled = scale_nearest(tinted, scale)
     if heading is None:
         turned, _anchor = rotate_about(scaled, ctx.rng.uniform(0, 360), ((scaled.width - 1) / 2, (scaled.height - 1) / 2))
         return turned, (turned.width / 2, turned.height / 2), True
     turned, anchor = rotate_about(scaled, rotation_for_heading(heading), stem_point(scaled))
     return turned, anchor, False
+
+
+def snow_leaf(src: Image.Image, snow: tuple[int, int, int], rng: random.Random) -> Image.Image:
+    """Jehličí pod sněhem: zhruba čtvrtina pixelů zbělá, víc ke špičce, kde sníh drží."""
+    out = src.copy()
+    pixels = out.load()
+    salt = rng.randrange(1, 100000)
+    for y in range(out.height):
+        for x in range(out.width):
+            red, green, blue, alpha = pixels[x, y]
+            if alpha == 0:
+                continue
+            tip = 1.0 - y / max(out.height - 1, 1)
+            if hash01(x // 2, y, salt) < 0.16 + 0.3 * tip:
+                white = shade(snow, 0.9 + 0.12 * hash01(x, y, salt + 1))
+                pixels[x, y] = (*mix_rgb((red, green, blue), white, 0.82), alpha)
+    return out
 
 
 def sample_frame(
@@ -436,7 +462,9 @@ def make_branch(
         return None
     base_w *= ctx.rng.uniform(0.9, 1.1)
     tip_w = max(1.5, min(base_w * 0.62, tip_w * ctx.rng.uniform(0.9, 1.08)))
-    bend = length * ctx.rng.choice((-1.0, 1.0)) * ctx.rng.uniform(0.18, 0.48)
+    # Jehličnan má větve skoro rovné.
+    sway = (0.02, 0.07) if ctx.conifer else (0.18, 0.48)
+    bend = length * ctx.rng.choice((-1.0, 1.0)) * ctx.rng.uniform(*sway)
     p0, p1, p2 = curve_points(origin, heading, length, bend)
     mid = bezier(p0, p1, p2, 0.5)
     t = 0.0 if ctx.branch_levels <= 1 else (depth - 1) / (ctx.branch_levels - 1)
@@ -500,7 +528,7 @@ def add_clump(ctx: Grow, branch: Branch, origin: tuple[float, float], parent_w: 
 
 
 def branch_leaf_count(ctx: Grow) -> int:
-    if ctx.snow is not None:
+    if ctx.snow is not None and not ctx.conifer:
         return 0
     if ctx.leaves_on_branch is None:
         return ctx.rng.randint(5, 8)
@@ -513,6 +541,8 @@ def twig_leaves(ctx: Grow, branch: Branch) -> list[LeafStamp]:
     count = branch_leaf_count(ctx)
     if count <= 0:
         return branch.leaves
+    if ctx.conifer:
+        return needle_rows(ctx, branch, count)
     times = [0.12 + 0.8 * (ctx.rng.random() ** 0.72) for _ in range(max(0, count - 1))]
     times.append(ctx.rng.uniform(0.86, 0.98))
     side = ctx.rng.choice((-1, 1))
@@ -524,6 +554,42 @@ def twig_leaves(ctx: Grow, branch: Branch) -> list[LeafStamp]:
         if use_side != 0:
             side = -side
     return branch.leaves
+
+
+def needle_rows(ctx: Grow, branch: Branch, count: int) -> list[LeafStamp]:
+    """Jehličí v pravidelné řadě: střídavě vlevo a vpravo pod stejným úhlem, na konci špička."""
+    direction = math.atan2(branch.p2[1] - branch.p0[1], branch.p2[0] - branch.p0[0])
+    side = ctx.rng.choice((-1, 1))
+    for index in range(count):
+        t = 0.14 + 0.8 * index / max(count - 1, 1)
+        origin, _heading, width = place_on_branch(ctx, branch, t, side)
+        heading = direction + side * ctx.rng.uniform(0.75, 0.95)
+        add_leaf(ctx, branch, origin, heading, width, 1.04 if side < 0 else 0.92)
+        side = -side
+    origin, _heading, width = place_on_branch(ctx, branch, 0.97, 0)
+    add_leaf(ctx, branch, origin, direction + ctx.rng.uniform(-0.1, 0.1), width, 1.06)
+    return branch.leaves
+
+
+def conifer_children(ctx: Grow, branch: Branch, depth: int, max_radius: float | None) -> None:
+    """Rybí kost: boční větvičky v pravidelných rozestupech, střídavě, ke špičce kratší."""
+    child_depth = depth - 1
+    direction = math.atan2(branch.p2[1] - branch.p0[1], branch.p2[0] - branch.p0[0])
+    parent_len = math.hypot(branch.p2[0] - branch.p0[0], branch.p2[1] - branch.p0[1])
+    natural, _, _ = branch_metrics(ctx.radii[child_depth], child_depth, ctx.branch_levels)
+    gap = max(8.0, natural * ctx.conifer_gap) / max(ctx.densities.get(child_depth, 0.8), 0.4)
+    count = max(2, int(parent_len * 0.82 / gap))
+    side = ctx.rng.choice((-1, 1))
+    for index in range(count):
+        t = 0.18 + 0.74 * index / max(count - 1, 1)
+        origin, _heading, _width = place_on_branch(ctx, branch, t, side)
+        heading = direction + side * ctx.rng.uniform(0.85, 1.05)
+        length = max(7.0, min(natural * 0.85, parent_len * 0.42 * (1.0 - 0.55 * t)))
+        attach_child(ctx, branch, child_depth, origin, heading, length, max_radius)
+        side = -side
+    # Smrk má jehličí i na silné větvi mezi větvičkami, borovice jen na koncích.
+    if ctx.needles_along > 0:
+        needle_rows(ctx, branch, max(3, int(parent_len / ctx.needles_along)))
 
 
 def attach_child(
@@ -541,6 +607,9 @@ def attach_child(
 
 
 def attach_children(ctx: Grow, branch: Branch, depth: int, max_radius: float | None) -> None:
+    if ctx.conifer:
+        conifer_children(ctx, branch, depth, max_radius)
+        return
     child_depth = depth - 1
     density = ctx.densities.get(child_depth, 0.5)
     times = [0.16 + 0.72 * (ctx.rng.random() ** 0.75) for _ in range(outward_child_count(ctx, density))]
@@ -686,7 +755,31 @@ def scatter_leaves(ctx: Grow, canvas: Image.Image, depth: int) -> None:
         blit_center(canvas, stamp.image, (stamp.x, stamp.y))
 
 
+def whorl(ctx: Grow, depth: int) -> list[Branch]:
+    """Přeslen jehličnanu: větve od kmene pravidelně dokola, rovně ven a skoro stejně dlouhé."""
+    radius = ctx.radii[depth]
+    count = primary_count(radius, ctx.densities[depth], ctx.rng, False)
+    start = ctx.rng.random() * math.tau
+    branches: list[Branch] = []
+    for index in range(count):
+        angle = start + math.tau * index / count + ctx.rng.uniform(-0.08, 0.08)
+        base_r = radius * ctx.rng.uniform(0.0, 0.05)
+        origin = (ctx.cx + math.cos(angle) * base_r, ctx.cy + math.sin(angle) * base_r)
+        # Dlouhá a kratší větev se střídají, obrys je shora hvězdicový.
+        length = max(8.0, radius * ctx.rng.uniform(0.94, 1.06) * (1.0 if index % 2 == 0 else 0.78))
+        branch = make_branch(ctx, depth, origin, angle + ctx.rng.uniform(-0.05, 0.05), length, radius)
+        if branch is not None:
+            branches.append(branch)
+    return branches
+
+
 def scatter_branches(ctx: Grow, canvas: Image.Image, depth: int) -> None:
+    if ctx.conifer:
+        branches = whorl(ctx, depth)
+        branches.sort(key=lambda item: item.sort_y)
+        for branch in branches:
+            paint_branch(canvas, branch)
+        return
     radius = ctx.radii[depth]
     count = primary_count(radius, ctx.densities[depth], ctx.rng, False)
     branches: list[Branch] = []
@@ -820,6 +913,9 @@ def build_grow(preset: dict, rng: random.Random, size: int, leaf: Image.Image, w
         value_bias=float(preset.get("leaf_value", 1.0)) * rng.uniform(0.94, 1.06),
         sat_bias=float(preset.get("leaf_sat", 1.0)),
         bare=bool(preset.get("bare", False)),
+        conifer=bool(preset.get("conifer", False)),
+        conifer_gap=float(preset.get("twig_gap", 0.55)),
+        needles_along=float(preset.get("needles_along", 0.0)),
         leaves_on_branch=None if preset.get("leaves") is None else int(preset["leaves"]),
         snow=parse_hex(preset["snow"]) if preset.get("snow") else None,
     )
