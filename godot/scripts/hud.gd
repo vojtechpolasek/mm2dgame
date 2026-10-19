@@ -50,6 +50,8 @@ var _result: Control
 var _result_title: Label
 var _result_note: Label
 var _result_buttons: VBoxContainer
+## Panely v horních rozích a nahoře uprostřed. Volný pohyb je skryje.
+var _corners: Array[Control] = []
 
 
 func _ready() -> void:
@@ -139,6 +141,13 @@ func point_factory(from: Vector2, to: Vector2) -> void:
 	_arrow.position = start + dir * reach
 	_arrow.rotation = dir.angle()
 	_arrow.visible = true
+
+
+## Volný pohyb: bez nesených kamenů, času, levelu a šipky. Zůstanou jen hlášky.
+func free_roam() -> void:
+	for panel in _corners:
+		panel.visible = false
+	_arrow.visible = false
 
 
 ## Okno konce hry: nadpis title, pod ním řádek note a návrat do menu.
@@ -378,6 +387,7 @@ func _corner_panel(preset: Control.LayoutPreset, grow: Control.GrowDirection) ->
 	add_child(panel)
 	panel.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, int(EDGE))
 	panel.grow_horizontal = grow
+	_corners.append(panel)
 	return panel
 
 

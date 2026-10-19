@@ -15,6 +15,13 @@ const POND_CLEAR := 10.0
 const POND_GAP := 7.0
 ## O kolik pixelů dřív než o obrys se bere dotek postavy.
 const TOUCH_PX := 2.0
+## Lávová puklina: vrstvy pod zemí jako důl, žár pulzuje. Svit vrstev od okraje ke dnu.
+const CRACK_SHADER := "res://shaders/crack_layer.gdshader"
+const CRACK_GLOW: Array[float] = [0.35, 0.6, 1.0]
+## Puklina drží od skal, padlých stromů a jiných puklin tolik metrů po celé délce, ať jde obejít.
+const CRACK_GAP_M := 2.0
+## Krok kontroly místa podél kapslí pukliny v px.
+const CRACK_STEP := 12.0
 
 var _radius := PackedFloat32Array()
 ## Výška vrcholu skály v metrech. Nízké jdou přeskočit.
@@ -35,10 +42,17 @@ var _bounds := {}
 var _kind_foot := PackedFloat32Array()
 ## Ležící kmen (padlý strom) nemá obrys po paprscích, ten by postavu u dlouhého kmene smýkl
 ## podél něj ke konci. Má kapsli: úsečku od pařezu ke koruně, poloměr se podél ní zužuje.
-## Po šesticích na variantu v souřadnicích obrázku od středu: ax, ay, bx, by, ra, rb.
-## _capsule_at je začátek druhu v _capsule, -1 u druhu bez kapsle.
+## Puklina má kapslí několik podél praskliny.
+## Kapsle jsou po šesticích v souřadnicích obrázku od středu: ax, ay, bx, by, ra, rb.
+## _capsule_rows má pro každou variantu dvojici: první kapsle v _capsule a jejich počet.
+## _capsule_at je začátek druhu v _capsule_rows, -1 u druhu bez kapslí.
 var _capsule := PackedFloat32Array()
+var _capsule_rows := PackedInt32Array()
 var _capsule_at := PackedInt32Array()
+## Natočení a varianta pukliny vybrané při kontrole místa. _keep je pak použije.
+var _shaped_kind := -1
+var _shaped_variant := 0
+var _shaped_turn := 0.0
 var _crystal: Crystal
 var _material_count := 0
 ## Body materiálů a jejich pořadí od nejběžnějšího. Sázení je čte ve vlákně.
@@ -223,11 +237,79 @@ func _pond_site(map: MapData, pos: Vector2) -> bool:
 	return _fits(pos, _pond_kind, map)
 
 
-## Rozestup podle povrchu a k tomu mimo cestu, továrnu a domy. Skála nesmí ležet na kmeni.
+## Rozestup podle povrchu a k tomu mimo cestu, továrnu a domy. Skála nesmí ležet na kmeni
+## a od pukliny drží CRACK_GAP_M. Puklina se zkouší po celé délce, viz _crack_fits.
 func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
+	if _is_crack(kind):
+		return super._fits(pos, kind, map) and _crack_fits(pos, kind, map)
 	if not super._fits(pos, kind, map) or _in_town(pos, _kind_foot[kind]):
 		return false
-	return _capsule_at[kind] >= 0 or not near_log(pos, _radius[kind])
+	return _capsule_at[kind] >= 0 or not near_log(pos, _radius[kind], true)
+
+
+## Vybere natočení a variantu pukliny podle polohy (náhodu sázení nebere) a zkusí, jestli
+## kapsle po celé délce leží na průchozím povrchu mapy, mimo vesnici a CRACK_GAP_M od
+## ostatních objektů. Když ano, _keep ji tak položí.
+func _crack_fits(pos: Vector2, kind: int, map: MapData) -> bool:
+	var roll := absi(hash(Vector2i(pos)))
+	var variant := roll % int(_kinds[kind]["variants"])
+	var turn := float((roll >> 8) % 3600) / 3600.0 * TAU
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var gap := CRACK_GAP_M * tile
+	var row := _capsule_at[kind] + variant * 2
+	var first := _capsule_rows[row]
+	for c in _capsule_rows[row + 1]:
+		var at := (first + c) * 6
+		var a := pos + Vector2(_capsule[at], _capsule[at + 1]).rotated(turn)
+		var b := pos + Vector2(_capsule[at + 2], _capsule[at + 3]).rotated(turn)
+		var steps := maxi(ceili(a.distance_to(b) / CRACK_STEP), 1)
+		for step in steps + 1:
+			var t := float(step) / float(steps)
+			var spot := a.lerp(b, t)
+			var radius := lerpf(_capsule[at + 4], _capsule[at + 5], t)
+			var x := floori(spot.x / tile)
+			var y := floori(spot.y / tile)
+			if x < 0 or y < 0 or x >= map.size or y >= map.size:
+				return false
+			if _walkable[map.terrain[y * map.size + x]] != 1:
+				return false
+			if _in_town(spot, radius) or _crowded_by(spot, radius + gap):
+				return false
+	_shaped_kind = kind
+	_shaped_variant = variant
+	_shaped_turn = turn
+	return true
+
+
+## Leží blíž než reach px od pos pata skály nebo kapsle jiného objektu?
+func _crowded_by(pos: Vector2, reach: float) -> bool:
+	var grid := _grid
+	var span := ceili((_foot + reach) / grid.cell)
+	var at := grid.cell_at(pos)
+	for cy in range(maxi(at.y - span, 0), mini(at.y + span, grid.side - 1) + 1):
+		for cx in range(maxi(at.x - span, 0), mini(at.x + span, grid.side - 1) + 1):
+			var item := grid.head[cy * grid.side + cx]
+			while item >= 0:
+				var limit := reach
+				var spot := _pos[item]
+				if _capsule_at[_kind[item]] >= 0:
+					var near := _capsule_near(item, pos)
+					spot = Vector2(near.x, near.y)
+					limit += near.z
+				else:
+					limit += _radius[_kind[item]]
+				if pos.distance_squared_to(spot) < limit * limit:
+					return true
+				item = grid.next[item]
+	return false
+
+
+func _keep(kind: int, pos: Vector2, rng: RandomNumberGenerator) -> void:
+	if kind == _shaped_kind:
+		_shaped_kind = -1
+		_keep_shaped(kind, pos, _shaped_variant, _shaped_turn)
+		return
+	super._keep(kind, pos, rng)
 
 
 ## Stromy drží od skal rozestup kolem středu. Od ležícího kmene ne, ten hlídá near_log
@@ -275,8 +357,8 @@ func _surface_key() -> String:
 func _build(kind: int) -> Node2D:
 	var node := super._build(kind)
 	node.z_index = 0 if _top[kind] <= LOW else 2
-	if _is_mine(kind):
-		# Vrstvy dolu jdou pod zem: nejhlubší se kreslí první, okraj na zemi přes ně.
+	if _is_pit(kind):
+		# Vrstvy dolu a pukliny jdou pod zem: nejhlubší se kreslí první, okraj na zemi přes ně.
 		var sprites: Array[Sprite2D] = []
 		for child in node.get_children():
 			if child is Sprite2D:
@@ -299,10 +381,20 @@ func _is_mine(kind: int) -> bool:
 	return kind >= 0 and kind < _kinds.size() and bool(_kinds[kind].get("mine", false))
 
 
-## Vrstvy dolu mají vždycky vlastní shader: barví kameny a svítí lucernou i bez posunu výšky.
-## Tady jen okraje spritů podle posunu, materiál dostanou v _paint_mine.
+func _is_crack(kind: int) -> bool:
+	return kind >= 0 and kind < _kinds.size() and bool(_kinds[kind].get("crack", false))
+
+
+## Vrstvy pod zemí: důl a puklina.
+func _is_pit(kind: int) -> bool:
+	return _is_mine(kind) or _is_crack(kind)
+
+
+## Vrstvy dolu a pukliny mají vždycky vlastní shader: důl barví kameny a svítí lucernou,
+## puklina žhne, obojí i bez posunu výšky. Tady okraje spritů podle posunu, materiál pukliny
+## je z katalogu, dolu ho dá _paint_mine.
 func _fit(node: Node2D, kind: int) -> void:
-	if not _is_mine(kind):
+	if not _is_pit(kind):
 		super._fit(node, kind)
 		return
 	var layers: Array = _kinds[kind]["layers"]
@@ -310,7 +402,10 @@ func _fit(node: Node2D, kind: int) -> void:
 		var sprite := child as Sprite2D
 		if sprite == null or not sprite.has_meta("layer"):
 			continue
-		var height := float(layers[int(sprite.get_meta("layer"))]["height"])
+		var info: Dictionary = layers[int(sprite.get_meta("layer"))]
+		if _is_crack(kind):
+			sprite.material = info["material"]
+		var height := float(info["height"])
 		var rect := sprite.get_rect().grow(ObjectLayers.vertex_pad(_fitted_view, absf(height)))
 		RenderingServer.canvas_item_set_custom_rect(sprite.get_canvas_item(), true, rect)
 
@@ -369,50 +464,85 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 		entry["mine"] = true
 		entry["rim_color"] = Color.html(str(info.get("color", "7C6A54")))
 		entry["wall_color"] = Color.html(str(info.get("wall", "6E6860")))
+	if bool(info.get("crack", false)):
+		entry["crack"] = true
+		_crack_materials(entry)
 	_foot = maxf(_foot, radius * FOOT_MARGIN)
 	_read_outline(info, int(entry["variants"]), radius * FOOT_MARGIN)
 	_read_capsule(info, int(entry["variants"]))
 	return entry
 
 
+## Vlastní materiál každé vrstvy pukliny: výška a síla žáru.
+func _crack_materials(entry: Dictionary) -> void:
+	var shader := load(CRACK_SHADER) as Shader
+	var layers: Array = entry["layers"]
+	for layer in layers.size():
+		var info: Dictionary = layers[layer]
+		var material := ShaderMaterial.new()
+		material.shader = shader
+		material.set_shader_parameter("height_m", float(info["height"]))
+		material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
+		material.set_shader_parameter("glow", CRACK_GLOW[mini(layer, CRACK_GLOW.size() - 1)])
+		info["material"] = material
+
+
+## Kapsle variant. Řádek je šestice (jedna kapsle, padlý strom), nebo seznam šestic (puklina).
 func _read_capsule(info: Dictionary, variants: int) -> void:
 	var listed: Variant = info.get("capsule", [])
 	var rows: Array = listed if typeof(listed) == TYPE_ARRAY else []
 	if rows.size() < variants:
 		_capsule_at.append(-1)
 		return
-	_capsule_at.append(_capsule.size())
+	_capsule_at.append(_capsule_rows.size())
 	for variant in variants:
 		var row: Array = rows[variant]
-		for value in row:
-			_capsule.append(float(value))
+		var shapes: Array = row if not row.is_empty() and typeof(row[0]) == TYPE_ARRAY else [row]
+		_capsule_rows.append(_capsule.size() / 6)
+		_capsule_rows.append(shapes.size())
+		for shape: Array in shapes:
+			for value in shape:
+				_capsule.append(float(value))
 
 
-## Ležící kmen, nebo -1. Index do _capsule pro variantu objektu.
+## Index do _capsule_rows pro variantu objektu, -1 u objektu bez kapslí.
 func _capsule_of(item: int) -> int:
 	var start := _capsule_at[_kind[item]]
-	return -1 if start < 0 else start + _variant[item] * 6
+	return -1 if start < 0 else start + _variant[item] * 2
 
 
-## Bod kapsle nejblíž pos a její poloměr v tom místě, ve světě.
+## Bod kapslí objektu nejblíž pos (k povrchu, ne k ose) a poloměr v tom místě, ve světě.
 func _capsule_near(item: int, pos: Vector2) -> Vector3:
-	var at := _capsule_of(item)
+	var row := _capsule_of(item)
 	var turn := _turn[item]
 	var local := (pos - _pos[item]).rotated(-turn)
-	var a := Vector2(_capsule[at], _capsule[at + 1])
-	var b := Vector2(_capsule[at + 2], _capsule[at + 3])
-	var ab := b - a
-	var t := clampf((local - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
-	var near := _pos[item] + (a + ab * t).rotated(turn)
-	return Vector3(near.x, near.y, lerpf(_capsule[at + 4], _capsule[at + 5], t))
+	var best := Vector3.ZERO
+	var best_gap := INF
+	var first := _capsule_rows[row]
+	for c in _capsule_rows[row + 1]:
+		var at := (first + c) * 6
+		var a := Vector2(_capsule[at], _capsule[at + 1])
+		var b := Vector2(_capsule[at + 2], _capsule[at + 3])
+		var ab := b - a
+		var t := clampf((local - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		var axis := a + ab * t
+		var radius := lerpf(_capsule[at + 4], _capsule[at + 5], t)
+		var gap := local.distance_to(axis) - radius
+		if gap < best_gap:
+			best_gap = gap
+			best = Vector3(axis.x, axis.y, radius)
+	var near := _pos[item] + Vector2(best.x, best.y).rotated(turn)
+	return Vector3(near.x, near.y, best.z)
 
 
-## Leží blíž než reach px od některého ležícího kmene? Pro sázení stromů a skal kolem padlých stromů.
-func near_log(pos: Vector2, reach: float) -> bool:
+## Leží blíž než reach px od některého ležícího kmene nebo pukliny? Pro sázení stromů a skal
+## kolem nich. spaced přidá od pukliny CRACK_GAP_M, skály ji tak nezatarasí.
+func near_log(pos: Vector2, reach: float, spaced: bool = false) -> bool:
 	if _capsule.is_empty() or _grid == null:
 		return false
 	var grid := _grid
-	var span := ceili((_foot + reach) / grid.cell)
+	var extra := CRACK_GAP_M * float(TerrainCatalog.TILE_SIZE) if spaced else 0.0
+	var span := ceili((_foot + reach + extra) / grid.cell)
 	var at := grid.cell_at(pos)
 	for cy in range(maxi(at.y - span, 0), mini(at.y + span, grid.side - 1) + 1):
 		for cx in range(maxi(at.x - span, 0), mini(at.x + span, grid.side - 1) + 1):
@@ -420,7 +550,7 @@ func near_log(pos: Vector2, reach: float) -> bool:
 			while item >= 0:
 				if _capsule_at[_kind[item]] >= 0:
 					var near := _capsule_near(item, pos)
-					var limit := near.z + reach
+					var limit := near.z + reach + (extra if _is_crack(_kind[item]) else 0.0)
 					if pos.distance_squared_to(Vector2(near.x, near.y)) < limit * limit:
 						return true
 				item = grid.next[item]
@@ -616,7 +746,7 @@ func _off_log(pos: Vector2, item: int, body: float) -> Vector2:
 	if dist_sq >= limit * limit:
 		return pos
 	if dist_sq < 0.0001:
-		var at := _capsule_of(item)
+		var at := _capsule_rows[_capsule_of(item)] * 6
 		var along := Vector2(_capsule[at + 2] - _capsule[at], _capsule[at + 3] - _capsule[at + 1])
 		away = along.orthogonal().rotated(_turn[item])
 	return axis + away.normalized() * limit

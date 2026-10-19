@@ -67,6 +67,9 @@ EDGE_SHIFT = (480.0 * PARALLAX, 260.0 * PARALLAX)
 # fallen je padlý strom, kreslí ho gen_fallen.py: pařez a stín kmene na zemi, ležící kmen
 # a koruna. length a crown jsou rozsahy délky kmene a dosahu koruny v px, kmen je o pětinu
 # užší než pařez. Je mezi skálami, ať se otáčí a sází jako ony. Kolize je kapsle kmene.
+# crack je lávová puklina, kreslí ji gen_crack.py. Vrstvy jdou pod zem jako u dolu. length
+# a width jsou rozsahy délky a největší šířky v px, branches počet odboček. lava je barva
+# žáru. Kolize je několik kapslí podél praskliny.
 ROCKS = {
     "balvan1": {
         "layers": 2,
@@ -142,6 +145,20 @@ ROCKS = {
         "leaf": "leaf1.png",
         "leaf_share": 0.4,
         "variants": 6,
+        "spacing": 2.0,
+    },
+    # Lávová puklina: 3,75 až 6 m dlouhá, jde přeskočit jako důl.
+    "puklina": {
+        "crack": True,
+        "layers": 3,
+        "widths": {1: 420, 2: 410, 3: 400},
+        "height": {1: 0.0, 2: -0.5, 3: -0.9},
+        "length": (240, 384),
+        "width": (15, 24),
+        "branches": (2, 4),
+        "color": "2A2624",
+        "lava": "FF7A1C",
+        "variants": 8,
         "spacing": 2.0,
     },
     "skala1": {
@@ -939,9 +956,29 @@ def check_fallen(name: str, preset: dict) -> int:
     return 3
 
 
+def check_crack(name: str, preset: dict) -> int:
+    """Puklina má okraj ve výšce 0 a pod ním dvě vrstvy čím dál hlubší."""
+    if int(preset["layers"]) != 3:
+        raise SystemExit(f"{name}: puklina má tři vrstvy")
+    heights = [float(preset["height"][layer]) for layer in (1, 2, 3)]
+    if heights[0] != 0.0 or not heights[0] > heights[1] > heights[2]:
+        raise SystemExit(f"{name}: výšky mají být 0 a dál klesat")
+    for key in ("length", "width", "branches"):
+        low, high = preset[key]
+        if not 0 <= low <= high:
+            raise SystemExit(f"{name}: {key} má být rozsah od menšího k většímu")
+    if float(preset.get("spacing", 0)) <= 0:
+        raise SystemExit(f"{name}: spacing musí být větší než 0")
+    parse_hex(preset["color"])
+    parse_hex(preset["lava"])
+    return 3
+
+
 def check_preset(name: str, preset: dict) -> int:
     if preset.get("mine"):
         return check_mine(name, preset)
+    if preset.get("crack"):
+        return check_crack(name, preset)
     if preset.get("fallen"):
         return check_fallen(name, preset)
     layers = int(preset["layers"])
@@ -1007,6 +1044,10 @@ def rock_info(rocks: dict) -> dict:
             from gen_fallen import canvas_size as fallen_canvas
 
             drawn = fallen_canvas(preset)
+        elif preset.get("crack"):
+            from gen_crack import canvas_size as crack_canvas
+
+            drawn = crack_canvas(preset)
         else:
             drawn = canvas_size(preset)
         layer_cells = {
@@ -1032,6 +1073,8 @@ def rock_info(rocks: dict) -> dict:
             },
             "spacing": float(preset["spacing"]),
         }
+        if preset.get("crack"):
+            catalog[name]["crack"] = True
         if preset.get("mine"):
             catalog[name]["mine"] = True
             catalog[name]["wall"] = preset["wall"]
@@ -1044,7 +1087,7 @@ def rock_info(rocks: dict) -> dict:
         if outline:
             catalog[name]["outline"] = outline
         shape_path = OUT_DIR / name / "capsule.json"
-        if preset.get("fallen") and shape_path.is_file():
+        if (preset.get("fallen") or preset.get("crack")) and shape_path.is_file():
             catalog[name]["capsule"] = json.loads(shape_path.read_text(encoding="utf-8"))
     return {
         "height_unit": "m",
@@ -1125,6 +1168,13 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
 
         saved = generate_fallen(name, preset, out, PREVIEW, seed, count)
         print(f"{count} variant padlého stromu, buňky {min(saved)}–{max(saved)} -> {out}")
+        print(PREVIEW / f"{name}.png")
+        return out
+    if preset.get("crack"):
+        from gen_crack import generate_crack
+
+        saved = generate_crack(name, preset, out, PREVIEW, seed, count)
+        print(f"{count} variant pukliny, buňky {min(saved)}–{max(saved)} -> {out}")
         print(PREVIEW / f"{name}.png")
         return out
     size = canvas_size(preset)

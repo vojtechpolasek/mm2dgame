@@ -226,6 +226,17 @@ func release(index: int, node: Node2D) -> void:
 	_pools[_kind[index]].append(node)
 
 
+## Uvolní všechny uzly objektů. Přihrádky je už mít nesmí (PropChunks.forget).
+func despawn() -> void:
+	for node: Node2D in _active:
+		node.queue_free()
+	_active.clear()
+	for pool: Array in _pools:
+		for node: Node2D in pool:
+			node.queue_free()
+	_pools.clear()
+
+
 func _index_surfaces(terrain_names: PackedStringArray, surfaces: Dictionary) -> void:
 	var count := terrain_names.size()
 	_chances.resize(count)

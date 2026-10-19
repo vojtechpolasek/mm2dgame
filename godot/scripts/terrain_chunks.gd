@@ -55,9 +55,30 @@ class Spare:
 	var cap := 0
 
 
+## Majitel sdíleného zásobníku. Sprity uvolněného čtverce se přestěhují k němu.
+var _spare_owner: Node2D
+
+
 ## Bere a vrací sprity do zásobníku jiných chunků. Volá se před setup.
 func share_spare(other: Node2D) -> void:
 	_spare = other.get("_spare")
+	_spare_owner = other
+
+
+## Před uvolněním čtverce: zobrazené chunky vrátí do zásobníku a sprity, které visí pod tímto
+## uzlem, přestěhuje k majiteli zásobníku, ať zůstanou ostatním čtvercům.
+func detach() -> void:
+	for key: Vector2i in _live.keys():
+		var sprite: Sprite2D = _live[key]
+		sprite.visible = false
+		_spare.sprites.append(sprite)
+	_live.clear()
+	_queue.clear()
+	if _spare_owner == null:
+		return
+	for sprite in _spare.sprites:
+		if is_instance_valid(sprite) and sprite.get_parent() == self:
+			sprite.reparent(_spare_owner, false)
 
 
 ## corners jsou čtyři bajty rohů na dlaždici z MapGenerator.corner_data. Katalog už má mapu

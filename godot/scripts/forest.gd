@@ -29,6 +29,8 @@ var _rock_gap := PackedFloat32Array()
 var _rock_grid: Grid
 ## Skály se sázejí dřív. Padlé stromy mezi nimi hlídá near_log podle kapsle kmene.
 var _rocks: Rocks
+## Řeka čtverce, strom do ní nevroste. Nastaví svět před sázením.
+var river
 
 
 ## Rozestup je v metrech a dlaždice je jeden metr. Skály z rocks stromy obcházejí.
@@ -143,6 +145,8 @@ func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
 	if _crowded(pos, kind, _dense[map.terrain[y * map.size + x]] == 1):
 		return false
 	if _hits_rock(pos, kind) or _in_town(pos, maxf(_solid[kind], _crown[kind] * TOWN_CROWN)):
+		return false
+	if river != null and (river.near(pos, _solid[kind] + LOG_GAP) or river.near_bridge(pos, maxf(_solid[kind], _crown[kind] * TOWN_CROWN))):
 		return false
 	return _rocks == null or not _rocks.near_log(pos, _solid[kind] + LOG_GAP)
 

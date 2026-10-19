@@ -13,6 +13,7 @@ func _ready() -> void:
 		return
 	Sound.play_menu_music()
 	play.pressed.connect(_on_play)
+	$Center/Panel/Column/FreeRoam.pressed.connect(_on_free_roam)
 	$Center/Panel/Column/Settings.pressed.connect(_on_settings)
 	$Center/Panel/Column/About.pressed.connect(_on_about)
 	$Center/Panel/Column/Quit.pressed.connect(_on_quit)
@@ -20,7 +21,18 @@ func _ready() -> void:
 
 
 func _on_play() -> void:
+	GameSession.free_roam = false
 	get_tree().change_scene_to_file("res://scenes/suit_menu.tscn")
+
+
+## Volný pohyb: rovnou výběr hráčů, pak pokaždé nový svět bez ukládání.
+func _on_free_roam() -> void:
+	GameSession.free_roam = true
+	GameSession.suit_id = ""
+	GameSession.suit_name = ""
+	GameSession.suit_resume = {}
+	GameSession.suit_outfits = []
+	get_tree().change_scene_to_file("res://scenes/character_menu.tscn")
 
 
 func _on_settings() -> void:

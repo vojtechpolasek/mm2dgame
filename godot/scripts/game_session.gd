@@ -40,6 +40,10 @@ const SUIT_RECIPE := 3
 ## Nejvíc hráčů. Ovladačů je tolik: šipky, WASD a čtyři gamepady.
 const MAX_PLAYERS := 6
 
+## Volný pohyb: svět bez továren, vesnic, dolů a příšer, bez času a cíle. Chodí se kamkoli
+## a svět se dotváří. Nic se neukládá, každý start je nový svět.
+var free_roam := false
+
 ## Identifikátor a jméno hry (kdo hraje) a uložený stav, ze kterého hra
 ## pokračuje. Prázdný stav je nová hra. Viz SuitSaves.
 var suit_id := ""

@@ -85,10 +85,10 @@ TERRAINS = {
         "coarseness": 1.0,
         "shore": "sand",
         "forest": {"strom_suchy": 0.012, "ker1": 0.01},
-        "rocks": {"balvan1": 0.03, "skala1": 0.006, "skala2": 0.005, "skala10": 0.004},
+        "rocks": {"balvan1": 0.03, "skala1": 0.006, "skala2": 0.005, "skala10": 0.004, "puklina": 0.003},
         "decor": {"trava_sucha": 0.1, "kvetiny": 0.04},
     },
-    # Černý popel po požáru: závěje popela, uhlíky, jen ohořelé suché stromy.
+    # Černý popel po požáru: závěje popela, uhlíky, jen ohořelé suché stromy a lávové pukliny.
     "ash": {
         "name": "ash",
         "base": "3B3937",
@@ -96,7 +96,7 @@ TERRAINS = {
         "contrast": 18.0,
         "coarseness": 1.6,
         "forest": {"strom_ohoreny": 0.09, "strom_suchy": 0.012},
-        "rocks": {"cedic_maly": 0.01, "cedic": 0.004},
+        "rocks": {"cedic_maly": 0.01, "cedic": 0.004, "puklina": 0.008},
         "decor": {"vyhonky": 0.15},
     },
     # Močál: bahno, louže a trsy ostřice, keře a pár stromů. Břeh nemá, bahno přejde rovnou do vody.
@@ -137,8 +137,8 @@ TERRAINS = {
         "coarseness": 1.7,
         "walkable": False,
         "max_distance": 30,
-        # Nejvýš 15 % plochy mapy. Generátor přebytek sloupne od břehu.
-        "max_share": 0.15,
+        # Nejvýš 20 % plochy mapy. Generátor přebytek sloupne od břehu.
+        "max_share": 0.2,
         "wave": {
             "speed": 0.5,
             "scale": 14,

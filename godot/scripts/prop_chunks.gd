@@ -50,6 +50,24 @@ func register(holder: Object, index: int, pos: Vector2) -> void:
 		(live[1] as Array).append(holder.acquire(index))
 
 
+## Zapomene objekty majitele: zobrazené mu vrátí (release) a dál je nebude chtít.
+func forget(holder: Object) -> void:
+	for key: Vector2i in _live:
+		var holders: Dictionary = _live[key]
+		if not holders.has(holder):
+			continue
+		var indices: Array = holders[holder][0]
+		var nodes: Array = holders[holder][1]
+		for i in indices.size():
+			holder.release(indices[i], nodes[i])
+		holders.erase(holder)
+	for key: Vector2i in _cells.keys():
+		var holders: Dictionary = _cells[key]
+		holders.erase(holder)
+		if holders.is_empty():
+			_cells.erase(key)
+
+
 func refresh() -> void:
 	if _camera == null or _chunk_px <= 0.0:
 		return

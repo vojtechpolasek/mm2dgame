@@ -126,7 +126,8 @@
         "balvan1": 0.03,
         "skala1": 0.006,
         "skala2": 0.005,
-        "skala10": 0.004
+        "skala10": 0.004,
+        "puklina": 0.003
       }
     },
     "ash": {
@@ -141,7 +142,8 @@
       },
       "rocks": {
         "cedic_maly": 0.01,
-        "cedic": 0.004
+        "cedic": 0.004,
+        "puklina": 0.008
       }
     },
     "swamp": {
@@ -197,7 +199,7 @@
       "base": "2C6E8A",
       "walkable": false,
       "max_distance": 30,
-      "max_share": 0.15,
+      "max_share": 0.2,
       "wave": {
         "speed": 0.5,
         "scale": 14,

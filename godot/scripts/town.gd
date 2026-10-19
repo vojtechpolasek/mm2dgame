@@ -960,6 +960,45 @@ func on_road(pos: Vector2) -> bool:
 	return _road_distance(pos, _core_half) < _core_half
 
 
+## Osy nožky a příčky, body po SAMPLE_PX. Pro řeku, která hledá místo na most.
+func road_lines() -> Array[PackedVector2Array]:
+	if _center == Vector2.INF:
+		return []
+	return [_stem, _bar]
+
+
+## Je bod blíž než reach px k okraji cesty? Pro řeku, která cestu obchází nebo ji přejde mostem.
+func road_near(pos: Vector2, reach: float) -> bool:
+	if _seg_a.is_empty() or not _keep_rect.grow(reach).has_point(pos):
+		return false
+	return _road_distance(pos, reach + _clear_half) < reach + _clear_half
+
+
+## Směr cesty v nejbližším úseku k bodu, úhel v radiánech. Bez cesty 0.
+func road_heading(pos: Vector2) -> float:
+	var best := INF
+	var heading := 0.0
+	for at in _seg_a.size():
+		var d := pos.distance_squared_to(Geometry2D.get_closest_point_to_segment(pos, _seg_a[at], _seg_b[at]))
+		if d < best:
+			best = d
+			heading = (_seg_b[at] - _seg_a[at]).angle()
+	return heading
+
+
+## Stojí u bodu továrna, dům nebo sklad (cesta se nepočítá)? radius je rezerva v px.
+func building_near(pos: Vector2, radius: float) -> bool:
+	if _center == Vector2.INF or not _keep_rect.grow(radius).has_point(pos):
+		return false
+	for solid in _solids:
+		if pos.distance_to(solid.center) < solid.reach + radius and solid.signed(pos) < radius:
+			return true
+	for part in _store_parts:
+		if pos.distance_to(part.center) < part.reach + radius and part.signed(pos) < radius:
+			return true
+	return false
+
+
 ## Posune střed těla ven z továrny a domů. Přes ně se nepřeskočí.
 func avoid(pos: Vector2, body: float) -> Vector2:
 	if _solids.is_empty() or not _solid_rect.grow(body).has_point(pos):

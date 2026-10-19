@@ -156,7 +156,7 @@ func _start() -> void:
 
 func _back() -> void:
 	Sound.ui("back")
-	get_tree().change_scene_to_file("res://scenes/suit_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn" if GameSession.free_roam else "res://scenes/suit_menu.tscn")
 
 
 # --- Karty ---

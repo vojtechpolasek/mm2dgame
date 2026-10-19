@@ -14,6 +14,8 @@ const Crowd := preload("res://scripts/crowd.gd")
 ## Střed těla nesmí blíž ke kraji čtverce než tolik metrů. Platí pro postavy, příšery
 ## i vesničany, chodící i létající.
 const EDGE_M := 1.0
+## Ve vodě řeky se jde poloviční rychlostí.
+const RIVER_PACE := 0.5
 ## Body na obvodu těla, které musí stát na souši.
 const PROBES: Array[Vector2] = [
 	Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
@@ -24,6 +26,8 @@ var _rocks: Rocks
 var _forest: Forest
 ## Továrna, cesta a domy. Mřížka cest příšer z ní bere půdorysy.
 var town: Town
+## Řeka čtverce. Ve vodě zpomalí na RIVER_PACE, na mostě (cesta) ne. Nastaví svět.
+var river
 var _map_size := Vector2.ZERO
 var _tiles := 0
 ## Světové souřadnice levého horního rohu mapy. Nula je jedna mapa od počátku.
@@ -72,9 +76,21 @@ func set_space(origin: Vector2) -> void:
 	space_origin = origin
 
 
-## Násobek rychlosti chůze na povrchu pod bodem. Močál zpomalí, mimo mapu 1.
+## Násobek rychlosti chůze na povrchu pod bodem. Močál a řeka zpomalí, mimo mapu 1.
 func pace(pos: Vector2) -> float:
-	return float(_pace.get(surface(pos), 1.0))
+	var ground := float(_pace.get(surface(pos), 1.0))
+	if world_board != null:
+		return ground * world_board.river_pace(pos)
+	return ground * river_pace(pos)
+
+
+## Ve vodě řeky RIVER_PACE, jinde a na mostě 1. pos je bod ve světě.
+func river_pace(pos: Vector2) -> float:
+	if river == null or not river.water_at(pos):
+		return 1.0
+	if town != null and town.on_road(pos):
+		return 1.0
+	return RIVER_PACE
 
 
 func surface(pos: Vector2) -> String:

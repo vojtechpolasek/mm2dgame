@@ -27,6 +27,8 @@ const STRIDE := 12
 
 ## Klíč kusu -> buffer instancí, souřadnice od rohu kusu.
 var _buffers := {}
+## Uzly kusů ve scéně, pro despawn.
+var _nodes: Array[Node] = []
 
 
 ## Atlas, mřížka, sítě a co roste na kterém povrchu. Jednou pro celý svět.
@@ -117,8 +119,8 @@ static func _quad(cell: float) -> ArrayMesh:
 
 ## Rozmístí porost. corners jsou rohy dlaždic z MapGenerator.corner_data: dlaždice, která má
 ## v rohu vodu, zůstane holá, je na ní břeh. tile_origin je poloha mapy ve světě v dlaždicích,
-## podle ní se berou shluky. seed drží rozmístění stejné i po načtení hry.
-func plant(kit: Dictionary, map: MapData, corners: PackedByteArray, town: Town, water: int, tile_origin: Vector2i, seed: int) -> void:
+## podle ní se berou shluky. seed drží rozmístění stejné i po načtení hry. Do řeky nic neroste.
+func plant(kit: Dictionary, map: MapData, corners: PackedByteArray, town: Town, water: int, tile_origin: Vector2i, seed: int, river = null) -> void:
 	_buffers.clear()
 	if kit.is_empty():
 		return
@@ -149,6 +151,8 @@ func plant(kit: Dictionary, map: MapData, corners: PackedByteArray, town: Town, 
 				for _i in count:
 					var pos := Vector2((float(x) + rng.randf()) * tile, (float(y) + rng.randf()) * tile)
 					if town != null and town.blocks(pos, TOWN_GAP):
+						continue
+					if river != null and river.near(pos, 4.0):
 						continue
 					var cells: PackedVector2Array = kind["cells"]
 					var span: Vector2 = kind["scale"]
@@ -199,4 +203,12 @@ func spawn(kit: Dictionary, host: Node2D, origin: Vector2) -> void:
 		node.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		node.position = origin + Vector2(key) * chunk_px
 		host.add_child(node)
+		_nodes.append(node)
 	_buffers.clear()
+
+
+func despawn() -> void:
+	for node in _nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_nodes.clear()
