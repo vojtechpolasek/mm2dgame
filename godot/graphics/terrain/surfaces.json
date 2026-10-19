@@ -27,14 +27,16 @@
       "walkable": true,
       "shore": "sand",
       "forest": {
-        "strom1": 0.091,
-        "strom2": 0.052,
-        "strom3": 0.0294,
-        "ker1": 0.11,
-        "strom_suchy": 0.065
+        "strom1": 0.073,
+        "strom2": 0.042,
+        "strom3": 0.0235,
+        "ker1": 0.088,
+        "strom_suchy": 0.052
       },
       "rocks": {
-        "balvan1": 0.01
+        "balvan1": 0.008,
+        "balvan_mech": 0.0024,
+        "padly_strom": 0.002
       }
     },
     "dirt": {
@@ -47,6 +49,9 @@
         "strom3": 0.045,
         "ker1": 0.042,
         "strom_suchy": 0.55
+      },
+      "rocks": {
+        "padly_strom": 0.002
       }
     },
     "desert": {
@@ -68,6 +73,9 @@
       "base": "E8EEF2",
       "walkable": true,
       "shore": "ice",
+      "avoid": [
+        "desert"
+      ],
       "forest": {
         "strom_snih": 0.546,
         "strom2_snih": 0.39,
@@ -77,6 +85,70 @@
         "balvan_snih": 0.017,
         "skala_snih": 0.0017,
         "skala2_snih": 0.00083
+      }
+    },
+    "scree": {
+      "base": "7E7A73",
+      "walkable": true,
+      "shore": "sand",
+      "forest": {
+        "strom_suchy": 0.012,
+        "ker1": 0.01
+      },
+      "rocks": {
+        "balvan1": 0.03,
+        "skala1": 0.006,
+        "skala2": 0.005,
+        "skala10": 0.004
+      }
+    },
+    "ash": {
+      "base": "3B3937",
+      "walkable": true,
+      "forest": {
+        "strom_ohoreny": 0.09,
+        "strom_suchy": 0.012
+      },
+      "rocks": {
+        "cedic_maly": 0.01,
+        "cedic": 0.004
+      }
+    },
+    "swamp": {
+      "base": "4E4A2F",
+      "walkable": true,
+      "speed": 0.65,
+      "avoid": [
+        "snow",
+        "desert"
+      ],
+      "forest": {
+        "ker_bazina": 0.2,
+        "vrba": 0.05,
+        "strom_suchy": 0.03
+      },
+      "rocks": {
+        "balvan_mech": 0.012,
+        "padly_strom": 0.0027
+      }
+    },
+    "heath": {
+      "base": "5E5040",
+      "walkable": true,
+      "shore": "sand",
+      "avoid": [
+        "desert"
+      ],
+      "forest": {
+        "ker1": 0.07,
+        "strom1": 0.012,
+        "strom_suchy": 0.02
+      },
+      "rocks": {
+        "balvan_mech": 0.01,
+        "balvan1": 0.008,
+        "skala_mech": 0.0015,
+        "padly_strom": 0.0007
       }
     },
     "water": {

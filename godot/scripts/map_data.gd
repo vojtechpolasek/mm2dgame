@@ -11,6 +11,8 @@ var surfaces := {}
 var terrain := PackedByteArray()
 ## Cena růstu z generátoru. Nižší cena vyhrává roh dlaždice při kreslení přechodů.
 var cost := PackedInt32Array()
+## Souš, kterou generátor doplňuje mezery (viz MapGenerator.grow). -1 u mapy z uložené hry.
+var land := -1
 ## Terén hned za krajem od sousedního čtverce světa. Prázdné pole nebo UNCLAIMED_TERRAIN
 ## znamená, že tam soused při tvoření mapy nebyl. Po řádcích západ a východ, po sloupcích sever a jih.
 var halo_w := PackedByteArray()

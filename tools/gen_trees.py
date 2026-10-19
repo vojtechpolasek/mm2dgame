@@ -333,7 +333,10 @@ class Grow:
     leaf: Image.Image
     hue_bias: float
     value_bias: float
+    sat_bias: float = 1.0
     leaves_on_branch: int | None = None
+    # Úplně holý strom: ani občasný lístek, který mají suché stromy.
+    bare: bool = False
     snow: tuple[int, int, int] | None = None
     salt: int = 1
 
@@ -373,7 +376,7 @@ def make_leaf_sprite(
     tinted = tint_leaf(
         bent,
         ctx.hue_bias + ctx.rng.uniform(-LEAF_HUE, LEAF_HUE),
-        ctx.rng.uniform(0.88, 1.12),
+        ctx.sat_bias * ctx.rng.uniform(0.88, 1.12),
         min(1.25, ctx.value_bias * ctx.rng.uniform(*LEAF_VALUE) * value_mul),
     )
     scaled = scale_nearest(tinted, scale)
@@ -502,7 +505,7 @@ def branch_leaf_count(ctx: Grow) -> int:
     if ctx.leaves_on_branch is None:
         return ctx.rng.randint(5, 8)
     if ctx.leaves_on_branch <= 0:
-        return 1 if ctx.rng.random() < 0.04 else 0
+        return 1 if not ctx.bare and ctx.rng.random() < 0.04 else 0
     return ctx.rng.randint(max(0, ctx.leaves_on_branch - 2), ctx.leaves_on_branch + 2)
 
 
@@ -561,7 +564,7 @@ def attach_children(ctx: Grow, branch: Branch, depth: int, max_radius: float | N
         attach_child(ctx, branch, skip, origin, radial_heading(ctx, origin, side_heading), length, max_radius)
     if ctx.snow is not None or ctx.leaves_on_branch == 0:
         extras = 0
-        if ctx.snow is None and ctx.rng.random() < 0.12:
+        if ctx.snow is None and not ctx.bare and ctx.rng.random() < 0.12:
             extras = 1
     else:
         extras = 1 if ctx.rng.random() < 0.45 else 2
@@ -813,8 +816,10 @@ def build_grow(preset: dict, rng: random.Random, size: int, leaf: Image.Image, w
         branch_levels=layers - 1,
         wood=wood,
         leaf=leaf,
-        hue_bias=rng.uniform(-8, 8),
-        value_bias=rng.uniform(0.94, 1.06),
+        hue_bias=float(preset.get("leaf_hue", 0.0)) + rng.uniform(-8, 8),
+        value_bias=float(preset.get("leaf_value", 1.0)) * rng.uniform(0.94, 1.06),
+        sat_bias=float(preset.get("leaf_sat", 1.0)),
+        bare=bool(preset.get("bare", False)),
         leaves_on_branch=None if preset.get("leaves") is None else int(preset["leaves"]),
         snow=parse_hex(preset["snow"]) if preset.get("snow") else None,
     )

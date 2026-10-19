@@ -33,6 +33,12 @@ var _bound_body := -1.0
 var _bounds := {}
 ## Největší dosah obrysu každého druhu. Vzdálené dvojice se podle něj odbudou bez hledání v obrysu.
 var _kind_foot := PackedFloat32Array()
+## Ležící kmen (padlý strom) nemá obrys po paprscích, ten by postavu u dlouhého kmene smýkl
+## podél něj ke konci. Má kapsli: úsečku od pařezu ke koruně, poloměr se podél ní zužuje.
+## Po šesticích na variantu v souřadnicích obrázku od středu: ax, ay, bx, by, ra, rb.
+## _capsule_at je začátek druhu v _capsule, -1 u druhu bez kapsle.
+var _capsule := PackedFloat32Array()
+var _capsule_at := PackedInt32Array()
 var _crystal: Crystal
 var _material_count := 0
 ## Body materiálů a jejich pořadí od nejběžnějšího. Sázení je čte ve vlákně.
@@ -217,9 +223,21 @@ func _pond_site(map: MapData, pos: Vector2) -> bool:
 	return _fits(pos, _pond_kind, map)
 
 
-## Rozestup podle povrchu a k tomu mimo cestu, továrnu a domy.
+## Rozestup podle povrchu a k tomu mimo cestu, továrnu a domy. Skála nesmí ležet na kmeni.
 func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
-	return super._fits(pos, kind, map) and not _in_town(pos, _kind_foot[kind])
+	if not super._fits(pos, kind, map) or _in_town(pos, _kind_foot[kind]):
+		return false
+	return _capsule_at[kind] >= 0 or not near_log(pos, _radius[kind])
+
+
+## Stromy drží od skal rozestup kolem středu. Od ležícího kmene ne, ten hlídá near_log
+## podle kapsle, ať strom smí růst těsně u kmene. Takový objekt má rozestup záporný.
+func spot_gaps() -> PackedFloat32Array:
+	var gaps := super.spot_gaps()
+	for index in gaps.size():
+		if _capsule_at[_kind[index]] >= 0:
+			gaps[index] = -1.0
+	return gaps
 
 
 func _remember_pond(mat: int) -> void:
@@ -353,7 +371,60 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 		entry["wall_color"] = Color.html(str(info.get("wall", "6E6860")))
 	_foot = maxf(_foot, radius * FOOT_MARGIN)
 	_read_outline(info, int(entry["variants"]), radius * FOOT_MARGIN)
+	_read_capsule(info, int(entry["variants"]))
 	return entry
+
+
+func _read_capsule(info: Dictionary, variants: int) -> void:
+	var listed: Variant = info.get("capsule", [])
+	var rows: Array = listed if typeof(listed) == TYPE_ARRAY else []
+	if rows.size() < variants:
+		_capsule_at.append(-1)
+		return
+	_capsule_at.append(_capsule.size())
+	for variant in variants:
+		var row: Array = rows[variant]
+		for value in row:
+			_capsule.append(float(value))
+
+
+## Ležící kmen, nebo -1. Index do _capsule pro variantu objektu.
+func _capsule_of(item: int) -> int:
+	var start := _capsule_at[_kind[item]]
+	return -1 if start < 0 else start + _variant[item] * 6
+
+
+## Bod kapsle nejblíž pos a její poloměr v tom místě, ve světě.
+func _capsule_near(item: int, pos: Vector2) -> Vector3:
+	var at := _capsule_of(item)
+	var turn := _turn[item]
+	var local := (pos - _pos[item]).rotated(-turn)
+	var a := Vector2(_capsule[at], _capsule[at + 1])
+	var b := Vector2(_capsule[at + 2], _capsule[at + 3])
+	var ab := b - a
+	var t := clampf((local - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+	var near := _pos[item] + (a + ab * t).rotated(turn)
+	return Vector3(near.x, near.y, lerpf(_capsule[at + 4], _capsule[at + 5], t))
+
+
+## Leží blíž než reach px od některého ležícího kmene? Pro sázení stromů a skal kolem padlých stromů.
+func near_log(pos: Vector2, reach: float) -> bool:
+	if _capsule.is_empty() or _grid == null:
+		return false
+	var grid := _grid
+	var span := ceili((_foot + reach) / grid.cell)
+	var at := grid.cell_at(pos)
+	for cy in range(maxi(at.y - span, 0), mini(at.y + span, grid.side - 1) + 1):
+		for cx in range(maxi(at.x - span, 0), mini(at.x + span, grid.side - 1) + 1):
+			var item := grid.head[cy * grid.side + cx]
+			while item >= 0:
+				if _capsule_at[_kind[item]] >= 0:
+					var near := _capsule_near(item, pos)
+					var limit := near.z + reach
+					if pos.distance_squared_to(Vector2(near.x, near.y)) < limit * limit:
+						return true
+				item = grid.next[item]
+	return false
 
 
 ## Obrys všech variant druhu. Varianta bez obrysu v katalogu dostane kruh jako dřív.
@@ -455,7 +526,14 @@ func block_cells(grid: AStarGrid2D, body: float, margin: float, clearance: float
 		var y1 := mini(int((center.y + reach) / tile), region.end.y - 1)
 		for y in range(y0, y1 + 1):
 			for x in range(x0, x1 + 1):
-				var delta := Vector2((float(x) + 0.5) * tile, (float(y) + 0.5) * tile) - center
+				var cell := Vector2((float(x) + 0.5) * tile, (float(y) + 0.5) * tile)
+				if _capsule_at[kind] >= 0:
+					var near := _capsule_near(item, cell)
+					var reach_log := near.z + body + margin
+					if cell.distance_squared_to(Vector2(near.x, near.y)) < reach_log * reach_log:
+						grid.set_point_solid(Vector2i(x, y))
+					continue
+				var delta := cell - center
 				var limit := _sample(_bound, kind, _variant[item], _turn[item], delta.angle()) + margin
 				if delta.length_squared() < limit * limit:
 					grid.set_point_solid(Vector2i(x, y))
@@ -513,6 +591,10 @@ func _push(pos: Vector2, body: float, clearance: float) -> Vector2:
 				if dist_sq >= most * most:
 					item = grid.next[item]
 					continue
+				if _capsule_at[kind] >= 0:
+					result = _off_log(result, item, body)
+					item = grid.next[item]
+					continue
 				var limit := _sample(_bound, kind, _variant[item], _turn[item], delta.angle())
 				if dist_sq < limit * limit:
 					if dist_sq < 0.0001:
@@ -521,6 +603,23 @@ func _push(pos: Vector2, body: float, clearance: float) -> Vector2:
 						result = _pos[item] + delta * (limit / sqrt(dist_sq))
 				item = grid.next[item]
 	return result
+
+
+## Vytlačí bod kolmo od ležícího kmene. Postava se o kmen zarazí a klouže podél něj
+## jako podél skály, nesmýkne se ke konci stromu.
+func _off_log(pos: Vector2, item: int, body: float) -> Vector2:
+	var near := _capsule_near(item, pos)
+	var axis := Vector2(near.x, near.y)
+	var limit := near.z + body
+	var away := pos - axis
+	var dist_sq := away.length_squared()
+	if dist_sq >= limit * limit:
+		return pos
+	if dist_sq < 0.0001:
+		var at := _capsule_of(item)
+		var along := Vector2(_capsule[at + 2] - _capsule[at], _capsule[at + 3] - _capsule[at + 1])
+		away = along.orthogonal().rotated(_turn[item])
+	return axis + away.normalized() * limit
 
 
 ## Důl, jehož obrysu se střed postavy dotýká. Žádný je -1.

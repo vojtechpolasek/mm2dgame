@@ -36,6 +36,7 @@ const AROUND: Array[Vector2i] = [
 ## max_share je nejvyšší podíl plochy mapy, který smí daný terén zabrat.
 ## ring je okolí od sousedních čtverců světa (viz ring_index). Krajní řada souseda je počátkem
 ## svého terénu, ten doroste do mapy o 0 až EDGE_WAVE dlaždic dál než nová semínka.
+## pool jsou terény nových semínek (viz pick_terrains), prázdný znamená všechny.
 static func grow(
 	size: int,
 	terrain_names: PackedStringArray,
@@ -43,6 +44,7 @@ static func grow(
 	max_distance: Dictionary = {},
 	max_share: Dictionary = {},
 	ring: PackedByteArray = PackedByteArray(),
+	pool: PackedInt32Array = PackedInt32Array(),
 ) -> MapData:
 	var cell_count := size * size
 	var terrain := PackedByteArray()
@@ -64,7 +66,10 @@ static func grow(
 	var bordered := west or east or north or south
 	var lo := Vector2i(EDGE_MARGIN if west else 0, EDGE_MARGIN if north else 0)
 	var hi := Vector2i(size - 1 - (EDGE_MARGIN if east else 0), size - 1 - (EDGE_MARGIN if south else 0))
-	var seeds := _place_seeds(size, terrain_names, rng, lo, hi)
+	if pool.is_empty():
+		pool = PackedInt32Array(range(terrain_names.size()))
+	var land := _land_of(pool, limits, terrain_names)
+	var seeds := _place_seeds(size, pool, land, terrain_names, rng, lo, hi)
 	# Vlnová délka je zlomek oblasti, ať je ohyb vidět i při maximálním oddálení.
 	var region := float(size) / sqrt(float(maxi(seeds.size(), 1)))
 	var amp := region * WARP
@@ -187,12 +192,13 @@ static func grow(
 				entry_cost.append(next_cost)
 
 	_remove_specks(terrain, cost, size, ring)
-	_fill_gaps(terrain, cost, size, limits, terrain_names.find("grass"))
-	_limit_shares(terrain, cost, size, limits, terrain_names, max_share, ring)
-	_clear_center(terrain, cost, size, terrain_names.find("water"), terrain_names.find("grass"), CENTER_CLEAR)
+	_fill_gaps(terrain, cost, size, limits, land)
+	_limit_shares(terrain, cost, size, limits, terrain_names, max_share, land, ring)
+	_clear_center(terrain, cost, size, terrain_names.find("water"), land, CENTER_CLEAR)
 	var map := MapData.new()
 	map.size = size
 	map.names = terrain_names
+	map.land = land
 	map.terrain = terrain
 	map.cost = cost
 	if bordered:
@@ -443,6 +449,7 @@ static func _limit_shares(
 	limits: PackedFloat32Array,
 	terrain_names: PackedStringArray,
 	max_share: Dictionary,
+	land: int,
 	ring: PackedByteArray = PackedByteArray(),
 ) -> void:
 	for terrain_name in max_share:
@@ -452,7 +459,7 @@ static func _limit_shares(
 		var share := float(max_share[terrain_name])
 		if share < 0.0 or share >= 1.0:
 			continue
-		_shrink_to_share(terrain, cost, size, limits, id, share, terrain_names.find("grass"), ring)
+		_shrink_to_share(terrain, cost, size, limits, id, share, land, ring)
 
 
 static func _shrink_to_share(
@@ -542,7 +549,8 @@ static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size
 ## Voda v kruhu kolem středu hotové mapy se změní na souš. Pro továrnu ve světě,
 ## ať nestojí v jezeře. Kraj mapy se nemění, když je poloměr menší než půlka strany.
 static func clear_disk(map: MapData, radius: float) -> void:
-	_clear_center(map.terrain, map.cost, map.size, map.names.find("water"), map.names.find("grass"), radius)
+	var land := map.land if map.land >= 0 else maxi(map.names.find("grass"), 0)
+	_clear_center(map.terrain, map.cost, map.size, map.names.find("water"), land, radius)
 
 
 ## Za krajem mapy je souš, pokud tam ring nemá stejnou vodu od souseda.
@@ -704,8 +712,17 @@ static func _resolve_unclaimed(
 
 
 ## Počátky leží v obdélníku lo až hi včetně. Kraj se sousedem tak zůstane terénu souseda.
-static func _place_seeds(size: int, terrain_names: PackedStringArray, rng: RandomNumberGenerator, lo: Vector2i, hi: Vector2i) -> Array[Vector3i]:
-	var count := mini(maxi(int(round(float(size) / 6.0)), terrain_names.size()), size * size)
+## Každý terén z pool dostane aspoň jeden počátek, zbytek se rozdělí náhodně.
+static func _place_seeds(
+	size: int,
+	pool: PackedInt32Array,
+	land: int,
+	terrain_names: PackedStringArray,
+	rng: RandomNumberGenerator,
+	lo: Vector2i,
+	hi: Vector2i,
+) -> Array[Vector3i]:
+	var count := mini(maxi(int(round(float(size) / 6.0)), pool.size()), size * size)
 	var spacing := maxi(4, int(float(size) / sqrt(float(count)) * 0.55))
 	var spacing_sq := spacing * spacing
 	var points: Array[Vector2i] = []
@@ -735,17 +752,17 @@ static func _place_seeds(size: int, terrain_names: PackedStringArray, rng: Rando
 		occupied[point] = true
 
 	var assignment: Array[int] = []
-	for index in terrain_names.size():
-		assignment.append(index)
+	for id in pool:
+		assignment.append(id)
 	while assignment.size() < points.size():
-		assignment.append(rng.randi_range(0, terrain_names.size() - 1))
+		assignment.append(pool[rng.randi_range(0, pool.size() - 1)])
 	for index in assignment.size():
 		var swap := rng.randi_range(index, assignment.size() - 1)
 		var saved := assignment[index]
 		assignment[index] = assignment[swap]
 		assignment[swap] = saved
 
-	_dry_center(points, assignment, size, terrain_names)
+	_dry_center(points, assignment, size, terrain_names, land)
 	var seeds: Array[Vector3i] = []
 	for index in points.size():
 		seeds.append(Vector3i(points[index].x, points[index].y, assignment[index]))
@@ -753,8 +770,8 @@ static func _place_seeds(size: int, terrain_names: PackedStringArray, rng: Rando
 
 
 ## Počátek vody u středu si prohodí terén s počátkem souše dál od středu. Podíly terénů zůstanou.
-## Když žádná taková souš není, stane se z vody tráva.
-static func _dry_center(points: Array[Vector2i], assignment: Array[int], size: int, terrain_names: PackedStringArray) -> void:
+## Když žádná taková souš není, stane se z vody souš land.
+static func _dry_center(points: Array[Vector2i], assignment: Array[int], size: int, terrain_names: PackedStringArray, land: int) -> void:
 	var water := terrain_names.find("water")
 	if water < 0:
 		return
@@ -772,4 +789,60 @@ static func _dry_center(points: Array[Vector2i], assignment: Array[int], size: i
 			swapped = true
 			break
 		if not swapped:
-			assignment[index] = maxi(terrain_names.find("grass"), 0)
+			assignment[index] = land
+
+
+## Terény nových semínek čtverce: count náhodných, které spolu smějí sousedit. Dvojice ze seznamu
+## avoid v surfaces.json spolu nesousedí, platí to oběma směry. Terény sousedních čtverců z ring
+## do čtverce dorostou tak jako tak, nový terén s nimi proto sousedit smět musí. Šanci mají
+## všechny terény stejnou, ať se terény prvního čtverce nerozlezou po celém světě.
+static func pick_terrains(
+	terrain_names: PackedStringArray,
+	surfaces: Dictionary,
+	rng: RandomNumberGenerator,
+	count: int,
+	ring: PackedByteArray = PackedByteArray(),
+) -> PackedInt32Array:
+	var present := {}
+	for id in ring:
+		if id != MapData.UNCLAIMED_TERRAIN and id < terrain_names.size():
+			present[int(id)] = true
+	var left: Array[int] = []
+	for id in terrain_names.size():
+		var clash := false
+		for other: int in present:
+			if _avoids(terrain_names, surfaces, id, other):
+				clash = true
+				break
+		if not clash:
+			left.append(id)
+	var picked := PackedInt32Array()
+	while picked.size() < count and not left.is_empty():
+		var id := left[rng.randi_range(0, left.size() - 1)]
+		picked.append(id)
+		left.erase(id)
+		for i in range(left.size() - 1, -1, -1):
+			if _avoids(terrain_names, surfaces, id, left[i]):
+				left.remove_at(i)
+	return picked
+
+
+static func _avoids(terrain_names: PackedStringArray, surfaces: Dictionary, a: int, b: int) -> bool:
+	var info_a: Dictionary = surfaces.get(terrain_names[a], {})
+	var info_b: Dictionary = surfaces.get(terrain_names[b], {})
+	return (info_a.get("avoid", []) as Array).has(terrain_names[b]) or (info_b.get("avoid", []) as Array).has(terrain_names[a])
+
+
+## Souš, kterou generátor doplňuje mezery a vysušuje vodu u středu: tráva, když je v pool,
+## jinak první terén z pool bez omezení dosahu. Bez takového terénu první terén, který není voda.
+static func _land_of(pool: PackedInt32Array, limits: PackedFloat32Array, terrain_names: PackedStringArray) -> int:
+	var grass := terrain_names.find("grass")
+	if pool.has(grass):
+		return grass
+	for id in pool:
+		if limits[id] < 0.0:
+			return id
+	for id in terrain_names.size():
+		if terrain_names[id] != "water":
+			return id
+	return 0

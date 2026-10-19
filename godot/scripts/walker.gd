@@ -31,6 +31,8 @@ var space_origin := Vector2.ZERO
 ## Když je nastavená, chůze sahá přes víc čtverců. Jinak platí tahle jedna mapa.
 var world_board = null
 var _walkable := PackedByteArray()
+## Jméno povrchu -> násobek rychlosti chůze (speed v surfaces.json). Jména platí ve všech čtvercích.
+var _pace := {}
 var _terrain := PackedByteArray()
 var _names := PackedStringArray()
 ## Tvorové, kteří nechodí přes sebe. Nastaví svět, než se kdo pohne.
@@ -52,6 +54,9 @@ func _init(rocks: Rocks, forest: Forest, town_at: Town, map: MapData) -> void:
 	for index in map.terrain.size():
 		var info: Dictionary = map.surfaces.get(map.names[map.terrain[index]], {})
 		_walkable[index] = 1 if bool(info.get("walkable", true)) else 0
+	for surface_name in map.names:
+		var info: Dictionary = map.surfaces.get(surface_name, {})
+		_pace[surface_name] = float(info.get("speed", 1.0))
 
 
 ## Označí v mřížce buňky (dlaždice), na kterých se nedá stát: voda.
@@ -65,6 +70,11 @@ func block_water(grid: AStarGrid2D) -> void:
 ## Jméno povrchu pod bodem (grass, dirt, ...). Mimo mapu prázdné.
 func set_space(origin: Vector2) -> void:
 	space_origin = origin
+
+
+## Násobek rychlosti chůze na povrchu pod bodem. Močál zpomalí, mimo mapu 1.
+func pace(pos: Vector2) -> float:
+	return float(_pace.get(surface(pos), 1.0))
 
 
 func surface(pos: Vector2) -> String:

@@ -1,6 +1,10 @@
 extends "res://scripts/layered_props.gd"
 
 const LayeredProps := preload("res://scripts/layered_props.gd")
+const Rocks := preload("res://scripts/rocks.gd")
+
+## Strom od ležícího kmene drží aspoň svůj pařez nebo keř a tolik pixelů navíc.
+const LOG_GAP := 6.0
 
 ## Na hlíně smí strom stát blíž jinému stromu, ať je jich asi dvakrát víc. Keře se nemění.
 const DIRT_TREE_GAP := 0.66
@@ -21,6 +25,8 @@ var _dirt := -1
 var _rock_pos := PackedVector2Array()
 var _rock_gap := PackedFloat32Array()
 var _rock_grid: Grid
+## Skály se sázejí dřív. Padlé stromy mezi nimi hlídá near_log podle kapsle kmene.
+var _rocks: Rocks
 
 
 ## Rozestup je v metrech a dlaždice je jeden metr. Skály z rocks stromy obcházejí.
@@ -35,13 +41,14 @@ func relocate(delta: Vector2) -> void:
 		_rock_grid.origin = delta
 
 
-func plant(map: MapData, rng: RandomNumberGenerator, rocks: LayeredProps = null) -> void:
+func plant(map: MapData, rng: RandomNumberGenerator, rocks: Rocks = null) -> void:
 	if _kinds.is_empty():
 		return
 	_begin_plant(map)
 	_dirt = map.names.find("dirt")
 	_rock_pos = PackedVector2Array()
 	_rock_gap = PackedFloat32Array()
+	_rocks = rocks
 	if rocks != null:
 		# Kopie: relocate posouvá vlastní pole. Sdílené by posunulo skály podruhé.
 		_rock_pos = rocks.spot_positions().duplicate()
@@ -131,10 +138,13 @@ func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
 	var y := clampi(int(pos.y / tile), 0, map.size - 1)
 	if _crowded(pos, kind, map.terrain[y * map.size + x] == _dirt):
 		return false
-	return not _hits_rock(pos, kind) and not _in_town(pos, maxf(_solid[kind], _crown[kind] * TOWN_CROWN))
+	if _hits_rock(pos, kind) or _in_town(pos, maxf(_solid[kind], _crown[kind] * TOWN_CROWN)):
+		return false
+	return _rocks == null or not _rocks.near_log(pos, _solid[kind] + LOG_GAP)
 
 
-## Strom drží od skály větší z obou rozestupů.
+## Strom drží od skály větší z obou rozestupů. Skála se záporným rozestupem je ležící kmen,
+## ten se hlídá zvlášť.
 func _hits_rock(pos: Vector2, kind: int) -> bool:
 	var grid := _rock_grid
 	var head := grid.head
@@ -148,6 +158,9 @@ func _hits_rock(pos: Vector2, kind: int) -> bool:
 		for cx in range(maxi(gx - 1, 0), mini(gx + 1, side - 1) + 1):
 			var item := head[cy * side + cx]
 			while item >= 0:
+				if _rock_gap[item] < 0.0:
+					item = next[item]
+					continue
 				var gap := maxf(own, _rock_gap[item])
 				if pos.distance_squared_to(_rock_pos[item]) < gap * gap:
 					return true

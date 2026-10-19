@@ -62,6 +62,11 @@ EDGE_SHIFT = (480.0 * PARALLAX, 260.0 * PARALLAX)
 # menší, protože hrboly díru stáhnou dovnitř skály.
 # snow je barva čepice. Leží na vrchní ploše a na římse, spodní obruba zůstane kámen.
 # Vyšší vrstva má sněhu víc.
+# moss je barva mechu. Roste ve skvrnách, hlavně nahoře a na stinné straně.
+# columns je průměr sloupu v px: vrchní plochy se rozpadnou na sloupy oddělené spárami (čedič).
+# fallen je padlý strom, kreslí ho gen_fallen.py: pařez a stín kmene na zemi, ležící kmen
+# a koruna. length a crown jsou rozsahy délky kmene a dosahu koruny v px, kmen je o pětinu
+# užší než pařez. Je mezi skálami, ať se otáčí a sází jako ony. Kolize je kapsle kmene.
 ROCKS = {
     "balvan1": {
         "layers": 2,
@@ -81,6 +86,63 @@ ROCKS = {
         "rough": 0.28,
         "variants": 9,
         "spacing": 0.8,
+    },
+    "balvan_mech": {
+        "layers": 2,
+        "widths": {1: 72, 2: 44},
+        "height": {1: 0.0, 2: 1.1},
+        "color": "726C60",
+        "moss": "56702F",
+        "rough": 0.3,
+        "variants": 9,
+        "spacing": 0.8,
+    },
+    "skala_mech": {
+        "layers": 3,
+        "widths": {1: 160, 2: 108, 3: 56},
+        "height": {1: 0.0, 2: 1.5, 3: 2.6},
+        "color": "6A665C",
+        "moss": "4F6A2C",
+        "rough": 0.3,
+        "variants": 9,
+        "spacing": 2.0,
+    },
+    # Čedič na popelu: tmavé šestiboké sloupy, vyšší uprostřed.
+    "cedic": {
+        "layers": 3,
+        "widths": {1: 190, 2: 136, 3: 80},
+        "height": {1: 0.0, 2: 1.8, 3: 3.4},
+        "color": "4C4844",
+        "columns": 20,
+        "rough": 0.22,
+        "variants": 9,
+        "spacing": 2.4,
+    },
+    "cedic_maly": {
+        "layers": 2,
+        "widths": {1: 92, 2: 58},
+        "height": {1: 0.0, 2: 1.1},
+        "color": "4E4A45",
+        "columns": 16,
+        "rough": 0.2,
+        "variants": 9,
+        "spacing": 1.0,
+    },
+    # Padlý strom: kmen 3,6 až 4,8 m, koruna s pár listy. Šest variant kvůli paměti, atlas je velký.
+    "padly_strom": {
+        "fallen": True,
+        "layers": 3,
+        "widths": {1: 340, 2: 340, 3: 320},
+        "height": {1: 0.0, 2: 0.5, 3: 0.9},
+        "length": (230, 300),
+        "crown": (110, 145),
+        "stump": {"radius": 17},
+        "color": "6A5038",
+        "moss": "56702F",
+        "leaf": "leaf1.png",
+        "leaf_share": 0.4,
+        "variants": 6,
+        "spacing": 2.0,
     },
     "skala1": {
         "layers": 4,
@@ -256,6 +318,54 @@ def make_facets(rng: random.Random, shape: Shape, count: int) -> list[tuple[floa
         brightness = rng.uniform(0.78, 1.22)
         facets.append((x, y, brightness))
     return facets
+
+
+def make_columns(rng: random.Random, shape: Shape, width: float) -> list[tuple[float, float, float]]:
+    """Středy sloupů v šestiúhelníkové mřížce s posunem. Spáry jsou hranice mezi nejbližšími středy."""
+    columns = []
+    step_y = width * 0.866
+    reach = max(shape.rx, shape.ry) * 1.6
+    row = 0
+    y = shape.cy - reach
+    while y <= shape.cy + reach:
+        x = shape.cx - reach + (width * 0.5 if row % 2 else 0.0)
+        while x <= shape.cx + reach:
+            jx = x + rng.uniform(-0.18, 0.18) * width
+            jy = y + rng.uniform(-0.18, 0.18) * width
+            if shape.norm(jx, jy)[0] <= 1.25:
+                columns.append((jx, jy, rng.uniform(0.84, 1.16)))
+            x += width
+        y += step_y
+        row += 1
+    return columns
+
+
+def soft_noise(x: float, y: float, scale: float, salt: int) -> float:
+    """Hladký šum 0 až 1 s buňkou scale pixelů."""
+    gx = x / scale
+    gy = y / scale
+    x0 = math.floor(gx)
+    y0 = math.floor(gy)
+    fx = gx - x0
+    fy = gy - y0
+    fx = fx * fx * (3 - 2 * fx)
+    fy = fy * fy * (3 - 2 * fy)
+    a = hash01(x0, y0, salt)
+    b = hash01(x0 + 1, y0, salt)
+    c = hash01(x0, y0 + 1, salt)
+    d = hash01(x0 + 1, y0 + 1, salt)
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
+
+
+def moss_amount(x: int, y: int, wy: float, lit: float, cap: float, salt: int) -> float:
+    """Podíl mechu: skvrny ze šumu, víc na vrchní ploše a na stinné straně."""
+    patch = soft_noise(x, y, 9.0, salt) * 0.7 + soft_noise(x, y, 3.5, salt + 5) * 0.3
+    grows = 0.35 + 0.45 * cap + 0.3 * (1 - lit)
+    edge = 0.62 - 0.22 * grows
+    amount = max(0.0, min(1.0, (patch - edge) / 0.1))
+    if hash01(x, y, salt + 7) > 0.9:
+        amount *= 0.5
+    return amount
 
 
 def make_bumps(rng: random.Random, shape: Shape, count: int) -> list[tuple[float, float, float, float]]:
@@ -627,6 +737,8 @@ def draw_layer(
     pond: Pond | None = None,
     snow: tuple[int, int, int] | None = None,
     snow_strength: float = 1.0,
+    moss: tuple[int, int, int] | None = None,
+    columns: float = 0.0,
 ) -> Image.Image:
     image = blank(size)
     pixels = image.load()
@@ -638,6 +750,16 @@ def draw_layer(
             min(0.45, max(0.18, base_s + 0.22)),
             base_v * 0.78,
         )
+    # Sloupy: ke každé buňce mřížky sloupy z ní a z osmi sousedních, ať se nehledá ve všech.
+    grid = None
+    if columns > 0:
+        grid = {}
+        for facet in facets:
+            gx = int(facet[0] // columns)
+            gy = int(facet[1] // columns)
+            for oy in (-1, 0, 1):
+                for ox in (-1, 0, 1):
+                    grid.setdefault((gx + ox, gy + oy), []).append(facet)
     max_mul = max(mul for _, mul in shape.verts)
     reach = max(shape.rx, shape.ry) * max_mul + 3
     x0 = max(0, int(shape.cx - reach))
@@ -679,12 +801,16 @@ def draw_layer(
                 grain *= 0.72
 
             best = 1e9
+            second = 1e9
             brightness = 1.0
-            for fx, fy, bias in facets:
+            for fx, fy, bias in (facets if grid is None else grid.get((int(x // columns), int(y // columns)), ())):
                 dist = (x - fx) ** 2 + (y - fy) ** 2
                 if dist < best:
+                    second = best
                     best = dist
                     brightness = bias
+                elif dist < second:
+                    second = dist
             # Světlo jde zleva shora. Vršek je světlejší, odhalená stěna pod ním tmavší.
             value = (0.74 + 0.22 * lit) * brightness * grain
             relief = 0.0
@@ -719,6 +845,13 @@ def draw_layer(
                 continue
             if (x, y) in cracks:
                 value *= 0.62
+            if columns:
+                # Spára mezi sloupy: tmavá, se světlou hranou na straně ke světlu.
+                gap = math.sqrt(second) - math.sqrt(best)
+                if gap < 1.4:
+                    value *= 0.5
+                elif gap < 2.6 and light > 0:
+                    value *= 1.1
             if pond is not None and pond.dry and not pond.hole and inside_mouth:
                 value *= 0.9
             if pond is not None and mouth_out > 0.0 and not (pond.dry and not pond.hole):
@@ -745,6 +878,12 @@ def draw_layer(
                     cap *= 0.22
                 if cap > 0.03:
                     rgb = mix_rgb(rgb, shade(snow, min(1.12, 0.9 + 0.16 * value)), cap)
+            if moss is not None:
+                cap = snow_amount(wy, covered, None if above is None else above_t, 1.0)
+                amount = moss_amount(x, y, wy, lit, cap, salt + 41)
+                if amount > 0.03:
+                    tuft = 0.86 + 0.28 * hash01(x, y, salt + 43)
+                    rgb = mix_rgb(rgb, shade(moss, min(1.2, (0.7 + 0.4 * value) * tuft)), amount)
             pixels[x, y] = (*rgb, 255)
     return image
 
@@ -781,9 +920,30 @@ def check_mine(name: str, preset: dict) -> int:
     return layers
 
 
+def check_fallen(name: str, preset: dict) -> int:
+    """Padlý strom má tři vrstvy: zem, kmen a korunu nad ním."""
+    if int(preset["layers"]) != 3:
+        raise SystemExit(f"{name}: padlý strom má tři vrstvy")
+    heights = [float(preset["height"][layer]) for layer in (1, 2, 3)]
+    if heights[0] != 0.0 or not heights[0] < heights[1] < heights[2]:
+        raise SystemExit(f"{name}: výšky mají být 0 a dál stoupat")
+    for key in ("length", "crown"):
+        low, high = preset[key]
+        if not 0 < low <= high:
+            raise SystemExit(f"{name}: {key} má být rozsah od menšího k většímu")
+    if float(preset.get("spacing", 0)) <= 0:
+        raise SystemExit(f"{name}: spacing musí být větší než 0")
+    parse_hex(preset["color"])
+    if preset.get("moss"):
+        parse_hex(preset["moss"])
+    return 3
+
+
 def check_preset(name: str, preset: dict) -> int:
     if preset.get("mine"):
         return check_mine(name, preset)
+    if preset.get("fallen"):
+        return check_fallen(name, preset)
     layers = int(preset["layers"])
     if not 1 <= layers <= 4:
         raise SystemExit(f"{name}: vrstvy mají být 1 až 4")
@@ -817,6 +977,10 @@ def check_preset(name: str, preset: dict) -> int:
     parse_hex(preset["color"])
     if preset.get("snow"):
         parse_hex(preset["snow"])
+    if preset.get("moss"):
+        parse_hex(preset["moss"])
+    if preset.get("columns") and not 6 <= float(preset["columns"]) <= 40:
+        raise SystemExit(f"{name}: columns má být 6 až 40 px")
     if preset.get("round"):
         if "pond_ratio" not in preset:
             raise SystemExit(f"{name}: kruhová skála potřebuje pond_ratio")
@@ -839,6 +1003,10 @@ def rock_info(rocks: dict) -> dict:
             from gen_mine import canvas_size as mine_canvas
 
             drawn = mine_canvas(preset)
+        elif preset.get("fallen"):
+            from gen_fallen import canvas_size as fallen_canvas
+
+            drawn = fallen_canvas(preset)
         else:
             drawn = canvas_size(preset)
         layer_cells = {
@@ -875,6 +1043,9 @@ def rock_info(rocks: dict) -> dict:
             catalog[name]["mouth"] = round(mouth, 1)
         if outline:
             catalog[name]["outline"] = outline
+        shape_path = OUT_DIR / name / "capsule.json"
+        if preset.get("fallen") and shape_path.is_file():
+            catalog[name]["capsule"] = json.loads(shape_path.read_text(encoding="utf-8"))
     return {
         "height_unit": "m",
         "spacing_unit": "m",
@@ -949,6 +1120,13 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
         print(f"{count} variant dolu, buňky {min(saved)}–{max(saved)} -> {out}")
         print(PREVIEW / f"{name}.png")
         return out
+    if preset.get("fallen"):
+        from gen_fallen import generate_fallen
+
+        saved = generate_fallen(name, preset, out, PREVIEW, seed, count)
+        print(f"{count} variant padlého stromu, buňky {min(saved)}–{max(saved)} -> {out}")
+        print(PREVIEW / f"{name}.png")
+        return out
     size = canvas_size(preset)
     color = parse_hex(preset["color"])
 
@@ -963,6 +1141,8 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
         rng = random.Random(seed + name_salt + index * 7919)
         stone = vary_color(color, rng, hue=7, value=0.05)
         snow_rgb = vary_color(parse_hex(preset["snow"]), rng, hue=2, value=0.02) if preset.get("snow") else None
+        moss_rgb = vary_color(parse_hex(preset["moss"]), rng, hue=8, value=0.06) if preset.get("moss") else None
+        column_px = float(preset.get("columns", 0))
         shapes = build_shapes(preset, rng, size)
         base = shapes[1]
         dry = bool(preset.get("dry"))
@@ -986,7 +1166,10 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
                 )
                 mouth = clamp_inside(top, mouth, 0.9)
                 pond_radius = mouth.rx
-        facets = make_facets(rng, base, facet_count(rng, base.rx * 2))
+        if column_px > 0:
+            facets = make_columns(rng, base, column_px)
+        else:
+            facets = make_facets(rng, base, facet_count(rng, base.rx * 2))
         frames: dict[int, Image.Image] = {}
         for layer in range(1, layers + 1):
             shape = shapes[layer]
@@ -995,7 +1178,11 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
                 cracks_n = int(cracks_n * 1.5)
             cracks = raster_cracks(rng, shape, cracks_n)
             bumps = make_bumps(rng, shape, bump_count(rng, shape.rx * 2))
-            lichen = 0.0 if preset.get("round") or snow_rgb is not None else (0.012 if layer == layers and base.rx >= 50 else 0.0)
+            if column_px > 0:
+                # Sloupy mají rovné vršky. Hrboly i praskliny jen naznačené.
+                bumps = [(bx, by, br, strength * 0.3) for bx, by, br, strength in bumps]
+                cracks = set(list(cracks)[: len(cracks) // 3])
+            lichen = 0.0 if preset.get("round") or snow_rgb is not None or moss_rgb is not None else (0.012 if layer == layers and base.rx >= 50 else 0.0)
             if preset.get("round"):
                 pond = Pond(pond_radius, water, layer == layers, dry, mouth)
             frames[layer] = draw_layer(
@@ -1013,6 +1200,8 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
                 pond=pond,
                 snow=snow_rgb,
                 snow_strength=0.78 + 0.22 * ((layer - 1) / max(layers - 1, 1)),
+                moss=moss_rgb,
+                columns=column_px,
             )
             layer_frames[layer].append(frames[layer])
         composites.append(stack_layers(frames, heights, (0.0, 0.0)))

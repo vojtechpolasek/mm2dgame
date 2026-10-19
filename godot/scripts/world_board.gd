@@ -41,6 +41,8 @@ const SuitSaves := preload("res://scripts/suit_saves.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
+## Kolik terénů si nový čtverec vybere (MapGenerator.pick_terrains). Víc by mapu rozdrobilo.
+const TERRAINS_PER_SQUARE := 4
 ## Od kraje, kde se na pozadí začne tvořit soused. Roh otevře i šikmý čtverec.
 const APPROACH := 32.0
 ## Kolem továrny se voda vysuší, ať nestojí v jezeře. Kraj čtverce to nemění.
@@ -415,7 +417,8 @@ func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
 
 
 func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> void:
-	var map := MapGenerator.grow(_side, _catalog.names, sq.rng, _catalog.max_distance, _catalog.max_share, ring)
+	var pool := MapGenerator.pick_terrains(_catalog.names, _catalog.surfaces, sq.rng, TERRAINS_PER_SQUARE, ring)
+	var map := MapGenerator.grow(_side, _catalog.names, sq.rng, _catalog.max_distance, _catalog.max_share, ring, pool)
 	map.surfaces = _catalog.surfaces
 	if sq.layout != "empty":
 		MapGenerator.clear_disk(map, CLEAR)
@@ -921,6 +924,7 @@ func _load(data: Dictionary) -> void:
 	_camera.position = first
 	var squares: Array = data.get("squares", [])
 	squares.sort_custom(_nearer_start)
+	var remap := _terrain_remap(data.get("terrains", PackedStringArray()))
 	for entry: Dictionary in squares:
 		var blob: PackedByteArray = entry["data"]
 		var record: Variant = bytes_to_var(blob.decompress(int(entry["size"]), FileAccess.COMPRESSION_ZSTD))
@@ -928,9 +932,12 @@ func _load(data: Dictionary) -> void:
 			push_warning("Čtverec %s uložené hry nejde přečíst." % entry["coord"])
 			continue
 		var coord: Vector2i = entry["coord"]
+		if not remap.is_empty():
+			_remap_record(record, remap)
 		_enqueue(coord, record)
 		var sq := _square(coord)
-		if sq != null:
+		# Přemapovaný čtverec se při dalším uložení zabalí znovu.
+		if sq != null and remap.is_empty():
 			sq.blob = blob
 			sq.blob_size = int(entry["size"])
 	# Čtverec levelu ani čtverec hráčů nemusí být uložený, když se zrovna tvořil.
@@ -938,6 +945,40 @@ func _load(data: Dictionary) -> void:
 	_enqueue(_active)
 	# Mapy už jsou ve čtvercích, velký slovník se nemusí držet.
 	GameSession.suit_resume = {}
+
+
+## Uložená hra drží terén jako čísla do seznamu jmen v době uložení. Když se seznam od té
+## doby změnil (přibyl terén), vrátí převod starého čísla na nové. Prázdný, když se nezměnil.
+## Terén, který už v katalogu není, se změní na trávu.
+func _terrain_remap(saved_names: PackedStringArray) -> PackedByteArray:
+	if saved_names == _catalog.names:
+		return PackedByteArray()
+	var remap := PackedByteArray()
+	remap.resize(256)
+	for id in 256:
+		remap[id] = id
+	var fallback := maxi(_catalog.names.find("grass"), 0)
+	for id in saved_names.size():
+		var now := _catalog.names.find(saved_names[id])
+		remap[id] = now if now >= 0 else fallback
+	return remap
+
+
+func _remap_record(record: Dictionary, remap: PackedByteArray) -> void:
+	for key in ["terrain", "vertex"]:
+		record[key] = _remapped(record[key], remap)
+	var halo: Array = record["halo"]
+	for i in halo.size():
+		halo[i] = _remapped(halo[i], remap)
+
+
+## MapData.UNCLAIMED_TERRAIN zůstane, jak je.
+func _remapped(bytes: PackedByteArray, remap: PackedByteArray) -> PackedByteArray:
+	var out := bytes.duplicate()
+	for i in out.size():
+		if out[i] != MapData.UNCLAIMED_TERRAIN:
+			out[i] = remap[out[i]]
+	return out
 
 
 func _nearer_start(a: Dictionary, b: Dictionary) -> bool:
@@ -1175,6 +1216,7 @@ func _snapshot() -> Dictionary:
 		"levels": _levels,
 		"done": done,
 		"rng": _world_rng.state,
+		"terrains": _catalog.names,
 		"squares": squares,
 		"stores": stores,
 		"state": state,

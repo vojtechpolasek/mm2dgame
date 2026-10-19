@@ -77,7 +77,11 @@ const GEM_ALPHA := 0.65
 const GEM_SCALE := 0.8
 const BOB_PX := 3.0
 const BOB_SPEED := 2.4
-const STEP_SURFACES: PackedStringArray = ["grass", "dirt", "desert", "snow"]
+## Zvuk kroků podle povrchu. Nové povrchy si půjčují zvuk podobného.
+const STEP_SOUNDS := {
+	"grass": "grass", "dirt": "dirt", "desert": "desert", "snow": "snow",
+	"heath": "grass", "swamp": "dirt", "scree": "dirt", "ash": "desert",
+}
 const STEP_VARIANTS := 4
 const STEP_DB := -14.0
 ## Pomoc při honičce: cílové místo je tenhle díl cesty od příšery k honěné postavě. Místo se
@@ -462,7 +466,7 @@ func _walk(delta: float) -> void:
 		return
 	var dir := to / left
 	var speed := RUN_METERS * float(TerrainCatalog.TILE_SIZE) if _fetching else _speed
-	var stride := minf(speed * delta, left)
+	var stride := minf(speed * _walker.pace(global_position) * delta, left)
 	# Mimo obrazovku jde jen po cestě z mřížky, ta překážky obchází sama. Šetří procesor.
 	if _routed and not _on_screen(OFF_SCREEN_M * float(TerrainCatalog.TILE_SIZE)):
 		position += dir * stride
@@ -504,8 +508,8 @@ func _footstep(moved: float) -> void:
 	if not _on_screen(0.0):
 		return
 	var ground := _walker.surface(global_position)
-	if STEP_SURFACES.has(ground):
-		Sound.at_variant("steps/" + ground, STEP_VARIANTS, global_position, STEP_DB)
+	if STEP_SOUNDS.has(ground):
+		Sound.at_variant("steps/" + str(STEP_SOUNDS[ground]), STEP_VARIANTS, global_position, STEP_DB)
 
 
 ## margin obrazovku zvětší o tolik pixelů světa na každou stranu.

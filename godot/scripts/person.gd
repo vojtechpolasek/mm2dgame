@@ -65,7 +65,11 @@ const RETURN_TIME := 0.7
 const SWAP_REPEAT := 1.0
 const RETURN_ARC := 48.0
 ## Krok zazní dvakrát za cyklus chůze, při každém dosednutí nohy. Povrchy se zvukem kroků.
-const STEP_SURFACES: PackedStringArray = ["grass", "dirt", "desert", "snow"]
+## Zvuk kroků podle povrchu. Nové povrchy si půjčují zvuk podobného.
+const STEP_SOUNDS := {
+	"grass": "grass", "dirt": "dirt", "desert": "desert", "snow": "snow",
+	"heath": "grass", "swamp": "dirt", "scree": "dirt", "ash": "desert",
+}
 const STEP_VARIANTS := 4
 const STEP_DB := -6.0
 const THROW_ARC := 36.0
@@ -208,6 +212,7 @@ func _step_run(delta: float, direction: Vector2) -> void:
 	var max_speed := RUN_METERS * float(TerrainCatalog.TILE_SIZE)
 	if _town != null and _town.on_road(position):
 		max_speed *= ROAD_BOOST
+	max_speed *= walker.pace(position)
 	if direction != Vector2.ZERO:
 		_velocity += direction * ACCELERATION * delta
 		if _velocity.length() > max_speed:
@@ -240,8 +245,8 @@ func _footstep(moved: float) -> void:
 		return
 	_step_travel = fmod(_step_travel, _figure.cycle_px * 0.5)
 	var ground := walker.surface(position)
-	if STEP_SURFACES.has(ground):
-		Sound.at_variant("steps/" + ground, STEP_VARIANTS, global_position, STEP_DB)
+	if STEP_SOUNDS.has(ground):
+		Sound.at_variant("steps/" + str(STEP_SOUNDS[ground]), STEP_VARIANTS, global_position, STEP_DB)
 
 
 ## Krok oříznutý vodítkem skupiny, ať se všichni vejdou na obrazovku. Kdyby oříznutí postavu

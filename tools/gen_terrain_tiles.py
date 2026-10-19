@@ -275,24 +275,19 @@ def paint_field(
     if kind == "water":
         paint_water(field, rng, base, hue_span, contrast, coarseness)
         return field
-
-    clump_count = max(8, int(round(22 / coarseness)))
-    for _ in range(clump_count):
-        cx = rng.randrange(size)
-        cy = rng.randrange(size)
-        radius = rng.uniform(2.2, 4.2) * math.sqrt(coarseness)
-        hue_off = rng.uniform(-hue_span, hue_span)
-        value_mul = 1 + rng.uniform(-contrast, contrast)
-        color = hsv_to_rgb(base_h + hue_off, base_s, min(1.0, max(0.0, base_v * value_mul)))
-        reach = int(math.ceil(radius))
-        for oy in range(-reach, reach + 1):
-            for ox in range(-reach, reach + 1):
-                dist = math.hypot(ox, oy) / radius
-                if dist > 1:
-                    continue
-                alpha = (1 - dist) ** 1.4 * 0.8
-                field.blend(cx + ox, cy + oy, color, alpha)
-
+    if kind == "scree":
+        paint_scree(field, rng, base, hue_span, contrast, coarseness)
+        return field
+    if kind == "ash":
+        paint_ash(field, rng, base, hue_span, contrast, coarseness)
+        return field
+    if kind == "swamp":
+        paint_swamp(field, rng, base, hue_span, contrast, coarseness)
+        return field
+    if kind == "heath":
+        paint_heath(field, rng, base, hue_span, contrast, coarseness)
+        return field
+    paint_grass(field, rng, base, hue_span, contrast, coarseness)
     return field
 
 
@@ -301,51 +296,6 @@ def point_inside(rng: random.Random, size: int, margin: int) -> tuple[int, int] 
     if margin * 2 >= size:
         return None
     return rng.randrange(margin, size - margin), rng.randrange(margin, size - margin)
-
-
-def paint_grass_marks(field: Field, rng: random.Random, coarseness: float, allow=None, density: float = 1.0) -> None:
-    size = field.size
-    leaf_count = max(1, int(round(90 / math.sqrt(coarseness) * density)))
-    for _ in range(leaf_count):
-        length = rng.randint(2, max(3, int(round(2 + 2 * coarseness))))
-        angle = rng.random() * math.tau
-        placed = False
-        for _try in range(24):
-            origin = point_inside(rng, size, length)
-            if origin is None:
-                break
-            x, y = origin
-            points: list[tuple[int, int]] = []
-            for step in range(length):
-                px = int(round(x + math.cos(angle) * step))
-                py = int(round(y + math.sin(angle) * step))
-                if not field.contains(px, py):
-                    points = []
-                    break
-                points.append((px, py))
-            if not points or (allow is not None and any(not allow(px, py) for px, py in points)):
-                continue
-            factor = rng.uniform(0.58, 0.78) if rng.random() < 0.7 else rng.uniform(1.16, 1.34)
-            color = scale_rgb(field.get(x, y), factor)
-            for step, (px, py) in enumerate(points):
-                field.set_inside(px, py, scale_rgb(color, 1 - step * 0.08))
-            placed = True
-            break
-        if not placed:
-            continue
-
-    speck_count = max(1, int(round(28 / coarseness * density)))
-    placed = 0
-    tries = 0
-    while placed < speck_count and tries < speck_count * 12:
-        tries += 1
-        x = rng.randrange(size)
-        y = rng.randrange(size)
-        if allow is not None and not allow(x, y):
-            continue
-        factor = 0.5 if rng.random() < 0.75 else 1.4
-        field.set_inside(x, y, scale_rgb(field.get(x, y), factor))
-        placed += 1
 
 
 def paint_dirt(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
@@ -375,83 +325,8 @@ def paint_dirt(field: Field, rng: random.Random, base: tuple[int, int, int], hue
                     dist = math.hypot(ox, oy) / (radius * lobe)
                 if dist > 1:
                     continue
-                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.5 * 0.85)
-
-
-def paint_dirt_marks(field: Field, rng: random.Random, coarseness: float, allow=None, density: float = 1.0) -> None:
-    size = field.size
-    stone_count = max(1, int(round(8 / coarseness * density)))
-    made = 0
-    tries = 0
-    while made < stone_count and tries < stone_count * 16:
-        tries += 1
-        rx = rng.uniform(1.5, 2.6) * math.sqrt(coarseness)
-        ry = rx * rng.uniform(0.7, 1.2)
-        reach = int(math.ceil(max(rx, ry)))
-        origin = point_inside(rng, size, reach)
-        if origin is None:
-            continue
-        cx, cy = origin
-        pixels: list[tuple[int, int, tuple[int, int, int]]] = []
-        local_h, local_s, local_v = rgb_to_hsv(*field.get(cx, cy))
-        fill = hsv_to_rgb(local_h + rng.uniform(-6, 8), local_s * rng.uniform(0.45, 0.7), min(1.0, local_v * rng.uniform(1.05, 1.2)))
-        rim = hsv_to_rgb(local_h, local_s * 0.55, local_v * 0.62)
-        blocked = False
-        for oy in range(-reach, reach + 1):
-            for ox in range(-reach, reach + 1):
-                dist = math.hypot(ox / rx, oy / ry)
-                if dist > 1:
-                    continue
-                px, py = cx + ox, cy + oy
-                if allow is not None and not allow(px, py):
-                    blocked = True
-                    break
-                pixels.append((px, py, rim if dist > 0.68 else fill))
-            if blocked:
-                break
-        if blocked or not pixels:
-            continue
-        for px, py, color in pixels:
-            field.blend_inside(px, py, color, 0.95)
-        made += 1
-
-    crack_count = max(1, int(round(6 / math.sqrt(coarseness) * density)))
-    for _ in range(crack_count):
-        length = rng.randint(4, max(5, int(round(6 + coarseness * 2))))
-        for _try in range(24):
-            origin = point_inside(rng, size, length)
-            if origin is None:
-                break
-            x, y = origin
-            angle = rng.random() * math.tau
-            points: list[tuple[int, int]] = []
-            for step in range(length):
-                if step:
-                    angle += rng.uniform(-0.45, 0.45)
-                px = int(round(x + math.cos(angle) * step))
-                py = int(round(y + math.sin(angle) * step))
-                if not field.contains(px, py):
-                    points = []
-                    break
-                points.append((px, py))
-            if not points or (allow is not None and any(not allow(px, py) for px, py in points)):
-                continue
-            for px, py in points:
-                field.set_inside(px, py, scale_rgb(field.get(px, py), 0.4))
-            break
-
-    crumb_count = max(1, int(round(24 / coarseness * density)))
-    placed = 0
-    tries = 0
-    while placed < crumb_count and tries < crumb_count * 12:
-        tries += 1
-        x = rng.randrange(size)
-        y = rng.randrange(size)
-        if allow is not None and not allow(x, y):
-            continue
-        factor = 0.62 if rng.random() < 0.6 else 1.22
-        field.set_inside(x, y, scale_rgb(field.get(x, y), factor))
-        placed += 1
+                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.5 * 0.4)
+    paint_grit(field, rng.randrange(1 << 30), 0.07, 0.04)
 
 
 def paint_desert(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
@@ -474,7 +349,8 @@ def paint_desert(field: Field, rng: random.Random, base: tuple[int, int, int], h
             base_s * (rng.uniform(0.72, 0.92) if lighter else rng.uniform(1.05, 1.25)),
             min(1.0, max(0.0, base_v * value_mul)),
         )
-        _paint_dune(field, cx, cy, along, across, wind + rng.uniform(-0.35, 0.35), color, 0.5 if lighter else 0.38)
+        _paint_dune(field, cx, cy, along, across, wind + rng.uniform(-0.35, 0.35), color, 0.2 if lighter else 0.15)
+    paint_ripples(field, fbm(size, 3, rng, 2), crest=0.06, trough=0.05, waves=(2, 3), bend=(1, 1))
 
 
 def _paint_dune(
@@ -500,83 +376,6 @@ def _paint_dune(
             field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.8 * strength)
 
 
-def paint_desert_marks(field: Field, rng: random.Random, coarseness: float, allow=None, density: float = 1.0) -> None:
-    size = field.size
-    wind = rng.random() * math.pi
-    ripple_count = max(2, int(round(7 / math.sqrt(coarseness) * density)))
-    for _ in range(ripple_count):
-        length = rng.randint(6, max(7, int(round(9 + coarseness * 2))))
-        for _try in range(24):
-            origin = point_inside(rng, size, length)
-            if origin is None:
-                break
-            x, y = origin
-            angle = wind + rng.uniform(-0.2, 0.2)
-            points: list[tuple[int, int]] = []
-            for step in range(length):
-                if step:
-                    angle += rng.uniform(-0.08, 0.08)
-                px = int(round(x + math.cos(angle) * step))
-                py = int(round(y + math.sin(angle) * step))
-                if not field.contains(px, py):
-                    points = []
-                    break
-                points.append((px, py))
-            if not points or (allow is not None and any(not allow(px, py) for px, py in points)):
-                continue
-            factor = 1.14 if rng.random() < 0.55 else 0.84
-            for px, py in points:
-                field.set_inside(px, py, scale_rgb(field.get(px, py), factor))
-            break
-
-    pebble_count = max(1, int(round(3 / coarseness * density)))
-    made = 0
-    tries = 0
-    while made < pebble_count and tries < pebble_count * 16:
-        tries += 1
-        rx = rng.uniform(1.1, 1.8)
-        ry = rx * rng.uniform(0.7, 1.15)
-        reach = int(math.ceil(max(rx, ry)))
-        origin = point_inside(rng, size, reach)
-        if origin is None:
-            continue
-        cx, cy = origin
-        local_h, local_s, local_v = rgb_to_hsv(*field.get(cx, cy))
-        fill = hsv_to_rgb(local_h + rng.uniform(-4, 6), local_s * rng.uniform(0.25, 0.45), min(1.0, local_v * rng.uniform(0.72, 0.88)))
-        pixels: list[tuple[int, int]] = []
-        blocked = False
-        for oy in range(-reach, reach + 1):
-            for ox in range(-reach, reach + 1):
-                dist = math.hypot(ox / rx, oy / ry)
-                if dist > 1:
-                    continue
-                px, py = cx + ox, cy + oy
-                if allow is not None and not allow(px, py):
-                    blocked = True
-                    break
-                pixels.append((px, py))
-            if blocked:
-                break
-        if blocked or not pixels:
-            continue
-        for px, py in pixels:
-            field.blend_inside(px, py, fill, 0.9)
-        made += 1
-
-    speck_count = max(4, int(round(18 / coarseness * density)))
-    placed = 0
-    tries = 0
-    while placed < speck_count and tries < speck_count * 12:
-        tries += 1
-        x = rng.randrange(size)
-        y = rng.randrange(size)
-        if allow is not None and not allow(x, y):
-            continue
-        factor = 0.7 if rng.random() < 0.45 else 1.18
-        field.set_inside(x, y, scale_rgb(field.get(x, y), factor))
-        placed += 1
-
-
 def paint_snow(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
     size = field.size
     base_h, base_s, base_v = rgb_to_hsv(*base)
@@ -596,7 +395,7 @@ def paint_snow(field: Field, rng: random.Random, base: tuple[int, int, int], hue
                 dist = math.hypot(ox, oy) / radius
                 if dist > 1:
                     continue
-                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.8 * 0.45)
+                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.8 * 0.25)
 
     hollow_count = max(2, int(round(5 / coarseness)))
     for _ in range(hollow_count):
@@ -614,7 +413,8 @@ def paint_snow(field: Field, rng: random.Random, base: tuple[int, int, int], hue
                 dist = math.hypot(ox, oy) / radius
                 if dist > 1:
                     continue
-                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.6 * 0.38)
+                field.blend(cx + ox, cy + oy, color, (1 - dist) ** 1.6 * 0.22)
+    paint_ripples(field, fbm(size, 3, rng, 2), crest=0.025, trough=0.035, waves=(2, 3), bend=(1, 1))
 
 
 def paint_snow_marks(field: Field, rng: random.Random, coarseness: float, allow=None, density: float = 1.0) -> None:
@@ -696,7 +496,7 @@ def paint_snow_marks(field: Field, rng: random.Random, coarseness: float, allow=
             if not points or (allow is not None and any(not allow(px, py) for px, py in points)):
                 continue
             for px, py in points:
-                field.set_inside(px, py, scale_rgb(field.get(px, py), 0.82))
+                field.set_inside(px, py, scale_rgb(field.get(px, py), 0.9))
             break
 
 
@@ -782,17 +582,680 @@ def paint_water_marks(field: Field, rng: random.Random, coarseness: float, allow
         placed += 1
 
 
+# --- Suť, popel, močál a vřesoviště ---
+# Podklad maluje paint_field jako u ostatních povrchů. Větší věci (kameny, louže, trsy) jsou
+# předměty z paint_objects, každá dlaždice má vlastní a celé uvnitř.
+
+# Světlo shora zleva, jednotkový vektor ve směru ke světlu.
+LIGHT = (-0.6, -0.8)
+
+
+class Piece:
+    """Předmět na dlaždici. layer je pořadí kreslení, draw(plocha, x, y) ho nakreslí na místo."""
+
+    __slots__ = ("x", "y", "layer", "draw")
+
+    def __init__(self, x: float, y: float, layer: int, draw) -> None:
+        self.x = x
+        self.y = y
+        self.layer = layer
+        self.draw = draw
+
+
+def soft_blob(field: Field, cx: float, cy: float, radius: float, color: tuple[int, int, int], strength: float, power: float = 1.6) -> None:
+    """Měkká skvrna. Kreslí se dokola přes kraj, podklad dlaždice navazuje sám na sebe."""
+    reach = int(math.ceil(radius))
+    for oy in range(-reach, reach + 1):
+        for ox in range(-reach, reach + 1):
+            dist = math.hypot(ox, oy) / radius
+            if dist > 1:
+                continue
+            field.blend(int(cx) + ox, int(cy) + oy, color, (1 - dist) ** power * strength)
+
+
+def lobed_pixels(cx: float, cy: float, radius: float, rng: random.Random, lobes: int = 8, spread: float = 0.28) -> list[tuple[int, int, float]]:
+    """Pixely nepravidelné skvrny a jejich poměrná vzdálenost od středu (0 střed, 1 kraj)."""
+    sizes = [rng.uniform(1 - spread, 1 + spread) for _ in range(lobes)]
+    reach = int(math.ceil(radius * (1 + spread))) + 1
+    out = []
+    for py in range(int(cy) - reach, int(cy) + reach + 1):
+        for px in range(int(cx) - reach, int(cx) + reach + 1):
+            dx = px + 0.5 - cx
+            dy = py + 0.5 - cy
+            index = (math.atan2(dy, dx) % math.tau) / math.tau * lobes
+            i0 = int(index) % lobes
+            i1 = (i0 + 1) % lobes
+            frac = index - int(index)
+            lobe = sizes[i0] + (sizes[i1] - sizes[i0]) * (frac * frac * (3 - 2 * frac))
+            dist = math.hypot(dx, dy) / (radius * lobe)
+            if dist <= 1:
+                out.append((px, py, dist))
+    return out
+
+
+def polygon_pixels(points: list[tuple[float, float]]) -> set[tuple[int, int]]:
+    """Pixely, jejichž střed leží v mnohoúhelníku."""
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    inside = set()
+    count = len(points)
+    for py in range(int(math.floor(min(ys))), int(math.ceil(max(ys))) + 1):
+        sy = py + 0.5
+        for px in range(int(math.floor(min(xs))), int(math.ceil(max(xs))) + 1):
+            sx = px + 0.5
+            hit = False
+            j = count - 1
+            for i in range(count):
+                xi, yi = points[i]
+                xj, yj = points[j]
+                if (yi > sy) != (yj > sy) and sx < (xj - xi) * (sy - yi) / (yj - yi) + xi:
+                    hit = not hit
+                j = i
+            if hit:
+                inside.add((px, py))
+    return inside
+
+
+def facing_light(dx: float, dy: float) -> float:
+    """Kosinus mezi směrem od středu a směrem ke světlu, -1 až 1."""
+    length = math.hypot(dx, dy)
+    if length < 0.001:
+        return 0.0
+    return (dx * LIGHT[0] + dy * LIGHT[1]) / length
+
+
+def draw_stone(field: Field, cx: float, cy: float, radius: float, color: tuple[int, int, int], seed: int) -> None:
+    """Ostrohranný kámen: dvě plošky lomené hřbetem, nasvícená hrana, stín vpravo dole."""
+    rng = random.Random(seed)
+    sides = rng.randint(5, 7)
+    start = rng.uniform(0, math.tau)
+    squash = rng.uniform(0.62, 1.0)
+    tilt = rng.uniform(0, math.pi)
+    points = []
+    for i in range(sides):
+        angle = start + math.tau * (i + rng.uniform(-0.3, 0.3)) / sides
+        reach = radius * rng.uniform(0.78, 1.1)
+        ox = math.cos(angle) * reach
+        oy = math.sin(angle) * reach * squash
+        points.append((
+            cx + ox * math.cos(tilt) - oy * math.sin(tilt),
+            cy + ox * math.sin(tilt) + oy * math.cos(tilt),
+        ))
+    inside = polygon_pixels(points)
+    shadow = (24, 22, 20)
+    for px, py in inside:
+        if (px + 1, py + 1) not in inside:
+            field.blend(px + 1, py + 1, shadow, 0.42)
+    ridge = rng.uniform(0, math.pi)
+    nx, ny = math.cos(ridge), math.sin(ridge)
+    shift = rng.uniform(-0.3, 0.3) * radius
+    lit = 1 + 0.2 * (nx * LIGHT[0] + ny * LIGHT[1])
+    unlit = 1 - 0.2 * (nx * LIGHT[0] + ny * LIGHT[1])
+    for px, py in inside:
+        dx = px + 0.5 - cx
+        dy = py + 0.5 - cy
+        factor = lit if dx * nx + dy * ny > shift else unlit
+        if any(n not in inside for n in ((px + 1, py), (px - 1, py), (px, py + 1), (px, py - 1))):
+            factor *= 1.16 if facing_light(dx, dy) > 0.2 else 0.74
+        factor *= 1 + (hash_unit(px, py, seed) - 0.5) * 0.1
+        field.set(px, py, scale_rgb(color, factor))
+
+
+def scatter_scree(rng: random.Random, size: int) -> list[Piece]:
+    pieces = []
+    for _ in range(90):
+        roll = rng.random()
+        if roll < 0.5:
+            radius = rng.uniform(1.2, 2.2)
+        elif roll < 0.82:
+            radius = rng.uniform(2.2, 3.4)
+        elif roll < 0.97:
+            radius = rng.uniform(3.4, 5.4)
+        else:
+            radius = rng.uniform(5.4, 7.5)
+        # Teplejší pískovec i chladnější žula, šedé s nízkou sytostí.
+        hue = rng.choice((32.0, 36.0, 28.0, 205.0, 40.0))
+        color = hsv_to_rgb(hue, rng.uniform(0.04, 0.14), rng.uniform(0.44, 0.74))
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        seed = rng.randrange(1 << 30)
+        # Velké kameny dospod, drobné leží na nich.
+        layer = 0 if radius >= 3.0 else 1
+        pieces.append(Piece(x, y, layer, lambda f, x, y, r=radius, c=color, s=seed: draw_stone(f, x, y, r, c, s)))
+    return pieces
+
+
+def paint_scree(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    size = field.size
+    base_h, base_s, base_v = rgb_to_hsv(*base)
+    # Hlína mezi kameny a světlejší drť.
+    for _ in range(max(4, int(round(8 / coarseness)))):
+        color = hsv_to_rgb(base_h + rng.uniform(-hue_span, hue_span), base_s * rng.uniform(1.1, 1.6), base_v * rng.uniform(0.62, 0.78))
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(4.0, 8.0) * math.sqrt(coarseness), color, 0.55)
+    for _ in range(max(3, int(round(6 / coarseness)))):
+        color = hsv_to_rgb(base_h, base_s * 0.6, min(1.0, base_v * rng.uniform(1.1, 1.22)))
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(3.0, 6.0) * math.sqrt(coarseness), color, 0.45)
+    paint_grit(field, rng.randrange(1 << 30), 0.16, 0.1)
+
+
+def paint_grit(field: Field, salt: int, dark: float, light: float) -> None:
+    """Drť po celé ploše: tmavé škvíry a světlá zrnka se stínem vpravo dole. Navazuje přes kraj."""
+    size = field.size
+    for y in range(size):
+        for x in range(size):
+            roll = hash_unit(x, y, salt)
+            if roll < dark:
+                field.set(x, y, scale_rgb(field.get(x, y), 0.74))
+            elif roll > 1 - light:
+                field.set(x, y, scale_rgb(field.get(x, y), 1.2))
+                field.set(x + 1, y + 1, scale_rgb(field.get(x + 1, y + 1), 0.82))
+
+
+def draw_charcoal(field: Field, cx: float, cy: float, length: float, width: float, angle: float, seed: int) -> None:
+    """Uhlík: podlouhlý, téměř černý, s popraskanou kůrkou a odleskem na horní hraně."""
+    ux, uy = math.cos(angle), math.sin(angle)
+    vx, vy = -uy, ux
+    half_l = length / 2
+    half_w = width / 2
+    corners = [
+        (cx + ux * sx * half_l + vx * sw * half_w, cy + uy * sx * half_l + vy * sw * half_w)
+        for sx, sw in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    ]
+    inside = polygon_pixels(corners)
+    if not inside:
+        inside = {(int(cx), int(cy))}
+    rng = random.Random(seed)
+    crack_every = rng.uniform(1.8, 2.8)
+    for px, py in inside:
+        if (px + 1, py + 1) not in inside:
+            field.blend(px + 1, py + 1, (8, 8, 8), 0.4)
+    for px, py in inside:
+        dx = px + 0.5 - cx
+        dy = py + 0.5 - cy
+        along = dx * ux + dy * uy
+        color = (27, 25, 24)
+        if abs(math.fmod(along + half_l, crack_every)) < 0.55:
+            color = (14, 13, 12)
+        elif any(n not in inside for n in ((px + 1, py), (px - 1, py), (px, py + 1), (px, py - 1))) and facing_light(dx, dy) > 0.1:
+            color = (84, 80, 76)
+        field.set(px, py, color)
+
+
+def draw_ember(field: Field, cx: float, cy: float, seed: int) -> None:
+    """Doutnající uhlík: tlumená záře a jasné jádro."""
+    rng = random.Random(seed)
+    soft_blob(field, cx, cy, rng.uniform(3.0, 4.2), (130, 44, 18), 0.5, 2.0)
+    core = [(0, 0)] + rng.sample([(1, 0), (0, 1), (-1, 0), (0, -1), (1, 1)], rng.randint(0, 2))
+    for ox, oy in core:
+        field.set(int(cx) + ox, int(cy) + oy, (232, 126, 52) if (ox, oy) != (0, 0) else (255, 196, 104))
+
+
+def scatter_ash(rng: random.Random, size: int) -> list[Piece]:
+    pieces = []
+    # Kusy uhlí: lomené jako kámen, skoro černé, s mdlým leskem.
+    for _ in range(9):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        radius = rng.uniform(1.4, 3.4)
+        tone = rng.randint(30, 40)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 0, lambda f, x, y, r=radius, t=tone, s=seed: draw_stone(f, x, y, r, (t, t - 2, t - 3), s)))
+    # Ohořelé třísky.
+    for _ in range(3):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        length = rng.uniform(5.0, 10.0)
+        width = rng.uniform(1.6, 2.4)
+        angle = rng.uniform(0, math.pi)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 0, lambda f, x, y, l=length, w=width, a=angle, s=seed: draw_charcoal(f, x, y, l, w, a, s)))
+    # Doutnající uhlík je vzácný, asi na každé třetí dlaždici.
+    if rng.random() < 0.35:
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 2, lambda f, x, y, s=seed: draw_ember(f, x, y, s)))
+    return pieces
+
+
+def paint_ash(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    size = field.size
+    base_h, base_s, base_v = rgb_to_hsv(*base)
+    wind = rng.random() * math.tau
+    # Závěje světlejšího popela po větru a černé saze.
+    for _ in range(max(3, int(round(6 / coarseness)))):
+        along = rng.uniform(10.0, 18.0) * math.sqrt(coarseness)
+        color = hsv_to_rgb(base_h, base_s * 0.7, min(1.0, base_v * rng.uniform(1.45, 1.8)))
+        _paint_dune(field, rng.randrange(size), rng.randrange(size), along, along * rng.uniform(0.25, 0.4), wind + rng.uniform(-0.3, 0.3), color, 0.6)
+    for _ in range(max(3, int(round(6 / coarseness)))):
+        color = hsv_to_rgb(base_h, base_s, base_v * rng.uniform(0.45, 0.6))
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(4.0, 8.0) * math.sqrt(coarseness), color, 0.55)
+    paint_grit(field, rng.randrange(1 << 30), 0.08, 0.05)
+
+
+def draw_puddle(field: Field, cx: float, cy: float, radius: float, weed: bool, seed: int) -> None:
+    """Louže: tmavá voda s bahnitým lemem, odlesk nebe vlevo nahoře, někdy okřehek."""
+    rng = random.Random(seed)
+    pixels = lobed_pixels(cx, cy, radius, rng, 7, 0.32)
+    deep = (30, 42, 38)
+    shallow = (52, 64, 54)
+    rim = (44, 40, 27)
+    glint = (124, 146, 140)
+    for px, py, dist in pixels:
+        dx = px + 0.5 - cx
+        dy = py + 0.5 - cy
+        if dist > 0.84:
+            field.blend(px, py, rim, 0.8)
+            continue
+        color = lerp_rgb(deep, shallow, (dist / 0.84) ** 1.6)
+        toward = (dx * LIGHT[0] + dy * LIGHT[1]) / radius
+        if dist < 0.72 and 0.32 < toward < 0.5 and hash_unit(px, py, seed) < 0.8:
+            color = lerp_rgb(color, glint, 0.4)
+        if weed and hash_unit(px, py, seed + 7) < 0.14:
+            color = (126, 156, 58) if hash_unit(px, py, seed + 9) < 0.6 else (98, 128, 46)
+        field.set(px, py, color)
+
+
+def draw_tuft(field: Field, cx: float, cy: float, seed: int, dark: tuple[int, int, int], tip: tuple[int, int, int], blades: tuple[int, int], length: tuple[float, float]) -> None:
+    """Trs stébel shora: stébla se rozbíhají z jednoho místa."""
+    rng = random.Random(seed)
+    field.blend(int(cx) + 1, int(cy) + 1, (20, 22, 12), 0.5)
+    for _ in range(rng.randint(*blades)):
+        angle = rng.uniform(0, math.tau)
+        steps = int(round(rng.uniform(*length)))
+        bend = rng.uniform(-0.12, 0.12)
+        for step in range(steps + 1):
+            t = step / max(1, steps)
+            px = int(round(cx + math.cos(angle) * step))
+            py = int(round(cy + math.sin(angle) * step))
+            field.set(px, py, lerp_rgb(dark, tip, t))
+            angle += bend
+    field.set(int(cx), int(cy), scale_rgb(dark, 0.7))
+
+
+def scatter_swamp(rng: random.Random, size: int) -> list[Piece]:
+    pieces = []
+    for _ in range(rng.randint(0, 3)):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        radius = rng.uniform(4.0, 10.5)
+        weed = rng.random() < 0.45
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 0, lambda f, x, y, r=radius, w=weed, s=seed: draw_puddle(f, x, y, r, w, s)))
+    for _ in range(rng.randint(8, 12)):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        seed = rng.randrange(1 << 30)
+        reed = rng.random() < 0.4
+        dark = (58, 70, 30) if reed else (70, 86, 36)
+        tip = (164, 158, 92) if reed else (138, 150, 70)
+        pieces.append(Piece(x, y, 1, lambda f, x, y, s=seed, d=dark, t=tip, r=reed: draw_tuft(
+            f, x, y, s, d, t, (7, 11) if r else (5, 8), (4.0, 7.5) if r else (2.5, 5.0))))
+    return pieces
+
+
+def paint_swamp(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    size = field.size
+    base_h, base_s, base_v = rgb_to_hsv(*base)
+    # Mech a ostřice v zelenějších polštářích, mokré bahno v tmavších.
+    for _ in range(max(4, int(round(8 / coarseness)))):
+        color = hsv_to_rgb(base_h + rng.uniform(12, 26), min(1.0, base_s * rng.uniform(1.1, 1.35)), min(1.0, base_v * rng.uniform(1.05, 1.25)))
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(5.0, 9.0) * math.sqrt(coarseness), color, 0.6)
+    for _ in range(max(3, int(round(6 / coarseness)))):
+        color = hsv_to_rgb(base_h - rng.uniform(0, 8), base_s * rng.uniform(0.8, 1.0), base_v * rng.uniform(0.6, 0.72))
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(4.0, 7.0) * math.sqrt(coarseness), color, 0.55)
+
+
+HEATHER = ((66, 50, 46), (110, 66, 98), (138, 90, 124), (162, 116, 148))
+HEATHER_DRY = ((70, 56, 44), (110, 92, 72), (132, 112, 88), (150, 128, 100))
+BILBERRY = ((56, 74, 38), (72, 94, 44), (92, 116, 54), (112, 134, 64))
+
+
+def draw_clump(field: Field, cx: float, cy: float, radius: float, palette: tuple, fill: float, seed: int) -> None:
+    """Keřík shora: hustě tečkovaný, tmavý spodek prosvítá, stín vpravo dole."""
+    rng = random.Random(seed)
+    pixels = lobed_pixels(cx, cy, radius, rng, 7, 0.3)
+    spots = {(px, py) for px, py, _ in pixels}
+    for px, py, _ in pixels:
+        if (px + 1, py + 1) not in spots:
+            field.blend(px + 1, py + 1, (30, 24, 20), 0.35)
+    for px, py, dist in pixels:
+        roll = hash_unit(px, py, seed)
+        if roll > fill + (1 - dist) * 0.15:
+            continue
+        toward = facing_light(px + 0.5 - cx, py + 0.5 - cy) * dist
+        pick = hash_unit(px, py, seed + 3) + toward * 0.35 - dist * 0.15
+        if pick < 0.3:
+            color = palette[0]
+        elif pick < 0.68:
+            color = palette[1]
+        elif pick < 0.9:
+            color = palette[2]
+        else:
+            color = palette[3]
+        field.set(px, py, color)
+
+
+def scatter_heath(rng: random.Random, size: int) -> list[Piece]:
+    pieces = []
+    for _ in range(10):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        radius = rng.uniform(3.5, 6.5)
+        seed = rng.randrange(1 << 30)
+        palette = HEATHER_DRY if rng.random() < 0.22 else HEATHER
+        pieces.append(Piece(x, y, 0, lambda f, x, y, r=radius, p=palette, s=seed: draw_clump(f, x, y, r, p, 0.72, s)))
+    for _ in range(4):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        radius = rng.uniform(2.5, 4.5)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 1, lambda f, x, y, r=radius, s=seed: draw_clump(f, x, y, r, BILBERRY, 0.6, s)))
+    return pieces
+
+
+def smooth01(t: float) -> float:
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+def paint_heath(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    size = field.size
+    # Olivové trávy a rašelina mezi keříky.
+    for _ in range(max(4, int(round(8 / coarseness)))):
+        color = hsv_to_rgb(rng.uniform(52, 64), rng.uniform(0.36, 0.46), rng.uniform(0.4, 0.48))
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(5.0, 9.0) * math.sqrt(coarseness), color, 0.55)
+    for _ in range(max(3, int(round(5 / coarseness)))):
+        color = hsv_to_rgb(rng.uniform(18, 28), rng.uniform(0.3, 0.4), rng.uniform(0.26, 0.32))
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(4.0, 7.0) * math.sqrt(coarseness), color, 0.5)
+    # Vřes a borůvčí tečkami po celé ploše. Kde je vřes hustší, rozhoduje šum, který navazuje přes kraj.
+    zone = fbm(size, 4, rng, 2)
+    salt = rng.randrange(1 << 30)
+    for y in range(size):
+        for x in range(size):
+            roll = hash_unit(x, y, salt)
+            # Hustý vřes ve skvrnách, mezi nimi tráva a rašelina. Tečky jdou po dvojicích pixelů.
+            heather = smooth01((zone[y][x] - 0.32) * 2.6) * 0.82
+            pick = hash_unit(x // 2, y, salt + 1) * 0.6 + hash_unit(x, y, salt + 5) * 0.4
+            if roll < heather:
+                palette = HEATHER_DRY if hash_unit(x // 3, y // 3, salt + 2) < 0.2 else HEATHER
+                field.set(x, y, palette[0] if pick < 0.35 else palette[1] if pick < 0.75 else palette[2] if pick < 0.95 else palette[3])
+            elif roll < heather + 0.18:
+                field.set(x, y, BILBERRY[0] if pick < 0.4 else BILBERRY[1] if pick < 0.8 else BILBERRY[2])
+
+
+# --- Tráva, hlína, poušť a sníh ---
+
+def paint_grass(field: Field, rng: random.Random, base: tuple[int, int, int], hue_span: float, contrast: float, coarseness: float) -> None:
+    """Tráva: světlejší a tmavší chomáče a přes ně hustá stébla. Všechno navazuje přes kraj."""
+    size = field.size
+    base_h, base_s, base_v = rgb_to_hsv(*base)
+    for _ in range(max(8, int(round(16 / coarseness)))):
+        lighter = rng.random() < 0.5
+        color = hsv_to_rgb(
+            base_h + (rng.uniform(-hue_span, -hue_span * 0.3) if lighter else rng.uniform(0, hue_span)),
+            min(1.0, base_s * (rng.uniform(0.85, 1.0) if lighter else rng.uniform(1.0, 1.15))),
+            min(1.0, base_v * (rng.uniform(1.06, 1.16) if lighter else rng.uniform(0.82, 0.92))),
+        )
+        soft_blob(field, rng.randrange(size), rng.randrange(size), rng.uniform(3.0, 6.5) * math.sqrt(coarseness), color, 0.6, 1.4)
+    # Stébla: tmavší u země, světlejší špička. Směr je náhodný, shora se tráva rozkládá na všechny strany.
+    for _ in range(int(size * size * 0.2)):
+        x = rng.randrange(size)
+        y = rng.randrange(size)
+        angle = rng.uniform(0, math.tau)
+        length = rng.randint(2, 4)
+        root = scale_rgb(field.get(x, y), rng.uniform(0.74, 0.86))
+        tip = scale_rgb(field.get(x, y), rng.uniform(1.08, 1.22))
+        for step in range(length):
+            t = step / max(1, length - 1)
+            field.set(int(round(x + math.cos(angle) * step)), int(round(y + math.sin(angle) * step)), lerp_rgb(root, tip, t))
+
+
+def draw_flowers(field: Field, cx: float, cy: float, seed: int) -> None:
+    """Pár květů jednoho druhu: světlé tečky se žlutým středem, mezi nimi tmavší lístky."""
+    rng = random.Random(seed)
+    petal = rng.choice(((240, 240, 232), (244, 214, 74), (196, 160, 222), (236, 236, 236)))
+    for _ in range(rng.randint(3, 6)):
+        x = int(cx + rng.uniform(-3.5, 3.5))
+        y = int(cy + rng.uniform(-3.5, 3.5))
+        field.blend(x + 1, y + 1, (40, 70, 28), 0.5)
+        for ox, oy in ((0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)):
+            field.set(x + ox, y + oy, petal)
+        field.set(x, y, (232, 180, 40) if petal != (244, 214, 74) else (200, 120, 30))
+
+
+def scatter_grass(rng: random.Random, size: int) -> list[Piece]:
+    pieces = []
+    for _ in range(rng.randint(5, 8)):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 0, lambda f, x, y, s=seed: draw_tuft(f, x, y, s, (46, 96, 34), (128, 182, 74), (7, 11), (3.0, 5.5))))
+    # Květy jen občas, ať louka nevypadá jako vzor.
+    if rng.random() < 0.3:
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 1, lambda f, x, y, s=seed: draw_flowers(f, x, y, s)))
+    return pieces
+
+
+def draw_leaf(field: Field, cx: float, cy: float, length: float, angle: float, color: tuple[int, int, int], seed: int) -> None:
+    """Spadlý list: lístek ze dvou oblouků, tmavší žilka, stín vpravo dole."""
+    ux, uy = math.cos(angle), math.sin(angle)
+    half = length / 2
+    width = length * 0.36
+    reach = int(math.ceil(half)) + 1
+    pixels = []
+    for oy in range(-reach, reach + 1):
+        for ox in range(-reach, reach + 1):
+            along = (ox * ux + oy * uy) / half
+            across = (-ox * uy + oy * ux) / width
+            if abs(along) <= 1 and abs(across) <= 1 - along * along:
+                pixels.append((int(cx) + ox, int(cy) + oy, across))
+    spots = {(px, py) for px, py, _ in pixels}
+    for px, py, _ in pixels:
+        if (px + 1, py + 1) not in spots:
+            field.blend(px + 1, py + 1, (30, 22, 14), 0.35)
+    for px, py, across in pixels:
+        factor = 0.8 if abs(across) < 0.18 else 1.0 + 0.08 * across
+        factor *= 1 + (hash_unit(px, py, seed) - 0.5) * 0.12
+        field.set(px, py, scale_rgb(color, factor))
+
+
+def draw_twig(field: Field, cx: float, cy: float, length: float, angle: float, seed: int) -> None:
+    """Větvička: tenká zahnutá čára se světlejší horní hranou a odbočkou."""
+    rng = random.Random(seed)
+    bend = rng.uniform(-0.08, 0.08)
+    x = cx - math.cos(angle) * length / 2
+    y = cy - math.sin(angle) * length / 2
+    dark = (58, 40, 26)
+    light = (112, 86, 60)
+    fork = rng.randint(2, max(2, int(length) - 2))
+    for step in range(int(length)):
+        px, py = int(round(x)), int(round(y))
+        field.blend(px + 1, py + 1, (30, 20, 12), 0.35)
+        field.set(px, py, dark)
+        field.set(px, py - 1, lerp_rgb(field.get(px, py - 1), light, 0.5))
+        if step == fork:
+            side = angle + rng.choice((-1, 1)) * 0.8
+            for twig in range(1, rng.randint(2, 4)):
+                field.set(int(round(px + math.cos(side) * twig)), int(round(py + math.sin(side) * twig)), dark)
+        x += math.cos(angle)
+        y += math.sin(angle)
+        angle += bend
+
+
+LITTER = ((150, 104, 44), (124, 78, 36), (168, 128, 60), (110, 64, 40), (132, 120, 56))
+
+
+def scatter_dirt(rng: random.Random, size: int) -> list[Piece]:
+    """Lesní půda: oblázky, spadané listí a větvičky."""
+    pieces = []
+    for _ in range(rng.randint(6, 10)):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        radius = rng.uniform(1.2, 2.6)
+        color = hsv_to_rgb(rng.uniform(25, 38), rng.uniform(0.08, 0.2), rng.uniform(0.46, 0.66))
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 0, lambda f, x, y, r=radius, c=color, s=seed: draw_stone(f, x, y, r, c, s)))
+    for _ in range(rng.randint(3, 6)):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        length = rng.uniform(5.5, 8.5)
+        angle = rng.uniform(0, math.tau)
+        color = rng.choice(LITTER)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 1, lambda f, x, y, l=length, a=angle, c=color, s=seed: draw_leaf(f, x, y, l, a, c, s)))
+    for _ in range(rng.randint(0, 2)):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        length = rng.uniform(6.0, 12.0)
+        angle = rng.uniform(0, math.tau)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 2, lambda f, x, y, l=length, a=angle, s=seed: draw_twig(f, x, y, l, a, s)))
+    return pieces
+
+
+def paint_ripples(
+    field: Field,
+    strength: list[list[float]],
+    crest: float = 0.07,
+    trough: float = 0.06,
+    waves: tuple[int, int] = (3, 5),
+    bend: tuple[int, int] = (1, 2),
+) -> None:
+    """Čeřiny od větru. waves je počet vln přes dlaždici po x a y, ohyb bend taky v celých vlnách,
+    takže vzor na kraji navazuje sám na sebe. strength (0 až 1, navazující šum) čeřiny místy utlumí."""
+    size = field.size
+    for y in range(size):
+        row = strength[y]
+        for x in range(size):
+            u = (waves[0] * x + waves[1] * y) / size
+            warp = 0.35 * math.sin(math.tau * (bend[0] * x + bend[1] * y) / size)
+            phase = math.tau * (u + warp / math.tau * 2)
+            wave = math.sin(phase) + 0.35 * math.sin(phase * 2)
+            fade = smooth01((row[x] - 0.25) * 2.2)
+            if wave > 0.9:
+                factor = 1 + crest * fade * min(1.0, (wave - 0.9) * 2.5)
+            elif wave < -0.4:
+                factor = 1 - trough * fade * min(1.0, (-0.4 - wave) * 1.6)
+            else:
+                continue
+            field.set(x, y, scale_rgb(field.get(x, y), factor))
+
+
+def scatter_desert(rng: random.Random, size: int) -> list[Piece]:
+    pieces = []
+    for _ in range(rng.randint(0, 3)):
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        radius = rng.uniform(1.1, 2.2)
+        color = hsv_to_rgb(rng.uniform(26, 36), rng.uniform(0.18, 0.32), rng.uniform(0.6, 0.78))
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 0, lambda f, x, y, r=radius, c=color, s=seed: draw_stone(f, x, y, r, c, s)))
+    # Suchý trs trávy je vzácný.
+    if rng.random() < 0.18:
+        x = rng.uniform(0, size)
+        y = rng.uniform(0, size)
+        seed = rng.randrange(1 << 30)
+        pieces.append(Piece(x, y, 1, lambda f, x, y, s=seed: draw_tuft(f, x, y, s, (150, 126, 72), (214, 192, 136), (6, 9), (3.0, 5.0))))
+    return pieces
+
+
+OBJECTS = {
+    "grass": scatter_grass,
+    "dirt": scatter_dirt,
+    "desert": scatter_desert,
+    "scree": scatter_scree,
+    "ash": scatter_ash,
+    "swamp": scatter_swamp,
+    "heath": scatter_heath,
+}
+
+
+class Probe:
+    """Náhradní plocha: nic nekreslí, jen si pamatuje, kam by předmět sáhl."""
+
+    def __init__(self, field: Field) -> None:
+        self.field = field
+        self.lo = [10**9, 10**9]
+        self.hi = [-(10**9), -(10**9)]
+
+    def _touch(self, x: int, y: int) -> None:
+        self.lo[0] = min(self.lo[0], x)
+        self.lo[1] = min(self.lo[1], y)
+        self.hi[0] = max(self.hi[0], x)
+        self.hi[1] = max(self.hi[1], y)
+
+    def get(self, x: int, y: int) -> tuple[int, int, int]:
+        return self.field.get(x, y)
+
+    def set(self, x: int, y: int, color: tuple[int, int, int]) -> None:
+        self._touch(x, y)
+
+    def blend(self, x: int, y: int, color: tuple[int, int, int], alpha: float) -> None:
+        if alpha > 0:
+            self._touch(x, y)
+
+
+def paint_objects(tile: Field, kind: str, seed: int) -> None:
+    """Předměty dlaždice. Každý leží celý uvnitř, i se stínem.
+
+    Společný okraj dlaždic je podklad vzoru, předmět přes spoj proto pokračovat nemůže.
+    Předmět, který by přes kraj přetekl, se přisune dovnitř, ať u kraje nevzniká prázdný pás.
+    """
+    scatter = OBJECTS.get(kind)
+    if scatter is None:
+        return
+    size = tile.size
+    pieces = scatter(random.Random(seed), size)
+    pieces.sort(key=lambda piece: piece.layer)
+    for piece in pieces:
+        probe = Probe(tile)
+        piece.draw(probe, piece.x, piece.y)
+        width = probe.hi[0] - probe.lo[0]
+        height = probe.hi[1] - probe.lo[1]
+        if width < 0 or width >= size or height >= size:
+            continue
+        dx = max(0, -probe.lo[0]) - max(0, probe.hi[0] - (size - 1))
+        dy = max(0, -probe.lo[1]) - max(0, probe.hi[1] - (size - 1))
+        piece.draw(tile, piece.x + dx, piece.y + dy)
+
+
+def paint_specks(field: Field, rng: random.Random, kind: str, coarseness: float, allow=None, density: float = 1.0) -> None:
+    """Drobné tečky: drť, zrnka popela, semínka. Jen uvnitř dlaždice."""
+    size = field.size
+    count = max(4, int(round(30 / coarseness * density)))
+    light, dark = {
+        "grass": (1.25, 0.7),
+        "dirt": (1.22, 0.62),
+        "desert": (1.12, 0.8),
+        "scree": (1.25, 0.6),
+        "ash": (1.9, 0.55),
+        "swamp": (1.3, 0.6),
+        "heath": (1.25, 0.65),
+    }[kind]
+    placed = 0
+    tries = 0
+    while placed < count and tries < count * 12:
+        tries += 1
+        x = rng.randrange(size)
+        y = rng.randrange(size)
+        if allow is not None and not allow(x, y):
+            continue
+        factor = dark if rng.random() < 0.6 else light
+        field.set_inside(x, y, scale_rgb(field.get(x, y), factor))
+        placed += 1
+
+
 def paint_marks(field: Field, rng: random.Random, kind: str, coarseness: float, allow=None, density: float = 1.0) -> None:
-    if kind == "dirt":
-        paint_dirt_marks(field, rng, coarseness, allow, density)
-    elif kind == "desert":
-        paint_desert_marks(field, rng, coarseness, allow, density)
-    elif kind == "snow":
+    if kind == "snow":
         paint_snow_marks(field, rng, coarseness, allow, density)
     elif kind == "water":
         paint_water_marks(field, rng, coarseness, allow, density)
     else:
-        paint_grass_marks(field, rng, coarseness, allow, density)
+        paint_specks(field, rng, kind, coarseness, allow, density)
 
 
 def master_weight(x: int, y: int, size: int, border: int, blend: int) -> float:
@@ -945,6 +1408,7 @@ def generate_surface(
         tile = apply_shared_border(master, variant, border, blend)
         if not borders_match(master, tile, border):
             raise SystemExit("okraje dlaždic nesedí")
+        paint_objects(tile, kind, variant_seed + 77)
         paint_marks(tile, random.Random(variant_seed + 50), kind, coarseness)
         tile.fill_mask(liquid)
         tiles.append(tile)

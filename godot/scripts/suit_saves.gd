@@ -9,8 +9,8 @@ extends RefCounted
 const DIR := "user://suits"
 const RESULTS := "user://suits/results.cfg"
 const LAST := "user://suits/last.cfg"
-## Verze souboru uložení. Starší nebo novější se nenačte.
-const VERSION := 1
+## Verze souboru uložení. Starší nebo novější se nenačte. Verze 2 ukládá jména terénů.
+const VERSION := 2
 const PARTS: PackedStringArray = ["shirt", "pants", "hair"]
 
 

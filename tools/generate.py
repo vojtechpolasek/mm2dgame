@@ -22,6 +22,9 @@ SURFACES_PATH = ROOT / "godot" / "graphics" / "terrain" / "surfaces.json"
 # Poušť má jen suché stromy a těch je málo. Velké skály tu jsou, ale řídce.
 # Na trávě je jen pár malých balvanů.
 # Sníh má víc stromů než tráva a míň než hlína. Skal je málo, malých kamenů víc.
+# Padlé stromy (padly_strom mezi skálami) leží hlavně na trávě, v lese na hlíně a v močálu.
+# Čtverec světa si vybere jen pár terénů. avoid jsou terény, se kterými se nevybere
+# společně (platí oběma směry), ať vedle sebe není třeba sníh a poušť.
 TERRAINS = {
     "grass": {
         "name": "grass",
@@ -30,23 +33,24 @@ TERRAINS = {
         "contrast": 28.0,
         "coarseness": 1.0,
         "shore": "sand",
-        "forest": {"strom1": 0.091, "strom2": 0.052, "strom3": 0.0294, "ker1": 0.11, "strom_suchy": 0.065},
-        "rocks": {"balvan1": 0.01},
+        "forest": {"strom1": 0.073, "strom2": 0.042, "strom3": 0.0235, "ker1": 0.088, "strom_suchy": 0.052},
+        "rocks": {"balvan1": 0.008, "balvan_mech": 0.0024, "padly_strom": 0.002},
     },
     "dirt": {
         "name": "dirt",
         "base": "7A5A3A",
         "hue": 3.0,
-        "contrast": 22.0,
+        "contrast": 14.0,
         "coarseness": 1.4,
         "shore": "sand",
         "forest": {"strom1": 1.15, "strom2": 1.0, "strom3": 0.045, "ker1": 0.042, "strom_suchy": 0.55},
+        "rocks": {"padly_strom": 0.002},
     },
     "desert": {
         "name": "desert",
         "base": "E2C48A",
-        "hue": 3.0,
-        "contrast": 16.0,
+        "hue": 2.0,
+        "contrast": 9.0,
         "coarseness": 2.0,
         "shore": "sand",
         "forest": {"strom_suchy": 0.02},
@@ -56,11 +60,58 @@ TERRAINS = {
         "name": "snow",
         "base": "E8EEF2",
         "hue": 2.0,
-        "contrast": 12.0,
+        "contrast": 6.0,
         "coarseness": 1.8,
         "shore": "ice",
         "forest": {"strom_snih": 0.546, "strom2_snih": 0.39, "ker_snih": 0.1},
         "rocks": {"balvan_snih": 0.017, "skala_snih": 0.0017, "skala2_snih": 0.00083},
+        "avoid": ["desert"],
+    },
+    # Kamenná suť: drobné i větší ostrohranné kameny, hodně skal, skoro žádné stromy.
+    "scree": {
+        "name": "scree",
+        "base": "7E7A73",
+        "hue": 2.0,
+        "contrast": 12.0,
+        "coarseness": 1.0,
+        "shore": "sand",
+        "forest": {"strom_suchy": 0.012, "ker1": 0.01},
+        "rocks": {"balvan1": 0.03, "skala1": 0.006, "skala2": 0.005, "skala10": 0.004},
+    },
+    # Černý popel po požáru: závěje popela, uhlíky, jen ohořelé suché stromy.
+    "ash": {
+        "name": "ash",
+        "base": "3B3937",
+        "hue": 1.5,
+        "contrast": 18.0,
+        "coarseness": 1.6,
+        "forest": {"strom_ohoreny": 0.09, "strom_suchy": 0.012},
+        "rocks": {"cedic_maly": 0.01, "cedic": 0.004},
+    },
+    # Močál: bahno, louže a trsy ostřice, keře a pár stromů. Břeh nemá, bahno přejde rovnou do vody.
+    "swamp": {
+        "name": "swamp",
+        "base": "4E4A2F",
+        "hue": 3.0,
+        "contrast": 14.0,
+        "coarseness": 1.5,
+        "forest": {"ker_bazina": 0.2, "vrba": 0.05, "strom_suchy": 0.03},
+        "rocks": {"balvan_mech": 0.012, "padly_strom": 0.0027},
+        "avoid": ["snow", "desert"],
+        # V bahně se chodí pomaleji: postavy, vesničané i příšery, které nelétají.
+        "speed": 0.65,
+    },
+    # Vřesoviště: fialový vřes, borůvčí a olivová tráva. Keře, řídké stromy a balvany.
+    "heath": {
+        "name": "heath",
+        "base": "5E5040",
+        "hue": 3.0,
+        "contrast": 14.0,
+        "coarseness": 1.2,
+        "shore": "sand",
+        "forest": {"ker1": 0.07, "strom1": 0.012, "strom_suchy": 0.02},
+        "rocks": {"balvan_mech": 0.01, "balvan1": 0.008, "skala_mech": 0.0015, "padly_strom": 0.0007},
+        "avoid": ["desert"],
     },
     "water": {
         "name": "water",
@@ -124,6 +175,8 @@ SHORE = {
 # height je výška vrstvy v metrech. Pařez je na zemi (0) a při posunu obrazovky stojí.
 # Vyšší vrstva se posouvá víc a víc se zvětší. spacing je v metrech: blíž už jiný strom nesmí stát.
 # spacing_from přepíše spacing vůči jednomu druhu. Mezi dvojicí platí větší z obou stran.
+# leaf_hue posune odstín listí ve stupních (záporný ke žluté), leaf_sat a leaf_value násobí
+# sytost a jas listí. bare je úplně holý strom bez občasných lístků.
 TREES = {
     "strom1": {
         "leaf": "leaf1.png",
@@ -186,6 +239,53 @@ TREES = {
         "spacing": 4.5,
         "spacing_from": {"ker1": 2.5},
         "stump": {"color": "7A6E5E", "radius": 13, "root_length": 40},
+    },
+    # Ohořelý strom na popelu: holé černé větve, uhelný pařez.
+    "strom_ohoreny": {
+        "leaf": "leaf1.png",
+        "layers": 4,
+        "density": {4: 0.6, 3: 0.52, 2: 0.42, 1: 0.32},
+        "widths": {4: 40, 3: 76, 2: 112, 1: 176},
+        "height": {4: 7.0, 3: 5.2, 2: 3.4, 1: 1.9},
+        "leaves": 0,
+        "bare": True,
+        "variants": 9,
+        "branch": "2E2925",
+        "spacing": 4.0,
+        "stump": {"color": "2A2521", "radius": 13, "root_length": 38},
+    },
+    # Vrba do močálu: široká, hustá, šedozelená koruna.
+    "vrba": {
+        "leaf": "leaf2.png",
+        "layers": 4,
+        "density": {4: 1.2, 3: 1.15, 2: 1.05, 1: 0.95},
+        "widths": {4: 70, 3: 140, 2: 200, 1: 270},
+        "height": {4: 7.5, 3: 5.6, 2: 3.8, 1: 2.2},
+        "leaf_hue": -12,
+        "leaf_sat": 0.72,
+        "leaf_value": 0.84,
+        "variants": 9,
+        "branch": "5A4A36",
+        "spacing": 5.5,
+        "spacing_from": {"ker_bazina": 3.2},
+        "stump": {"color": "5C4B37", "radius": 16, "root_length": 56},
+    },
+    # Bažinný keř: olivový, tmavší než keř na trávě.
+    "ker_bazina": {
+        "leaf": "leaf2.png",
+        "layers": 2,
+        "density": {2: 1.3, 1: 1.2},
+        "widths": {2: 44, 1: 76},
+        "height": {2: 1.2, 1: 0.55},
+        "leaves": 12,
+        "leaf_hue": -26,
+        "leaf_sat": 0.7,
+        "leaf_value": 0.82,
+        "variants": 9,
+        "branch": "4E3E2C",
+        "spacing": 2,
+        "spacing_from": {"vrba": 3.2},
+        "stump": {"color": "4E3E2C", "radius": 7, "root_length": 16},
     },
     "strom_snih": {
         "leaf": "leaf1.png",
@@ -260,6 +360,16 @@ def surface_info() -> dict:
             entry["wave"] = preset["wave"]
         if preset.get("shore"):
             entry["shore"] = preset["shore"]
+        if "speed" in preset:
+            if not 0 < float(preset["speed"]) <= 2:
+                raise SystemExit(f"{name}: speed má být mezi 0 a 2")
+            entry["speed"] = float(preset["speed"])
+        avoid = preset.get("avoid") or []
+        for other in avoid:
+            if other not in TERRAINS:
+                raise SystemExit(f"{name}: avoid obsahuje neznámý terén {other}")
+        if avoid:
+            entry["avoid"] = list(avoid)
         forest = preset.get("forest") or {}
         for tree, amount in forest.items():
             if tree not in TREES:

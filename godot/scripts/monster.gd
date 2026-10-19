@@ -282,7 +282,7 @@ func _chase(delta: float) -> void:
 			aim = _path_aim()
 	var to := aim - position
 	if to.length() > 0.001:
-		var step := minf(_chase_px * delta, to.length())
+		var step := minf(_chase_px * _pace() * delta, to.length())
 		var dir := to.normalized()
 		if _detour_left > 0.0:
 			_detour_left -= delta
@@ -416,7 +416,7 @@ func _wander(delta: float) -> void:
 	_trip_i = _next_point(_trip, _trip_i)
 	var aim := _trip[_trip_i] if _trip_i < _trip.size() else _target
 	var to := aim - position
-	var step := _wander_px * delta
+	var step := _wander_px * _pace() * delta
 	if _trip_i >= _trip.size() and to.length() <= step:
 		_move(to)
 		if _flying:
@@ -433,6 +433,11 @@ func _wander(delta: float) -> void:
 
 
 ## Posun o offset. Vrátí, kolik pixelů příšera opravdu ušla.
+## Násobek rychlosti podle povrchu. Létající příšeru močál nezdrží.
+func _pace() -> float:
+	return 1.0 if _flying or _walker == null else _walker.pace(position)
+
+
 func _move(offset: Vector2) -> float:
 	var before := position
 	if _flying:
