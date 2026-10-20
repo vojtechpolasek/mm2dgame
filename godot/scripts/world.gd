@@ -1,7 +1,7 @@
 extends Node2D
 
 ## Scéna hry. Svět ze čtverců staví a řídí WorldBoard, tady je jen terén prvního čtverce,
-## kamera, nápisy a odchod do menu.
+## kamera, nápisy a pauza.
 
 const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
@@ -9,9 +9,6 @@ const Person := preload("res://scripts/person.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Party := preload("res://scripts/party.gd")
 const WorldBoard := preload("res://scripts/world_board.gd")
-
-## Odchod do menu chce dva stisky Esc nebo Startu do tolika sekund, ať se neodejde omylem.
-const LEAVE_WINDOW := 3.0
 
 ## Terén po chuncích předpečených z corner_map katalogu, voda se vlní nad nimi.
 @onready var ground: TerrainChunks = $Ground
@@ -25,8 +22,6 @@ var _map_ready := false
 var _hud: Hud
 var _persons: Array[Person] = []
 var _party: Party
-## Kolik sekund ještě druhý stisk Esc nebo Startu opustí hru. 0 je bez prvního stisku.
-var _leave_left := 0.0
 var _board: WorldBoard
 var _fps_shown := -1.0
 
@@ -48,7 +43,6 @@ func _process(delta: float) -> void:
 	if rate != _fps_shown:
 		_fps_shown = rate
 		fps.text = "%d FPS" % rate
-	_leave_left = maxf(_leave_left - delta, 0.0)
 	if _party != null:
 		_party.frame()
 	if _board != null:
@@ -56,8 +50,28 @@ func _process(delta: float) -> void:
 
 
 func _to_menu() -> void:
-	get_tree().paused = false
+	_close_pause()
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn" if GameSession.free_roam else "res://scenes/suit_menu.tscn")
+
+
+func _to_main_menu() -> void:
+	_close_pause()
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+
+
+func _open_pause() -> void:
+	if _hud == null or _hud.pause_open() or _hud.result_open():
+		return
+	get_tree().paused = true
+	Controls.set_menu_cursor(true)
+	_hud.open_pause()
+
+
+func _close_pause() -> void:
+	if _hud != null:
+		_hud.close_pause()
+	get_tree().paused = false
+	Controls.set_menu_cursor(false)
 
 
 func _exit_tree() -> void:
@@ -67,24 +81,20 @@ func _exit_tree() -> void:
 		_board.shutdown()
 
 
-## Hudba nebo zvuky se přepnuly (M, N, LB, RB). Hláška řekne, jak jsou teď.
+## Hudba nebo zvuky se přepnuly (M, N, LB, RB). Hláška řekne, jak jsou teď. V pauze to říkají tlačítka.
 func _on_sound_settings() -> void:
-	if _hud == null:
+	if _hud == null or _hud.pause_open():
 		return
 	var music := "zapnutá" if Sound.music_on() else "vypnutá"
 	var sounds := "zapnuté" if Sound.sounds_on() else "vypnuté"
 	_hud.show_notice("Hudba %s · zvuky %s" % [music, sounds], 2.5)
 
 
-## Esc nebo Start: první stisk ukáže hlášku, druhý do LEAVE_WINDOW sekund odejde do menu.
+## Esc nebo Start otevře pauzu. Zavření si řeší samo menu, tohle běží jen když se hraje.
 func _unhandled_input(event: InputEvent) -> void:
-	if not _map_ready or not event.is_action_pressed("game_menu"):
+	if not _map_ready or _hud == null or not event.is_action_pressed("game_menu"):
+		return
+	if _hud.pause_open() or _hud.result_open():
 		return
 	get_viewport().set_input_as_handled()
-	if _leave_left > 0.0:
-		Sound.ui("back")
-		_to_menu()
-		return
-	_leave_left = LEAVE_WINDOW
-	if _hud != null:
-		_hud.show_notice("Stiskni znovu Esc / Start pro opuštění hry", LEAVE_WINDOW)
+	_open_pause()

@@ -5,6 +5,7 @@ extends Control
 ## kamenů je v zásobnících továrny. Okno konce hry běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
+const PauseMenu := preload("res://scripts/pause_menu.gd")
 const THEME := preload("res://themes/menu.tres")
 
 ## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře víc, jsou tam panely.
@@ -22,6 +23,12 @@ const ACCENT := Color(0.86, 0.66, 0.3)
 const ALARM_COLOR := Color(0.94, 0.4, 0.32)
 
 signal menu_pressed
+## Tlačítko Menu nebo Esc / Start. Otevření pauzy řeší svět.
+signal pause_requested
+## Pauza se zavřela (Pokračovat, Esc, B, Start nebo klepnutí mimo panel).
+signal pause_closed
+## Pauza chce zpátky na hlavní menu.
+signal main_menu_pressed
 
 var _crystal: Crystal
 var _held_rows: GridContainer
@@ -52,6 +59,8 @@ var _result_note: Label
 var _result_buttons: VBoxContainer
 ## Panely v horních rozích a nahoře uprostřed. Volný pohyb je skryje.
 var _corners: Array[Control] = []
+var _menu_button: Button
+var _pause: PauseMenu
 
 
 func _ready() -> void:
@@ -67,6 +76,8 @@ func _ready() -> void:
 	add_child(_arrow)
 	_build_notice()
 	_build_result()
+	_build_menu_button()
+	_build_pause()
 
 
 ## players jsou záznamy z GameSession.players. Každý dostane řádek s rukou v barvě trika.
@@ -157,6 +168,7 @@ func show_result(title: String, note: String) -> void:
 	_result_title.text = title
 	_result_note.text = note
 	_result_button("Návrat do menu", menu_pressed).grab_focus()
+	_menu_button.visible = false
 	_arrow.visible = false
 	hide_notice()
 	_result.visible = true
@@ -324,6 +336,55 @@ func _build_notice() -> void:
 	_notice.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 90)
 	_notice.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_notice.grow_vertical = Control.GROW_DIRECTION_BEGIN
+
+
+func pause_open() -> bool:
+	return _pause != null and _pause.visible
+
+
+func result_open() -> bool:
+	return _result != null and _result.visible
+
+
+func open_pause() -> void:
+	if result_open() or pause_open():
+		return
+	_menu_button.visible = false
+	_pause.open()
+
+
+func close_pause() -> void:
+	if not pause_open():
+		return
+	_pause.close()
+	_menu_button.visible = not result_open()
+
+
+func _on_pause_closed() -> void:
+	close_pause()
+	pause_closed.emit()
+
+
+func _build_menu_button() -> void:
+	_menu_button = Button.new()
+	_menu_button.text = "Menu"
+	_menu_button.focus_mode = Control.FOCUS_NONE
+	_menu_button.custom_minimum_size = Vector2(148, 48)
+	_menu_button.pressed.connect(func() -> void: pause_requested.emit())
+	add_child(_menu_button)
+	_menu_button.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_menu_button.offset_left = EDGE
+	_menu_button.offset_top = -(EDGE + 48.0)
+	_menu_button.offset_right = EDGE + 148.0
+	_menu_button.offset_bottom = -EDGE
+
+
+func _build_pause() -> void:
+	_pause = PauseMenu.new()
+	_pause.name = "Pause"
+	_pause.closed.connect(_on_pause_closed)
+	_pause.main_menu.connect(func() -> void: main_menu_pressed.emit())
+	add_child(_pause)
 
 
 func _build_result() -> void:

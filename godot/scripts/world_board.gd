@@ -17,6 +17,8 @@ extends Node
 ## a příšer. Není level, čas, šipka ani ohrada, nic se neukládá. Čtverec dál než PARK_AT od
 ## čtverců hráčů se uvolní ze scény a zůstane jen jeho mapa (_parked). Po návratu se z ní
 ## postaví stejně, jako když se načítá uložená hra.
+## Průlet v menu (start_flyover): stejná krajina, bez postavy. Kamera jede stálou rychlostí
+## šikmo nahoru doprava a podle ní se otevírají další čtverce. Nic se neukládá.
 ## Hra se ukládá sama (SuitSaves): každých SAVE_EVERY sekund, po splnění levelu a při odchodu.
 ## Uloží se mapy všech hotových čtverců, kameny ve skladech všech čtverců a přesný stav levelu:
 ## postavy a co nesou, zásobníky továrny, vesničané a příšery jeho čtverce. Po načtení se hraje
@@ -73,6 +75,9 @@ const LOAD_CALM := 3.0
 ## Volný pohyb: čtverec aspoň tolik čtverců od každého hráče se uvolní. Nový čtverec vzniká
 ## nejvýš o jeden dál než hráč a navazuje na sousedy, ty jsou tedy pořád ve scéně.
 const PARK_AT := 3
+## Průlet menu: pixely za sekundu. Směr je šikmo nahoru doprava, nahoru je ve světě záporné y.
+const FLY_SPEED := 52.0
+const FLY_DIR := Vector2(0.70710678118, -0.70710678118)
 
 var _host
 var _camera: MapCamera
@@ -130,6 +135,8 @@ var _pending := {}
 var _stores := {}
 ## Volný pohyb.
 var _free := false
+## Průlet v menu. Krajina jako volný pohyb, kamera jede sama a postava se nespawnuje.
+var _flyover := false
 ## Uvolněné čtverce volného pohybu: souřadnice -> mapa (_record).
 var _parked := {}
 
@@ -171,6 +178,12 @@ class Square:
 	var ground
 
 
+## Krajina pod menu. Volá se místo start().
+func start_flyover(host) -> void:
+	_flyover = true
+	start(host)
+
+
 func start(host) -> void:
 	_host = host
 	_camera = host.camera
@@ -186,7 +199,7 @@ func start(host) -> void:
 	_crystal = Crystal.new()
 	if not _crystal.load_catalog():
 		push_error("Chybí materiály krystalu.")
-	_free = GameSession.free_roam
+	_free = _flyover or GameSession.free_roam
 	_world_rng.randomize()
 	_camera.position = Vector2(_span(), _span()) * 0.5
 	_camera.roam()
@@ -232,6 +245,12 @@ func tick(delta: float) -> void:
 	_poll()
 	_dispatch()
 	if not _opened:
+		return
+	if _flyover:
+		_drift(delta)
+		_consider(_camera.position)
+		_park_far()
+		_sound(delta)
 		return
 	for person in _host._persons:
 		_consider(person.position)
@@ -616,6 +635,9 @@ func _opens_at(sq: Square) -> bool:
 
 
 func _open_play(sq: Square) -> void:
+	if _flyover:
+		_open_flyover(sq)
+		return
 	_crowd = Crowd.new()
 	_party = Party.new(_camera)
 	_host._party = _party
@@ -654,6 +676,21 @@ func _open_play(sq: Square) -> void:
 	_show_task()
 
 
+## Menu: žádná postava a žádné hlášení. Sousedé ve směru jízdy se začnou tvořit hned,
+## ať kamera nedojede k prázdnému kraji.
+func _open_flyover(sq: Square) -> void:
+	_status.visible = false
+	_host._map_ready = true
+	_opened = true
+	_enqueue(sq.coord + Vector2i.RIGHT)
+	_enqueue(sq.coord + Vector2i.UP)
+	_enqueue(sq.coord + Vector2i.UP + Vector2i.RIGHT)
+
+
+func _drift(delta: float) -> void:
+	_camera.position += FLY_DIR * FLY_SPEED * delta
+
+
 ## Uložená hra: postavy stojí, kde stály, a nesou, co nesly. Každá používá doly a továrnu
 ## čtverce, na kterém stojí.
 func _place_persons(sq: Square) -> void:
@@ -689,16 +726,18 @@ func _setup_hud(_sq: Square) -> void:
 	if _free:
 		_hud.setup(_crystal, GameSession.players)
 		_hud.free_roam()
-		_hud.menu_pressed.connect(_host._to_menu)
-		return
-	var game: SuitGame = _games.get(_active)
-	var target := game.target() if game != null else 1
-	_hud.setup(_crystal, GameSession.players)
-	_hud.set_goal(_title(), target)
-	if game != null:
-		_hud.set_progress(game.stored())
-	_hud.set_time(_time)
+	else:
+		var game: SuitGame = _games.get(_active)
+		var target := game.target() if game != null else 1
+		_hud.setup(_crystal, GameSession.players)
+		_hud.set_goal(_title(), target)
+		if game != null:
+			_hud.set_progress(game.stored())
+		_hud.set_time(_time)
 	_hud.menu_pressed.connect(_host._to_menu)
+	_hud.pause_requested.connect(_host._open_pause)
+	_hud.pause_closed.connect(_host._close_pause)
+	_hud.main_menu_pressed.connect(_host._to_main_menu)
 
 
 ## Dýchací přístroj, ukradený kámen zmizí. Co postava udělá, se hlásí vesničanům čtverce,
@@ -897,29 +936,40 @@ func _chase_music() -> bool:
 
 
 func _sound(_delta: float) -> void:
+	if _flyover:
+		Sound.set_chase(false)
+		Sound.set_water(_water_near(_camera.position))
+		return
 	Sound.set_chase(_chase_music())
 	if _host._persons.is_empty():
 		Sound.set_water(0.0)
 		return
 	var person: Person = _host._persons[0]
-	var sq := _square(_where.get(person, _coord(person.position)))
+	Sound.set_water(_water_near(person.position))
+
+
+## 0 až 1, jak blízko je voda v bodě světa. Dál než WATER_HEAR je 0 a míň.
+func _water_near(pos: Vector2) -> float:
+	var sq := _square(_coord(pos))
 	if sq == null or sq.water_far.is_empty():
-		Sound.set_water(0.0)
-		return
+		return 0.0
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	var local := person.position - sq.origin
+	var local := pos - sq.origin
 	var cx := clampi(floori(local.x / tile) / WATER_CELL, 0, sq.water_side - 1)
 	var cy := clampi(floori(local.y / tile) / WATER_CELL, 0, sq.water_side - 1)
 	var meters := float(sq.water_far[cy * sq.water_side + cx] * WATER_CELL)
-	Sound.set_water(1.0 - meters / WATER_HEAR)
+	return 1.0 - meters / WATER_HEAR
 
 
 ## Volný pohyb: uvolní čtverce daleko od hráčů. Čtverec, vedle kterého se ještě něco tvoří,
 ## zůstane, nový soused z něj bere kraj. Čtverec (0, 0) má terén ve scéně hry, zůstane taky.
 func _park_far() -> void:
 	var homes: Array[Vector2i] = []
-	for person in _host._persons:
-		homes.append(_coord(person.position))
+	if _host._persons.is_empty():
+		homes.append(_coord(_camera.position))
+	else:
+		for person in _host._persons:
+			homes.append(_coord(person.position))
 	for key: Vector2i in _squares.keys():
 		if key == Vector2i.ZERO:
 			continue
@@ -1289,7 +1339,8 @@ func _rank() -> int:
 
 func _save() -> void:
 	_save_left = SAVE_EVERY
-	if not _opened or _finished or GameSession.suit_id.is_empty():
+	# Průlet v menu nesmí přepsat uloženou hru, i když v relaci ještě je její id.
+	if _flyover or not _opened or _finished or GameSession.suit_id.is_empty():
 		return
 	SuitSaves.save_game(_header(), _snapshot())
 

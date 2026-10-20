@@ -5,9 +5,8 @@ extends Node
 ## jdou později přemapovat. Šipky skáčou pravým Shiftem, WASD levým, gamepady tlačítkem A
 ## a chodí levou páčkou i křížovým ovladačem.
 ## Menu se ovládá stejně: k ui_* přibude WASD a oba Shifty potvrzují. game_menu (Esc, Start)
-## opustí hru, toggle_music (M, LB) a toggle_sounds (N, RB) vypnou a zapnou hudbu a zvuky.
-## Myš se nepoužívá: kurzor je skrytý a její události se zahodí dřív, než
-## dojdou ke GUI.
+## otevře pauzu ve hře, toggle_music (M, LB) a toggle_sounds (N, RB) vypnou a zapnou hudbu a zvuky.
+## V menu a v pauze je kurzor vidět. Ve hře se ukáže, když se myš pohne, ať jde klepnout na Menu.
 
 const ARROWS := 0
 const WASD := 1
@@ -17,6 +16,11 @@ const COUNT := FIRST_PAD + PADS
 ## Páčka gamepadu se počítá až od tohoto vychýlení.
 const DEADZONE := 0.35
 const DIRECTIONS: PackedStringArray = ["left", "right", "up", "down"]
+## Ve hře kurzor po nečinnosti zase zmizí, ať při ovladači nepřekáží.
+const CURSOR_IDLE_MS := 2800
+
+var _menu_cursor := false
+var _mouse_until := 0
 
 
 func _ready() -> void:
@@ -26,9 +30,30 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 
 
+## Menu a pauza kurzor drží. Ve hře ho schová, dokud se myš nepohne.
+func set_menu_cursor(on: bool) -> void:
+	_menu_cursor = on
+	_apply_cursor()
+
+
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouse:
-		get_viewport().set_input_as_handled()
+	if event is InputEventMouseMotion or event is InputEventMouseButton:
+		_mouse_until = Time.get_ticks_msec() + CURSOR_IDLE_MS
+		_apply_cursor()
+
+
+func _process(_delta: float) -> void:
+	if _menu_cursor:
+		return
+	if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and Time.get_ticks_msec() >= _mouse_until:
+		_apply_cursor()
+
+
+func _apply_cursor() -> void:
+	var show := _menu_cursor or Time.get_ticks_msec() < _mouse_until
+	var mode := Input.MOUSE_MODE_VISIBLE if show else Input.MOUSE_MODE_HIDDEN
+	if Input.mouse_mode != mode:
+		Input.mouse_mode = mode
 
 
 func action(device: int, what: String) -> StringName:

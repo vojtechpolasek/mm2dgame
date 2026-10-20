@@ -29,13 +29,13 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 16.0
+offset_left = 196.0
 offset_top = -36.0
-offset_right = 520.0
+offset_right = 640.0
 offset_bottom = -12.0
 theme_override_colors/font_color = Color(0.9, 0.92, 0.86, 0.7)
 theme_override_font_sizes/font_size = 16
-text = "Esc / Start — menu · M / LB hudba · N / RB zvuky"
+text = "M / LB hudba · N / RB zvuky"
 
 [node name="Fps" type="Label" parent="Hint/Hud"]
 layout_mode = 1

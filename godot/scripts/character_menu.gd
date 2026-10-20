@@ -20,7 +20,7 @@ const ACCENT := Color(0.86, 0.66, 0.3)
 ## Strana klávesy v obrázku ovladače, v pixelech.
 const ICON_KEY := 20.0
 
-@onready var _slots: GridContainer = $Center/Column/Slots
+@onready var _slots: GridContainer = $Center/Panel/Column/Slots
 
 ## U každého hráče vybraný řádek a jak dlouho drží skok.
 var _rows := PackedInt32Array()
@@ -34,8 +34,8 @@ var _swatches: Array = []
 func _ready() -> void:
 	Sound.play_menu_music()
 	GameSession.players.clear()
-	$Center/Column/Buttons/Back.pressed.connect(_back)
-	$Center/Column/Buttons/Start.pressed.connect(_start)
+	$Center/Panel/Column/Buttons/Back.pressed.connect(_back)
+	$Center/Panel/Column/Buttons/Start.pressed.connect(_start)
 	_rebuild()
 
 
@@ -138,6 +138,26 @@ func _shift_color(slot: int, step: int) -> void:
 	Sound.ui("move")
 
 
+func _pick_swatch(event: InputEvent, slot: int, part_i: int, hex: String) -> void:
+	var click := event as InputEventMouseButton
+	if click == null or not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if slot < 0 or slot >= GameSession.players.size():
+		return
+	var part := GameSession.PARTS[part_i]
+	_rows[slot] = part_i
+	if part == "shirt" and _shirt_taken(hex, slot):
+		_refresh(slot)
+		Sound.ui("back")
+		get_viewport().set_input_as_handled()
+		return
+	GameSession.players[slot][part] = hex
+	_previews[slot].apply(GameSession.players[slot])
+	_refresh(slot)
+	Sound.ui("move")
+	get_viewport().set_input_as_handled()
+
+
 func _shirt_taken(hex: String, slot: int) -> bool:
 	for i in GameSession.players.size():
 		if i != slot and str(GameSession.players[i].get("shirt", "")) == hex:
@@ -178,9 +198,9 @@ func _rebuild() -> void:
 	if GameSession.players.size() < _most():
 		_slots.add_child(_empty_card())
 	var need := _required()
-	$Center/Column/Buttons/Start.disabled = GameSession.players.is_empty() or (need > 0 and GameSession.players.size() != need)
+	$Center/Panel/Column/Buttons/Start.disabled = GameSession.players.is_empty() or (need > 0 and GameSession.players.size() != need)
 	if need > 0:
-		$Center/Column/Title.text = "Hráči · hra je pro %d %s" % [need, "hráče" if need <= 4 else "hráčů"]
+		$Center/Panel/Column/Title.text = "Hráči · hra je pro %d %s" % [need, "hráče" if need <= 4 else "hráčů"]
 
 
 func _player_card(slot: int) -> PanelContainer:
@@ -214,7 +234,8 @@ func _player_card(slot: int) -> PanelContainer:
 	row.add_child(parts)
 	var labels: Array[Label] = []
 	var boxes: Array = []
-	for part: String in GameSession.PARTS:
+	for part_i in GameSession.PARTS.size():
+		var part := GameSession.PARTS[part_i]
 		var name_label := _label(str(GameSession.PART_TITLES.get(part, part)), 15, DIM)
 		parts.add_child(name_label)
 		labels.append(name_label)
@@ -225,7 +246,9 @@ func _player_card(slot: int) -> PanelContainer:
 		for hex: Variant in GameSession.SWATCHES[part]:
 			var box := Panel.new()
 			box.custom_minimum_size = Vector2(SWATCH, SWATCH)
+			box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 			box.set_meta("hex", str(hex))
+			box.gui_input.connect(_pick_swatch.bind(slot, part_i, str(hex)))
 			strip.add_child(box)
 			part_boxes.append(box)
 		boxes.append(part_boxes)

@@ -21,6 +21,7 @@ Controls="*res://scripts/controls.gd"
 GameSession="*res://scripts/game_session.gd"
 Sound="*res://scripts/sound.gd"
 Graphics="*res://scripts/graphics.gd"
+MenuStage="*res://scripts/menu_stage.gd"
 
 [debug]
 
