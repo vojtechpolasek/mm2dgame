@@ -2,14 +2,26 @@ extends CanvasLayer
 
 ## Živá krajina pod obrazovkami menu. Drží se mezi nimi, do hry se schová a uvolní.
 ## Svět je ve vlastním pohledu, ať kamera neposouvá tlačítka. Než se složí první čtverec,
-## zůstane statický obrázek.
+## drží menu zakryté opona s logem a scéna menu stojí.
 
 const GAME := "res://scenes/world.tscn"
-const FALLBACK := preload("res://graphics/menu/background.png")
 const Benchmark := preload("res://scripts/benchmark.gd")
 const MenuFlyover := preload("res://scripts/menu_flyover.gd")
+const MenuCurtain := preload("res://scripts/menu_curtain.gd")
+## Když se krajina nesloží (chybí terén), menu se po této době ukáže i bez ní, v sekundách.
+const REVEAL_LIMIT := 20.0
+## Logo s ukazatelem po spuštění hry zůstane vidět aspoň tak dlouho, i když je mapa
+## hotová dřív. Počítá se od prvního snímku hry, po úvodní obrazovce Godotu, v milisekundách.
+const LOGO_MIN_MS := 1500
 
-var _fallback: TextureRect
+var _curtain: MenuCurtain
+## Opona je dole a čeká na krajinu. Scéna menu zatím stojí.
+var _waiting := false
+## Krajina je složená, opona čeká jen na LOGO_MIN_MS.
+var _map_shown := false
+var _held: Node
+var _waited := 0.0
+var _boot_ms := 0
 var _shade: TextureRect
 var _view: SubViewportContainer
 var _viewport: SubViewport
@@ -23,6 +35,14 @@ func _ready() -> void:
 	_build_chrome()
 	get_tree().node_added.connect(_on_node_added)
 	_sync.call_deferred()
+
+
+func _process(delta: float) -> void:
+	if not _waiting:
+		return
+	_waited += delta
+	if (_map_shown or _waited >= REVEAL_LIMIT) and Time.get_ticks_msec() - _boot_ms >= LOGO_MIN_MS:
+		_uncover()
 
 
 func _on_node_added(node: Node) -> void:
@@ -44,8 +64,14 @@ func _ensure() -> void:
 	Controls.set_menu_cursor(true)
 	visible = true
 	if _view != null:
+		if _waiting:
+			_hold(get_tree().current_scene)
 		return
-	_fallback.visible = true
+	_waiting = true
+	_map_shown = false
+	_waited = 0.0
+	_curtain.drop()
+	_hold(get_tree().current_scene)
 	_view = SubViewportContainer.new()
 	_view.name = "View"
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -72,11 +98,31 @@ func _ensure() -> void:
 	_flyover = flyover
 
 
+func _hold(scene: Node) -> void:
+	if scene == _held:
+		return
+	_release()
+	_held = scene
+	if _held != null:
+		_held.process_mode = Node.PROCESS_MODE_DISABLED
+
+
+func _release() -> void:
+	if is_instance_valid(_held):
+		_held.process_mode = Node.PROCESS_MODE_INHERIT
+	_held = null
+
+
 func _on_revealed() -> void:
 	if _view != null:
 		_view.visible = true
-	if _fallback != null:
-		_fallback.visible = false
+	_map_shown = true
+
+
+func _uncover() -> void:
+	_waiting = false
+	_release()
+	_curtain.lift()
 
 
 func _fit() -> void:
@@ -92,8 +138,9 @@ func _fit() -> void:
 func _stop() -> void:
 	Controls.set_menu_cursor(false)
 	visible = false
-	if _fallback != null:
-		_fallback.visible = true
+	_waiting = false
+	_release()
+	_curtain.lift(true)
 	if _flyover != null:
 		var flyover := _flyover
 		_flyover = null
@@ -106,14 +153,12 @@ func _stop() -> void:
 
 
 func _build_chrome() -> void:
-	_fallback = TextureRect.new()
-	_fallback.name = "Fallback"
-	_fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_fallback.texture = FALLBACK
-	_fallback.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_fallback.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	add_child(_fallback)
+	# Opona je vidět hned od prvního snímku, navazuje na úvodní obrazovku Godotu.
+	_curtain = MenuCurtain.new()
+	_curtain.name = "Curtain"
+	add_child(_curtain)
+	_curtain.drop()
+	_boot_ms = Time.get_ticks_msec()
 	_shade = TextureRect.new()
 	_shade.name = "Shade"
 	_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE

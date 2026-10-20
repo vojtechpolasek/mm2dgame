@@ -3,6 +3,8 @@ extends Control
 ## Pauza ve hře. Hudba a zvuky, návrat do hlavního menu a pokračování.
 ## Běží i když je strom pozastavený. Myš, klávesnice i gamepad.
 
+const LOGO := preload("res://graphics/menu/logo.png")
+
 signal closed
 signal main_menu
 
@@ -32,11 +34,14 @@ func _ready() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
 	panel.add_child(column)
-	var title := Label.new()
-	title.text = "Menu"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 36)
-	column.add_child(title)
+	# Místo nadpisu logo hry, stejně jako v hlavním menu.
+	var logo := TextureRect.new()
+	logo.texture = LOGO
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.custom_minimum_size = Vector2(380, 139)
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(logo)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 6)
 	column.add_child(gap)
@@ -48,14 +53,6 @@ func _ready() -> void:
 	column.add_child(_sounds)
 	var leave := _button("Hlavní menu", func() -> void: main_menu.emit())
 	column.add_child(leave)
-	var hint := Label.new()
-	hint.text = "Esc, B nebo Start zavře. M / LB hudba, N / RB zvuky."
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size = Vector2(420, 0)
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.add_theme_color_override("font_color", Color(0.78, 0.74, 0.66))
-	column.add_child(hint)
 	Sound.settings_changed.connect(_label)
 
 

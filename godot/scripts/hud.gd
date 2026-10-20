@@ -1,21 +1,28 @@
 extends Control
 
 ## Údaje hry v horních rozích a okno na konci hry. Sám nic nepočítá, svět mu říká, co ukázat.
-## Vlevo co nese každý hráč (ruka v barvě jeho trika), uprostřed čas hry, vpravo level a kolik
-## kamenů je v zásobnících továrny. Okno konce hry běží i v pauze, zbytek stojí se hrou.
+## Vlevo co nese každý hráč (kroužek v barvě jeho trika), vpravo level, kolik kamenů je
+## v zásobnících továrny a malým písmem čas hry. Úplně vpravo je logo „MM“, tlačítko menu.
+## Panely mají styl panelů menu. Okno konce hry běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
 const PauseMenu := preload("res://scripts/pause_menu.gd")
 const THEME := preload("res://themes/menu.tres")
+const MENU_ICON := preload("res://graphics/menu/logo_mm.png")
+const MaterialTitle := preload("res://scripts/material_title.gd")
 
 ## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře víc, jsou tam panely.
 const ARROW_EDGE := 44.0
-const ARROW_TOP := 120.0
+const ARROW_TOP := 96.0
 ## Blikání šipky u kraje čtverce za sekundu, výrazné je rychlejší.
 const BLINK_HZ := 2.0
 const BLINK_STRONG_HZ := 4.5
 const EDGE := 20.0
-const GEM_SCALE := 2.2
+## Výška horní lišty: panel nesených kamenů, panel postupu i čtvercové tlačítko menu.
+const BAR_HEIGHT := 52.0
+## Kroužek s neseným kamenem a měřítko kamene v něm.
+const SLOT := 38.0
+const GEM_SCALE := 1.0
 const TEXT := Color(0.95, 0.93, 0.88)
 const DIM := Color(0.95, 0.93, 0.88, 0.55)
 const ACCENT := Color(0.86, 0.66, 0.3)
@@ -37,6 +44,8 @@ var _gems: Array[Sprite2D] = []
 var _slots: Array[GemSlot] = []
 var _held_points: Array[Label] = []
 var _held_names: Array[Label] = []
+## Posun obrázku kamene na střed jeho viditelné části, podle textury.
+var _gem_offsets := {}
 ## Víc hráčů než tolik: víceslovný název kamene se zkrátí (Lávový k.), ať je panel úzký.
 const SHORT_NAMES_FROM := 4
 var _level: Label
@@ -54,12 +63,14 @@ var _notice_left := 0.0
 var _blink := 0
 var _blink_age := 0.0
 var _result: Control
-var _result_title: Label
+var _result_title: MaterialTitle
 var _result_note: Label
 var _result_buttons: VBoxContainer
 ## Panely v horních rozích a nahoře uprostřed. Volný pohyb je skryje.
 var _corners: Array[Control] = []
 var _menu_button: Button
+## Pravý horní roh: panel postupu a vedle něj tlačítko menu.
+var _right: HBoxContainer
 var _pause: PauseMenu
 
 
@@ -68,24 +79,23 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_held()
-	_build_time()
-	_build_score()
+	_build_right()
 	_arrow = FactoryArrow.new()
 	_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_arrow.visible = false
 	add_child(_arrow)
 	_build_notice()
 	_build_result()
-	_build_menu_button()
 	_build_pause()
 
 
-## players jsou záznamy z GameSession.players. Každý dostane řádek s rukou v barvě trika.
+## players jsou záznamy z GameSession.players. Každý dostane kroužek v barvě trika.
 ## Nadpis a cíl vpravo nahoře nastaví set_goal.
 func setup(crystal: Crystal, players: Array[Dictionary]) -> void:
 	_crystal = crystal
-	# Po třech vedle sebe, ať panel zůstane nízký a postavy pod ním jsou vidět.
-	_held_rows.columns = clampi(players.size(), 1, 3)
+	# Vždy v jedné řadě, ať je panel stejně vysoký jako zbytek lišty. Šest hráčů se vejde
+	# i do nejužšího okna (1280), viz GameSession.MAX_PLAYERS.
+	_held_rows.columns = clampi(players.size(), 1, GameSession.MAX_PLAYERS)
 	for player: Dictionary in players:
 		_add_held_row(Color.html(str(player.get("shirt", "E8E2D2"))))
 	_unit.text = "kamenů"
@@ -104,6 +114,7 @@ func set_held(mat: int, player: int = 0) -> void:
 		_held_names[player].text = ""
 		return
 	_crystal.paint(_gems[player], mat, 0.0, 0.0)
+	_center_gem(_gems[player])
 	_gems[player].visible = true
 	_held_points[player].text = "+%d" % _crystal.points_of(mat)
 	_held_names[player].text = _short(_crystal.title_of(mat)) if _gems.size() >= SHORT_NAMES_FROM else _crystal.title_of(mat)
@@ -165,7 +176,7 @@ func free_roam() -> void:
 func show_result(title: String, note: String) -> void:
 	for child in _result_buttons.get_children():
 		child.queue_free()
-	_result_title.text = title
+	_result_title.title = title
 	_result_note.text = note
 	_result_button("Návrat do menu", menu_pressed).grab_focus()
 	_menu_button.visible = false
@@ -181,21 +192,20 @@ func _build_held() -> void:
 	_held_rows = GridContainer.new()
 	_held_rows.add_theme_constant_override("h_separation", 14)
 	_held_rows.add_theme_constant_override("v_separation", 2)
+	_held_rows.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	panel.add_child(_held_rows)
 
 
-## Řádek hráče: ruka v barvě trika, kroužek s neseným kamenem a jeho body.
+## Řádek hráče: kroužek v barvě trika s neseným kamenem a jeho body.
 func _add_held_row(shirt: Color) -> void:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 7)
 	_held_rows.add_child(row)
-	var hand := HandIcon.new()
-	hand.custom_minimum_size = Vector2(30, 34)
-	hand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hand.modulate = shirt.lightened(0.15)
-	row.add_child(hand)
 	var slot := GemSlot.new()
-	slot.custom_minimum_size = Vector2(44, 44)
+	slot.custom_minimum_size = Vector2(SLOT, SLOT)
+	# Řádek je vyšší než kroužek (dva řádky textu), kroužek se nesmí natáhnout.
+	slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slot.color = shirt.lightened(0.1)
 	row.add_child(slot)
 	var gem: Sprite2D
 	if _crystal != null and _crystal.count() > 0:
@@ -203,24 +213,44 @@ func _add_held_row(shirt: Color) -> void:
 	else:
 		gem = Sprite2D.new()
 	gem.position = slot.custom_minimum_size * 0.5
-	gem.scale = Vector2(GEM_SCALE, GEM_SCALE) * 0.9
+	gem.scale = Vector2(GEM_SCALE, GEM_SCALE)
 	gem.visible = false
 	slot.add_child(gem)
 	slot.gem = gem
 	# Body a pod nimi malým písmem název kamene.
 	var text := VBoxContainer.new()
-	text.add_theme_constant_override("separation", -6)
+	text.add_theme_constant_override("separation", -3)
 	text.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(text)
-	var points := _label(22, ACCENT)
-	points.custom_minimum_size = Vector2(44, 0)
+	var points := _label(17, ACCENT)
+	points.custom_minimum_size = Vector2(36, 0)
 	text.add_child(points)
-	var name := _label(13, DIM)
+	# Malé písmo má jen jemný stín, větší by slil spodní části písmen.
+	var name := _label(13, Color(0.95, 0.93, 0.88, 0.7))
+	name.add_theme_constant_override("shadow_offset_y", 1)
+	name.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.35))
 	text.add_child(name)
 	_gems.append(gem)
 	_slots.append(slot)
 	_held_points.append(points)
 	_held_names.append(name)
+
+
+## Kámen na střed kroužku podle jeho viditelné části. Obrázek kamene není v buňce přesně
+## uprostřed a kroužek by ho jinak ukázal posunutý.
+func _center_gem(gem: Sprite2D) -> void:
+	var texture := gem.texture
+	if texture == null:
+		return
+	if not _gem_offsets.has(texture):
+		var image := texture.get_image()
+		if image == null:
+			return
+		if image.is_compressed():
+			image.decompress()
+		var used := image.get_used_rect()
+		_gem_offsets[texture] = Vector2(image.get_size()) * 0.5 - (Vector2(used.position) + Vector2(used.size) * 0.5)
+	gem.offset = _gem_offsets[texture]
 
 
 ## Víceslovný název zkrátí na první slovo a počáteční písmeno druhého: Lávový kámen → Lávový k.
@@ -231,41 +261,52 @@ static func _short(title: String) -> String:
 	return "%s %s." % [words[0], words[1].left(1)]
 
 
-func _build_time() -> void:
-	var panel := _corner_panel(Control.PRESET_CENTER_TOP, Control.GROW_DIRECTION_BOTH)
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", -4)
-	panel.add_child(column)
-	var caption := _label(14, DIM)
-	caption.text = "ČAS"
-	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	column.add_child(caption)
-	_time = _label(34, TEXT)
-	_time.custom_minimum_size = Vector2(110, 0)
-	_time.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	column.add_child(_time)
+func _build_right() -> void:
+	_right = HBoxContainer.new()
+	_right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_right.add_theme_constant_override("separation", 10)
+	add_child(_right)
+	_right.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, int(EDGE))
+	_right.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var panel := _panel()
+	_right.add_child(panel)
+	_corners.append(panel)
+	_build_score(panel)
+	_build_menu_button()
 
 
-func _build_score() -> void:
-	var panel := _corner_panel(Control.PRESET_TOP_RIGHT, Control.GROW_DIRECTION_BEGIN)
+## Nahoře level a malý čas hry, pod nimi kameny v zásobnících a tenký pruh postupu.
+func _build_score(panel: PanelContainer) -> void:
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 2)
+	column.add_theme_constant_override("separation", -2)
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	panel.add_child(column)
-	_level = _label(16, DIM)
-	_level.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	column.add_child(_level)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 5)
+	column.add_child(top)
+	_level = _label(12, DIM)
+	_level.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(_level)
+	# Čas je vedlejší údaj, jen malým písmem vedle levelu.
+	var clock := ClockIcon.new()
+	clock.custom_minimum_size = Vector2(11, 11)
+	clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(clock)
+	_time = _label(12, DIM)
+	_time.text = "0:00"
+	top.add_child(_time)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_END
-	row.add_theme_constant_override("separation", 6)
+	row.add_theme_constant_override("separation", 5)
 	column.add_child(row)
-	_score = _label(28, TEXT)
+	_score = _label(18, TEXT)
 	row.add_child(_score)
-	_unit = _label(16, DIM)
-	_unit.size_flags_vertical = Control.SIZE_SHRINK_END
+	_unit = _label(12, DIM)
+	_unit.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(_unit)
 	_bar = ProgressBar.new()
 	_bar.show_percentage = false
-	_bar.custom_minimum_size = Vector2(190, 6)
+	_bar.custom_minimum_size = Vector2(170, 3)
 	_bar.add_theme_stylebox_override("background", _flat(Color(0, 0, 0, 0.45)))
 	_bar.add_theme_stylebox_override("fill", _flat(ACCENT))
 	column.add_child(_bar)
@@ -318,16 +359,7 @@ func _process(delta: float) -> void:
 func _build_notice() -> void:
 	_notice = PanelContainer.new()
 	_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.1, 0.092, 0.082, 0.85)
-	box.border_color = ACCENT
-	box.set_border_width_all(2)
-	box.set_corner_radius_all(2)
-	box.content_margin_left = 20.0
-	box.content_margin_right = 20.0
-	box.content_margin_top = 10.0
-	box.content_margin_bottom = 10.0
-	_notice.add_theme_stylebox_override("panel", box)
+	_notice.add_theme_stylebox_override("panel", _panel_box(20.0, 10.0))
 	_notice_text = _label(20, TEXT)
 	_notice_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice.add_child(_notice_text)
@@ -365,18 +397,24 @@ func _on_pause_closed() -> void:
 	pause_closed.emit()
 
 
+## Logo „MM“ jako tlačítko. Rámeček je stejný jako u tlačítek menu, jen s malým okrajem.
 func _build_menu_button() -> void:
 	_menu_button = Button.new()
-	_menu_button.text = "Menu"
+	_menu_button.icon = MENU_ICON
+	_menu_button.expand_icon = true
+	_menu_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_menu_button.tooltip_text = "Menu (Esc)"
 	_menu_button.focus_mode = Control.FOCUS_NONE
-	_menu_button.custom_minimum_size = Vector2(148, 48)
+	_menu_button.custom_minimum_size = Vector2(BAR_HEIGHT, BAR_HEIGHT)
+	for state: StringName in [&"normal", &"hover", &"pressed", &"focus"]:
+		var box := THEME.get_stylebox(state, &"Button").duplicate() as StyleBoxFlat
+		box.content_margin_left = 5.0
+		box.content_margin_right = 5.0
+		box.content_margin_top = 5.0
+		box.content_margin_bottom = 5.0
+		_menu_button.add_theme_stylebox_override(state, box)
 	_menu_button.pressed.connect(func() -> void: pause_requested.emit())
-	add_child(_menu_button)
-	_menu_button.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_menu_button.offset_left = EDGE
-	_menu_button.offset_top = -(EDGE + 48.0)
-	_menu_button.offset_right = EDGE + 148.0
-	_menu_button.offset_bottom = -EDGE
+	_right.add_child(_menu_button)
 
 
 func _build_pause() -> void:
@@ -405,8 +443,8 @@ func _build_result() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
 	panel.add_child(column)
-	_result_title = _label(40, TEXT)
-	_result_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_result_title = MaterialTitle.new()
+	_result_title.font_size = 40
 	column.add_child(_result_title)
 	_result_note = _label(18, DIM)
 	_result_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -430,26 +468,34 @@ func _result_button(text: String, chosen: Signal) -> Button:
 
 ## Ostrůvek ukotvený k horní hraně. Roste od kotvy, ať při delším textu nevyjede z obrazovky.
 func _corner_panel(preset: Control.LayoutPreset, grow: Control.GrowDirection) -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.1, 0.092, 0.082, 0.78)
-	box.border_color = Color(0.431, 0.404, 0.361, 0.85)
-	box.set_border_width_all(2)
-	box.set_corner_radius_all(2)
-	box.content_margin_left = 16.0
-	box.content_margin_right = 16.0
-	box.content_margin_top = 8.0
-	box.content_margin_bottom = 10.0
-	box.shadow_color = Color(0, 0, 0, 0.35)
-	box.shadow_size = 6
-	box.shadow_offset = Vector2(0, 3)
-	panel.add_theme_stylebox_override("panel", box)
+	var panel := _panel()
 	add_child(panel)
 	panel.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, int(EDGE))
 	panel.grow_horizontal = grow
 	_corners.append(panel)
 	return panel
+
+
+func _panel() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_theme_stylebox_override("panel", _panel_box(14.0, 4.0))
+	# Všechny ostrůvky lišty jsou stejně vysoké jako tlačítko menu.
+	panel.custom_minimum_size.y = BAR_HEIGHT
+	return panel
+
+
+## Panel menu (zlatý pruh vlevo, tmavé pozadí) s menšími okraji a stínem, ať se do rohu vejde.
+func _panel_box(side: float, top: float) -> StyleBoxFlat:
+	var box := THEME.get_stylebox(&"panel", &"PanelContainer").duplicate() as StyleBoxFlat
+	box.content_margin_left = side
+	box.content_margin_right = side
+	box.content_margin_top = top
+	box.content_margin_bottom = top
+	box.set_corner_radius_all(8)
+	box.shadow_size = 8
+	box.shadow_offset = Vector2(0, 3)
+	return box
 
 
 func _label(font_size: int, color: Color) -> Label:
@@ -504,39 +550,39 @@ class FactoryArrow:
 		draw_polyline(outline, Color(0.1, 0.092, 0.082, 0.9), 3.0, true)
 
 
-## Dlaň s prsty, kreslená. Žádný obrázek není potřeba.
-class HandIcon:
+## Malé hodiny před časem hry.
+class ClockIcon:
 	extends Control
-
-	func _draw() -> void:
-		var color := Color(0.95, 0.93, 0.88, 0.85)
-		var w := size.x
-		var h := size.y
-		var palm := Rect2(w * 0.16, h * 0.42, w * 0.68, h * 0.5)
-		draw_rect(palm, color)
-		draw_circle(Vector2(palm.position.x + palm.size.x * 0.5, palm.end.y - 1.0), palm.size.x * 0.5, color)
-		var finger := w * 0.15
-		var tops := [0.18, 0.06, 0.08, 0.2]
-		for i in 4:
-			var x := palm.position.x + finger * 0.5 + (palm.size.x - finger) * float(i) / 3.0
-			var top := h * float(tops[i]) + finger * 0.5
-			draw_line(Vector2(x, palm.position.y + 2.0), Vector2(x, top), color, finger)
-			draw_circle(Vector2(x, top), finger * 0.5, color)
-		var thumb_from := Vector2(palm.position.x + 2.0, palm.position.y + palm.size.y * 0.55)
-		var thumb_to := Vector2(w * 0.02 + finger * 0.5, h * 0.4)
-		draw_line(thumb_from, thumb_to, color, finger)
-		draw_circle(thumb_to, finger * 0.5, color)
-
-
-## Kroužek, do kterého se kreslí nesený kámen. Prázdný je jen obrys.
-class GemSlot:
-	extends Control
-
-	var gem: Sprite2D
 
 	func _draw() -> void:
 		var center := size * 0.5
 		var radius := minf(size.x, size.y) * 0.5 - 1.0
-		draw_circle(center, radius, Color(0, 0, 0, 0.35))
+		var color := Color(0.95, 0.93, 0.88, 0.55)
+		draw_arc(center, radius, 0.0, TAU, 24, color, 1.5, true)
+		draw_line(center, center + Vector2(0, -radius * 0.65), color, 1.5, true)
+		draw_line(center, center + Vector2(radius * 0.5, 0), color, 1.5, true)
+
+
+## Kroužek, do kterého se kreslí nesený kámen. Obrys má barvu trika hráče, prázdný je tlumenější.
+class GemSlot:
+	extends Control
+
+	const RING := 3.0
+
+	var gem: Sprite2D
+	var color := Color.WHITE
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_RESIZED and gem != null:
+			gem.position = size * 0.5
+
+	func _draw() -> void:
+		var center := size * 0.5
+		var radius := minf(size.x, size.y) * 0.5 - RING * 0.5 - 1.0
 		var empty := gem == null or not gem.visible
-		draw_arc(center, radius, 0.0, TAU, 40, Color(0.95, 0.93, 0.88, 0.25 if empty else 0.5), 2.0, true)
+		draw_circle(center, radius, Color(0, 0, 0, 0.45))
+		# Tmavý lem kolem barevného kroužku, ať je vidět i světlé triko.
+		draw_arc(center, radius, 0.0, TAU, 48, Color(0, 0, 0, 0.5), RING + 2.0, true)
+		var ring := color
+		ring.a = 0.55 if empty else 1.0
+		draw_arc(center, radius, 0.0, TAU, 48, ring, RING, true)

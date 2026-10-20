@@ -7,7 +7,7 @@ extends Node
 ## Hudba: v menu hraje menu. Level hraje dvojici hudba do hry a hudba při honičce naráz,
 ## honička se jen plynule zesílí a zeslabí, takže obě běží dál od místa, kde byly.
 ## Tlačítka v menu zvučí sama: posun fokusu a stisk tlačítka se hlídají tady.
-## Hudba a zvuky jdou vypnout zvlášť (nastavení v menu, ve hře toggle_music a toggle_sounds).
+## Hudba a zvuky jdou vypnout zvlášť (nastavení v menu, ve hře v pauze).
 ## Vypnutá hudba ztlumí sběrnici Music, vypnuté zvuky Sfx, Ambient a Ui. Volba se pamatuje
 ## v SETTINGS.
 
@@ -251,14 +251,6 @@ func at_variant(name: String, count: int, pos: Vector2, volume_db: float = 0.0) 
 # --- Menu ---
 
 func _input(event: InputEvent) -> void:
-	# Do jména hry se M a N píšou jako písmena.
-	var typing := get_viewport().gui_get_focus_owner() is LineEdit
-	if not typing and event.is_action_pressed(&"toggle_music"):
-		set_music_on(not _music_on)
-		return
-	if not typing and event.is_action_pressed(&"toggle_sounds"):
-		set_sounds_on(not _sounds_on)
-		return
 	for action: StringName in [&"ui_up", &"ui_down", &"ui_left", &"ui_right", &"ui_focus_next", &"ui_focus_prev"]:
 		if event.is_action_pressed(action):
 			_nav_until = Time.get_ticks_msec() + 200

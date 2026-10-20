@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/character_menu.gd" id="1_menu"]
 [ext_resource type="Theme" path="res://themes/menu.tres" id="2_theme"]
+[ext_resource type="Script" path="res://scripts/material_title.gd" id="9_title"]
 
 [node name="CharacterMenu" type="Control"]
 layout_mode = 3
@@ -36,11 +37,11 @@ size_flags_vertical = 0
 layout_mode = 2
 theme_override_constants/separation = 14
 
-[node name="Title" type="Label" parent="Center/Panel/Column"]
+[node name="Title" type="RichTextLabel" parent="Center/Panel/Column"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 36
-text = "Hráči"
-horizontal_alignment = 1
+script = ExtResource("9_title")
+title = "Hráči"
+font_size = 36
 
 [node name="Slots" type="GridContainer" parent="Center/Panel/Column"]
 layout_mode = 2
@@ -52,7 +53,7 @@ columns = 3
 [node name="Hint" type="Label" parent="Center/Panel/Column"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
-text = "↑ připojí hráče · ↑↓ řádek · ←→ barva · klepnutí na barvu · podržet skok odpojí · Enter / Start spustí"
+text = "↑ připojí hráče · podržet skok odpojí"
 horizontal_alignment = 1
 
 [node name="Buttons" type="HBoxContainer" parent="Center/Panel/Column"]

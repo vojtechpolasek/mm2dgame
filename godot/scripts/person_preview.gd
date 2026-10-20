@@ -1,6 +1,7 @@
 extends Node2D
 
 ## Chůze postavy v menu. Stejné vrstvy a shader jako ve hře, bez mapy a ovládání.
+## Postava je vidět přímo shora: vrstvy se neposouvají za kamerou, jen se zvětší podle výšky.
 
 const ObjectLayers := preload("res://scripts/object_layers.gd")
 
@@ -81,7 +82,7 @@ func _build() -> void:
 		var material := ShaderMaterial.new()
 		material.shader = shader
 		material.set_shader_parameter("height_m", height)
-		material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
+		material.set_shader_parameter("parallax", 0.0)
 		material.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
 		material.set_shader_parameter("shade_floor", float(info.get("shade_floor", 0.2)))
 		material.set_shader_parameter("sheen", Vector2(float(sheen[0]), float(sheen[1])))
@@ -100,8 +101,6 @@ func _fit() -> void:
 	var view := get_viewport_rect().size
 	if view == Vector2.ZERO:
 		return
-	RenderingServer.global_shader_parameter_set(&"camera_position", view * 0.5)
-	RenderingServer.global_shader_parameter_set(&"camera_zoom", 1.0)
 	for index in _sprites.size():
 		if _heights[index] <= 0.0:
 			_sprites[index].material = _materials[index]

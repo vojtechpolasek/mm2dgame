@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/settings_menu.gd" id="1_menu"]
 [ext_resource type="Theme" path="res://themes/menu.tres" id="2_theme"]
+[ext_resource type="Script" path="res://scripts/material_title.gd" id="9_title"]
 
 [node name="SettingsMenu" type="Control"]
 layout_mode = 3
@@ -36,11 +37,11 @@ size_flags_vertical = 0
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="Center/Panel/Column"]
+[node name="Title" type="RichTextLabel" parent="Center/Panel/Column"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 36
-text = "Nastavení"
-horizontal_alignment = 1
+script = ExtResource("9_title")
+title = "Nastavení"
+font_size = 36
 
 [node name="Gap" type="Control" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(0, 8)
@@ -65,15 +66,6 @@ text = "Rozlišení: plné"
 custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
 text = "Třpyt kamenů: zapnutý"
-
-[node name="Hint" type="Label" parent="Center/Panel/Column"]
-custom_minimum_size = Vector2(420, 0)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.78, 0.74, 0.66, 1)
-theme_override_font_sizes/font_size = 16
-text = "Ve hře otevři menu klávesou Esc nebo Startem. Hudbu přepneš i klávesou M nebo LB, zvuky klávesou N nebo RB. Úsporné rozlišení a vypnutý třpyt pomohou na slabším počítači."
-autowrap_mode = 3
-horizontal_alignment = 1
 
 [node name="Gap2" type="Control" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(0, 8)

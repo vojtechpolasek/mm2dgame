@@ -6,11 +6,20 @@ extends Control
 ## Rozehranou hru musí dohrát stejný počet hráčů, kolik ji začalo. Esc nebo B vrací zpět.
 
 const SuitSaves := preload("res://scripts/suit_saves.gd")
+const LOGO := preload("res://graphics/menu/logo.png")
+const MaterialTitle := preload("res://scripts/material_title.gd")
 
-const WIDE := 560.0
-const ROW_SIZE := Vector2(WIDE, 52)
+## Stejná šířka, výška tlačítek a logo jako v hlavním menu, ať přechod z něj neskáče.
+const WIDE := 420.0
+const ROW_SIZE := Vector2(WIDE, 56)
+const LOGO_SIZE := Vector2(420, 157)
 ## Výkonů se ukáže nejvýš tolik.
 const RESULTS_SHOWN := 10
+## Kolik řádků uložených her a výkonů je vidět naráz, další se posunou. S logem nahoře
+## by delší seznam vyjel z obrazovky.
+const SAVED_VISIBLE := 4
+const RESULTS_VISIBLE := 6
+const SAVED_ROW := 68.0
 const DIM := Color(0.78, 0.74, 0.66)
 const ACCENT := Color(0.86, 0.66, 0.3)
 
@@ -23,6 +32,8 @@ var _name_edit: LineEdit
 var _result_players := 1
 ## Uložená hra, kterou chce hráč smazat. Druhý stisk ji smaže.
 var _delete_armed := ""
+## Řada tlačítek s počtem hráčů na stránce výkonů.
+var _counts: HBoxContainer
 
 
 func _ready() -> void:
@@ -46,8 +57,6 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _show_main() -> void:
 	_clear("main")
-	_title("Skafandry")
-	_note(GameSession.ABOUT, 15)
 	var last := SuitSaves.last_game()
 	var focus: Button
 	if not last.is_empty():
@@ -94,7 +103,7 @@ func _show_saved() -> void:
 	var list := VBoxContainer.new()
 	list.add_theme_constant_override("separation", 8)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(WIDE, mini(games.size(), 6) * 60)
+	scroll.custom_minimum_size = Vector2(WIDE, mini(games.size(), SAVED_VISIBLE) * (SAVED_ROW + 8.0))
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.add_child(list)
 	_column.add_child(scroll)
@@ -103,17 +112,21 @@ func _show_saved() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
 		list.add_child(row)
+		# Dva řádky: kdo a kam došel, pod tím kdy se naposledy hrálo.
 		var open := Button.new()
-		open.text = _game_line(header)
-		open.custom_minimum_size = Vector2(WIDE - 130.0, 52)
+		open.text = "%s\nNaposledy hráno %s" % [_game_title(header), SuitSaves.date_text(int(header.get("date", 0)))]
+		open.custom_minimum_size = Vector2(WIDE - 104.0, SAVED_ROW)
 		open.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		open.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		open.add_theme_font_size_override("font_size", 15)
 		open.clip_text = true
+		open.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		open.pressed.connect(_resume.bind(header))
 		row.add_child(open)
 		var remove := Button.new()
 		remove.text = "Smazat"
-		remove.custom_minimum_size = Vector2(122, 52)
+		remove.custom_minimum_size = Vector2(96, SAVED_ROW)
+		remove.add_theme_font_size_override("font_size", 17)
 		remove.pressed.connect(_delete.bind(str(header["id"]), remove))
 		row.add_child(remove)
 		if first == null:
@@ -127,6 +140,7 @@ func _show_results() -> void:
 	_clear("results")
 	_title("Výkony")
 	var counts := HBoxContainer.new()
+	_counts = counts
 	counts.alignment = BoxContainer.ALIGNMENT_CENTER
 	counts.add_theme_constant_override("separation", 6)
 	_column.add_child(counts)
@@ -150,7 +164,11 @@ func _show_results() -> void:
 		grid.columns = 5
 		grid.add_theme_constant_override("h_separation", 18)
 		grid.add_theme_constant_override("v_separation", 4)
-		_column.add_child(grid)
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.custom_minimum_size = Vector2(WIDE, (mini(rows.size(), RESULTS_VISIBLE) + 1) * 27)
+		scroll.add_child(grid)
+		_column.add_child(scroll)
 		for caption in ["", "Jméno", "Level", "Čas", "Datum"]:
 			grid.add_child(_cell(caption, DIM))
 		for i in mini(rows.size(), RESULTS_SHOWN):
@@ -170,7 +188,7 @@ func _pick_players(count: int) -> void:
 	Sound.ui("move")
 	_show_results()
 	# Fokus zůstane na zvoleném počtu, ať jde dál listovat šipkami.
-	for child in (_column.get_child(1) as HBoxContainer).get_children():
+	for child in _counts.get_children():
 		if (child as Button).text == str(count):
 			(child as Button).grab_focus()
 
@@ -228,18 +246,27 @@ func _back_main() -> void:
 
 # --- Stavba ---
 
+## Smaže stránku. Logo nahoře zůstává na každé stránce.
 func _clear(page: String) -> void:
 	_page = page
 	for child in _column.get_children():
 		_column.remove_child(child)
 		child.queue_free()
+	var logo := TextureRect.new()
+	logo.texture = LOGO
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.custom_minimum_size = LOGO_SIZE
+	_column.add_child(logo)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 8)
+	_column.add_child(gap)
 
 
 func _title(text: String) -> void:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_size_override("font_size", 36)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var label := MaterialTitle.new()
+	label.font_size = 36
+	label.title = text
 	_column.add_child(label)
 
 
@@ -273,13 +300,13 @@ func _cell(text: String, color: Color) -> Label:
 
 ## Řádek uložené hry: jméno, level, hráči a kdy se hrálo.
 static func _game_line(header: Dictionary) -> String:
+	return "%s · %s" % [_game_title(header), SuitSaves.date_text(int(header.get("date", 0)))]
+
+
+## Jméno, level a hráči uložené hry, bez data.
+static func _game_title(header: Dictionary) -> String:
 	var players := (header.get("players", []) as Array).size()
-	return "%s · level %d · %s · %s" % [
-		_name_of(header),
-		int(header.get("level", 1)),
-		GameSession.players_text(players),
-		SuitSaves.date_text(int(header.get("date", 0))),
-	]
+	return "%s · level %d · %s" % [_name_of(header), int(header.get("level", 1)), GameSession.players_text(players)]
 
 
 static func _name_of(row: Dictionary) -> String:

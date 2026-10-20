@@ -3,9 +3,6 @@ extends Node
 ## Postup z dob, kdy hra měla víc typů. Hra se teď ukládá jen přes SuitSaves, soubor se smaže.
 const OLD_PROGRESS := "user://progress.cfg"
 
-## Popis hry v menu.
-const ABOUT := "Venku je jedovatý vzduch. Naplň zásobníky továrny, ať vzduch vyčistí. Ze tří nejlevnějších kamenů vyrobíš skafandr pro vesničana. Pak šipka ukáže k další továrně. Cílem je 15. level, hra se ukládá sama."
-
 ## Pás dolů každého materiálu je kolem továrny široký nejvýš SUIT_BAND_M metrů, ať levné
 ## materiály jsou blízko.
 const SUIT_BAND_M := 8.0

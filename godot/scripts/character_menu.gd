@@ -200,7 +200,7 @@ func _rebuild() -> void:
 	var need := _required()
 	$Center/Panel/Column/Buttons/Start.disabled = GameSession.players.is_empty() or (need > 0 and GameSession.players.size() != need)
 	if need > 0:
-		$Center/Panel/Column/Title.text = "Hráči · hra je pro %d %s" % [need, "hráče" if need <= 4 else "hráčů"]
+		$Center/Panel/Column/Title.title = "Hráči · hra je pro %d %s" % [need, "hráče" if need <= 4 else "hráčů"]
 
 
 func _player_card(slot: int) -> PanelContainer:
