@@ -94,9 +94,6 @@
       "decor": {
         "trava_sucha": 0.04
       },
-      "avoid": [
-        "desert"
-      ],
       "forest": {
         "smrk_snih": 0.5,
         "borovice_snih": 0.2,
@@ -126,8 +123,7 @@
         "balvan1": 0.03,
         "skala1": 0.006,
         "skala2": 0.005,
-        "skala10": 0.004,
-        "puklina": 0.003
+        "skala10": 0.004
       }
     },
     "ash": {
@@ -151,15 +147,11 @@
       "walkable": true,
       "fog": 1.0,
       "dense_forest": true,
-      "speed": 0.65,
+      "speed": 0.75,
       "decor": {
         "ostrice": 0.6,
         "rakos": 0.35
       },
-      "avoid": [
-        "snow",
-        "desert"
-      ],
       "forest": {
         "vrba": 1.0,
         "strom1": 1.0,
@@ -180,9 +172,6 @@
         "vres": 0.5,
         "trava_sucha": 0.25
       },
-      "avoid": [
-        "desert"
-      ],
       "forest": {
         "ker1": 0.07,
         "strom1": 0.012,

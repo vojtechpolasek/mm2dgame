@@ -25,7 +25,7 @@ SURFACES_PATH = ROOT / "godot" / "graphics" / "terrain" / "surfaces.json"
 # Padlé stromy (padly_strom mezi skálami) leží hlavně na trávě, v lese na hlíně a v močálu.
 # decor je průchozí porost z gen_decor.py, počet trsů na dlaždici. Shlukuje se podle druhu.
 # Čtverec světa si vybere jen pár terénů. avoid jsou terény, se kterými se nevybere
-# společně (platí oběma směry), ať vedle sebe není třeba sníh a poušť.
+# společně (platí oběma směry), třeba "avoid": ["desert"] u sněhu. Teď ho nemá žádný terén.
 TERRAINS = {
     "grass": {
         "name": "grass",
@@ -74,7 +74,6 @@ TERRAINS = {
         "decor": {"trava_sucha": 0.04},
         # Nad sněhem padají vločky.
         "snowfall": 1.0,
-        "avoid": ["desert"],
     },
     # Kamenná suť: drobné i větší ostrohranné kameny, hodně skal, skoro žádné stromy.
     "scree": {
@@ -85,7 +84,7 @@ TERRAINS = {
         "coarseness": 1.0,
         "shore": "sand",
         "forest": {"strom_suchy": 0.012, "ker1": 0.01},
-        "rocks": {"balvan1": 0.03, "skala1": 0.006, "skala2": 0.005, "skala10": 0.004, "puklina": 0.003},
+        "rocks": {"balvan1": 0.03, "skala1": 0.006, "skala2": 0.005, "skala10": 0.004},
         "decor": {"trava_sucha": 0.1, "kvetiny": 0.04},
     },
     # Černý popel po požáru: závěje popela, uhlíky, jen ohořelé suché stromy a lávové pukliny.
@@ -112,9 +111,8 @@ TERRAINS = {
         "decor": {"ostrice": 0.6, "rakos": 0.35},
         # Nad močálem se válí mlha.
         "fog": 1.0,
-        "avoid": ["snow", "desert"],
         # V bahně se chodí pomaleji: postavy, vesničané i příšery, které nelétají.
-        "speed": 0.65,
+        "speed": 0.75,
     },
     # Vřesoviště: fialový vřes, borůvčí a olivová tráva. Keře, řídké stromy a balvany.
     "heath": {
@@ -127,7 +125,6 @@ TERRAINS = {
         "forest": {"ker1": 0.07, "strom1": 0.012, "strom_suchy": 0.02},
         "rocks": {"balvan_mech": 0.01, "balvan1": 0.008, "skala_mech": 0.0015, "padly_strom": 0.0007},
         "decor": {"vres": 0.5, "trava_sucha": 0.25},
-        "avoid": ["desert"],
     },
     "water": {
         "name": "water",

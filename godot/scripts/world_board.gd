@@ -52,6 +52,9 @@ const River := preload("res://scripts/river.gd")
 const SQUARE := 128
 ## Kolik terénů si nový čtverec vybere (MapGenerator.pick_terrains). Víc by mapu rozdrobilo.
 const TERRAINS_PER_SQUARE := 3
+## Terény, které úvodní čtverec nikdy nemá: bažina by hned na začátku zpomalila, voda
+## překážela. Bez vody nemá úvodní čtverec ani řeku (River teče do jezera).
+const START_BANNED: PackedStringArray = ["swamp", "water"]
 ## Od kraje, kde se na pozadí začne tvořit soused. Roh otevře i šikmý čtverec.
 const APPROACH := 32.0
 ## Kolem továrny se voda vysuší, ať nestojí v jezeře. Kraj čtverce to nemění.
@@ -490,7 +493,8 @@ func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
 
 
 func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> void:
-	var pool := MapGenerator.pick_terrains(_catalog.names, _catalog.surfaces, sq.rng, TERRAINS_PER_SQUARE, ring)
+	var banned := START_BANNED if sq.coord == Vector2i.ZERO else PackedStringArray()
+	var pool := MapGenerator.pick_terrains(_catalog.names, _catalog.surfaces, sq.rng, TERRAINS_PER_SQUARE, ring, banned)
 	var map := MapGenerator.grow(_side, _catalog.names, sq.rng, _catalog.max_distance, _catalog.max_share, ring, pool)
 	map.surfaces = _catalog.surfaces
 	if sq.layout != "empty":

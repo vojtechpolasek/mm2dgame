@@ -4,9 +4,11 @@
 Vrstvy jdou pod zem jako u dolu (gen_mine.py), posouvají se opačně než skály a puklina
 vypadá hluboká:
   1 (0 m)    kůra kolem pukliny se slabou září, uprostřed díra,
-  2 (-0,5 m) tmavé stěny prosvícené lávou, uprostřed širší části díra,
-  3 (-0,9 m) žhavá láva s kousky ztuhlé kůry.
-Kůra okraje je široká, ať hlubší vrstvy posunuté u kraje obrazovky nevykouknou vedle.
+  2 (-0,8 m) tmavé stěny prosvícené lávou, uprostřed širší části díra,
+  3 (-1,4 m) žhavá láva s kousky ztuhlé kůry.
+Hlubší vrstvy sahají daleko pod kůru, ať je díra vyplněná i při posunu u kraje obrazovky.
+Ven za kůru nevykouknou: maska (mask.png, stejné rozložení atlasu jako vrstvy 2 a 3) nese
+díru bez posunu a shader z hlubších vrstev kreslí jen to, co leží nad ní.
 Pulzování žáru dělá ve hře shader crack_layer.gdshader.
 
 Překáží jen hrubě: hlavní prasklina jsou tři kapsle, delší odbočka jedna. Kapsle jdou
@@ -23,20 +25,30 @@ import math
 import random
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from gen_terrain_tiles import parse_hex
 from gen_trees import blank, blit_at, contact_sheet, crop_square, hash01, mix_rgb, pack_atlas, shade
 
-# Posun vrstev v náhledu „u kraje“, stejný jako u skal: px na metr výšky. Puklina je
-# mělká, v náhledu je posun třikrát větší, ať je hloubka vidět.
-EDGE_SHIFT = (480.0 * 0.0052 * 3, 260.0 * 0.0052 * 3)
-# Šířka kůry kolem díry a záře za ní v px. Kůra je širší než největší posun vrstvy -0,9 m
-# u kraje obrazovky (asi 5 px), ať láva nevykoukne vedle pukliny.
+# Posun vrstev v náhledu „u kraje“ jako ve hře v rohu okna 1280×720: px na metr výšky
+# (ObjectLayers.PARALLAX 0.016), nejvýš MAX_SHIFT.
+EDGE_SHIFT = (640.0 * 0.016, 360.0 * 0.016)
+# Šířka kůry kolem díry a záře za ní v px. Kůra se podle šumu mění od RIM_MIN do RIM_MAX
+# násobku RIM.
 RIM = 8.0
+RIM_MIN = 0.8
+RIM_MAX = 1.3
 HALO = 8.0
-# Vrstvy pod okrajem sahají o tolik px za díru, ať při posunu nevznikne mezera.
+# Od hrany díry se stěny barví do tolika px pod kůrou.
 UNDER = 1.0
+# Hrana díry se podle šumu posune nejvýš o tolik px.
+FRAY = 1.2
+# Hlubší vrstvy sahají tolik px za díru. Víc se neposunou, shader posun omezí na MAX_SHIFT
+# (CRACK_MAX_SHIFT v rocks.gd). U rohu okna 1280×720 je posun -1,4 m asi 16 px.
+DEEP_REACH = 24.0
+MAX_SHIFT = DEEP_REACH - 2.0
+# Maska sahá o tolik px pod kůru, ať její hrana i rozmazaná filtrem zůstane schovaná.
+MASK_UNDER = 2.0
 # Díra ve stěnách je vnitřní podíl šířky. Užší místa díru nemají, láva tam jen prosvítá.
 WALL_HOLE = 0.45
 WALL_HOLE_MIN = 2.5
@@ -57,9 +69,14 @@ def vnoise(x: float, y: float, scale: float, salt: int) -> float:
 
 
 def canvas_size(preset: dict) -> int:
-    half = float(preset["length"][1]) / 2 + 110 + RIM + HALO
+    half = float(preset["length"][1]) / 2 + 124 + _reach()
     size = int(math.ceil(half * 2))
     return size + size % 2
+
+
+def _reach() -> float:
+    """Jak daleko za okraj praskliny se ještě něco kreslí."""
+    return max(RIM * RIM_MAX + HALO, DEEP_REACH) + FRAY + 1
 
 
 def _jagged(rng: random.Random, start: tuple[float, float], heading: float, length: float, step: float,
@@ -102,7 +119,7 @@ class Plan:
     def __init__(self, preset: dict, rng: random.Random) -> None:
         length = rng.uniform(*preset["length"])
         half_max = rng.uniform(*preset["width"]) / 2
-        main = _jagged(rng, (-length / 2, 0.0), 0.0, length, 13.0, 0.75)
+        main = _jagged(rng, (-length / 2, 0.0), 0.0, length, 14.5, 0.75)
         # Střed čáry do nuly, ať se kreslí uprostřed plátna.
         mx = sum(p[0] for p in main) / len(main)
         my = sum(p[1] for p in main) / len(main)
@@ -118,7 +135,7 @@ class Plan:
             nx, ny, _ = samples[min(len(samples) - 1, at + 2)]
             along = math.atan2(ny - y, nx - x)
             heading = along + rng.choice((-1.0, 1.0)) * rng.uniform(0.5, 1.1)
-            line = _jagged(rng, (x, y), heading, rng.uniform(38, 105), 10.0, 0.7)
+            line = _jagged(rng, (x, y), heading, rng.uniform(43, 118), 11.0, 0.7)
             self.branches.append((line, self.main_half(t) * rng.uniform(0.45, 0.65)))
 
     def strokes(self) -> list[tuple[float, float, float]]:
@@ -148,7 +165,7 @@ def capsules(plan: Plan) -> list[list[float]]:
         out.append(_capsule(part, plan.main_half(t_mid) * 0.9))
     for line, base in plan.branches:
         length = sum(math.dist(line[i], line[i + 1]) for i in range(len(line) - 1))
-        if length >= 60:
+        if length >= 68:
             # Jen silnější půlka odbočky, tenká špička nepřekáží.
             out.append(_capsule(line[: max(2, len(line) // 2 + 1)], base * 0.8))
     return out
@@ -159,7 +176,7 @@ def _field(plan: Plan, size: int) -> tuple[list[float], list[float]]:
     margin = [-99.0] * (size * size)
     width = [0.0] * (size * size)
     c = size / 2
-    reach = RIM + HALO + 1
+    reach = _reach()
     for x, y, half in plan.strokes():
         px, py = x + c, y + c
         r = half + reach
@@ -173,36 +190,38 @@ def _field(plan: Plan, size: int) -> tuple[list[float], list[float]]:
     return margin, width
 
 
-def draw_crack(preset: dict, rng: random.Random, salt: int) -> tuple[dict[int, Image.Image], list[list[float]]]:
+def draw_crack(preset: dict, rng: random.Random, salt: int) -> tuple[dict[int, Image.Image], Image.Image, list[list[float]]]:
+    """Vrstvy 1 až 3, maska díry a kapsle."""
     size = canvas_size(preset)
     plan = Plan(preset, rng)
     margin, width = _field(plan, size)
     crust = parse_hex(preset["color"])
     glow = parse_hex(preset["lava"])
-    rim, walls, lava = blank(size), blank(size), blank(size)
-    rp, wp, lp = rim.load(), walls.load(), lava.load()
+    rim, walls, lava, mask = blank(size), blank(size), blank(size), blank(size)
+    rp, wp, lp, mp = rim.load(), walls.load(), lava.load(), mask.load()
+    reach = _reach()
     for y in range(size):
         for x in range(size):
             m = margin[y * size + x]
-            if m < -(RIM + HALO):
+            if m < -reach:
                 continue
             half = width[y * size + x]
             # Roztřepená hrana: díra je podle šumu o kus širší nebo užší.
-            m += (vnoise(x, y, 3.5, salt + 2) - 0.5) * 2.4 * min(1.0, half / 2.5)
-            rim_w = RIM * (0.8 + 0.5 * vnoise(x, y, 7.0, salt + 3))
+            m += (vnoise(x, y, 3.5, salt + 2) - 0.5) * 2 * FRAY * min(1.0, half / 2.5)
+            rim_w = RIM * (RIM_MIN + (RIM_MAX - RIM_MIN) * vnoise(x, y, 7.0, salt + 3))
             grain = hash01(x, y, salt)
             blotch = vnoise(x, y, 5.0, salt + 1)
             # Okraj: kůra kolem díry, za ní slabá záře do popela.
             if m <= 0:
                 if m > -rim_w:
                     color = shade(crust, 0.75 + 0.5 * grain * blotch)
-                    # Hrana díry je rozžhavená.
-                    color = mix_rgb(color, glow, max(0.0, 1 + m / 1.6) * 0.75)
                     rp[x, y] = (*color, 255)
                 else:
                     fade = max(0.0, 1 - (-m - rim_w) / HALO)
                     rp[x, y] = (*mix_rgb(crust, glow, 0.55), int(95 * fade * fade))
-            if m <= -UNDER:
+            if m > -MASK_UNDER:
+                mp[x, y] = (255, 255, 255, 255)
+            if m <= -DEEP_REACH:
                 continue
             # Stěny: tmavá hornina, k lávě rudne.
             hole = half >= WALL_HOLE_MIN and m > half * (1 - WALL_HOLE)
@@ -219,14 +238,21 @@ def draw_crack(preset: dict, rng: random.Random, salt: int) -> tuple[dict[int, I
             if plate > 0.72:
                 color = mix_rgb(color, (62, 26, 16), min(1.0, (plate - 0.72) * 9) * 0.85)
             lp[x, y] = (*shade(color, 0.92 + 0.12 * grain), 255)
-    return {1: rim, 2: walls, 3: lava}, capsules(plan)
+    return {1: rim, 2: walls, 3: lava}, mask, capsules(plan)
 
 
-def stack(frames: dict[int, Image.Image], heights: dict[int, float], shift: tuple[float, float]) -> Image.Image:
-    """Nejhlubší vrstva první, okraj přes ni."""
+def stack(frames: dict[int, Image.Image], mask: Image.Image, heights: dict[int, float],
+          shift: tuple[float, float]) -> Image.Image:
+    """Nejhlubší vrstva první, okraj přes ni. Hlubší vrstvy ořízne maska jako ve hře."""
     image = blank(frames[1].width)
     for layer in sorted(frames, reverse=True):
-        blit_at(image, frames[layer], shift[0] * heights[layer], shift[1] * heights[layer])
+        dx, dy = shift[0] * heights[layer], shift[1] * heights[layer]
+        cap = min(1.0, MAX_SHIFT / max(math.hypot(dx, dy), 0.001))
+        moved = blank(frames[layer].width)
+        blit_at(moved, frames[layer], dx * cap, dy * cap)
+        if layer > 1:
+            moved.putalpha(ImageChops.multiply(moved.getchannel("A"), mask.getchannel("A")))
+        image.alpha_composite(moved)
     return image
 
 
@@ -235,18 +261,23 @@ def generate_crack(name: str, preset: dict, out_dir: Path, preview_dir: Path, se
     salt = sum(ord(char) for char in name)
     heights = {layer: float(preset["height"][layer]) for layer in (1, 2, 3)}
     variants = []
+    masks = []
     shapes = []
     for index in range(count):
         rng = random.Random(seed + salt + index * 7919)
-        frames, shape = draw_crack(preset, rng, salt + index * 101)
+        frames, mask, shape = draw_crack(preset, rng, salt + index * 101)
         variants.append(frames)
+        masks.append(mask)
         shapes.append(shape)
     (out_dir / "capsule.json").write_text(json.dumps(shapes) + "\n", encoding="utf-8")
-    saved = []
-    for layer in (1, 2, 3):
-        fitted = crop_square([frames[layer] for frames in variants])
-        saved.append(fitted[0].width)
-        pack_atlas(fitted).save(out_dir / f"layer_{layer}.png")
+    rim = crop_square([frames[1] for frames in variants])
+    pack_atlas(rim).save(out_dir / "layer_1.png")
+    # Vrstvy 2 a 3 a maska mají stejný výřez, shader čte masku na stejném místě atlasu.
+    deep = crop_square([frames[2] for frames in variants] + [frames[3] for frames in variants] + masks)
+    pack_atlas(deep[:count]).save(out_dir / "layer_2.png")
+    pack_atlas(deep[count:2 * count]).save(out_dir / "layer_3.png")
+    pack_atlas(deep[2 * count:]).getchannel("A").save(out_dir / "mask.png")
+    saved = [rim[0].width, deep[0].width]
     labels = [f"{index:02d}" for index in range(count)]
     # Náhled na popelu, ať je vidět záře.
     ground = parse_hex("3B3937")
@@ -256,10 +287,11 @@ def generate_crack(name: str, preset: dict, out_dir: Path, preview_dir: Path, se
         back.alpha_composite(image)
         return back
 
-    contact_sheet([on_ground(stack(frames, heights, (0.0, 0.0))) for frames in variants], labels, preview_dir / f"{name}.png", 1)
-    contact_sheet([on_ground(stack(frames, heights, EDGE_SHIFT)) for frames in variants], labels, preview_dir / f"{name}_kraj.png", 2)
+    pairs = list(zip(variants, masks))
+    contact_sheet([on_ground(stack(frames, mask, heights, (0.0, 0.0))) for frames, mask in pairs], labels, preview_dir / f"{name}.png", 1)
+    contact_sheet([on_ground(stack(frames, mask, heights, EDGE_SHIFT)) for frames, mask in pairs], labels, preview_dir / f"{name}_kraj.png", 2)
     first = variants[0]
-    panels = [on_ground(first[layer]) for layer in (1, 2, 3)] + [on_ground(stack(first, heights, EDGE_SHIFT))]
+    panels = [on_ground(first[layer]) for layer in (1, 2, 3)] + [on_ground(stack(first, masks[0], heights, EDGE_SHIFT))]
     contact_sheet(panels, [f"vrstva {layer} · {heights[layer]:g} m" for layer in (1, 2, 3)] + ["u kraje"], preview_dir / f"{name}_layers.png", 2)
     return saved
 

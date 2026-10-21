@@ -795,13 +795,15 @@ static func _dry_center(points: Array[Vector2i], assignment: Array[int], size: i
 ## Terény nových semínek čtverce: count náhodných, které spolu smějí sousedit. Dvojice ze seznamu
 ## avoid v surfaces.json spolu nesousedí, platí to oběma směry. Terény sousedních čtverců z ring
 ## do čtverce dorostou tak jako tak, nový terén s nimi proto sousedit smět musí. Šanci mají
-## všechny terény stejnou, ať se terény prvního čtverce nerozlezou po celém světě.
+## všechny terény stejnou, ať se terény prvního čtverce nerozlezou po celém světě. Terény
+## z banned se nevyberou vůbec.
 static func pick_terrains(
 	terrain_names: PackedStringArray,
 	surfaces: Dictionary,
 	rng: RandomNumberGenerator,
 	count: int,
 	ring: PackedByteArray = PackedByteArray(),
+	banned: PackedStringArray = PackedStringArray(),
 ) -> PackedInt32Array:
 	var present := {}
 	for id in ring:
@@ -809,7 +811,7 @@ static func pick_terrains(
 			present[int(id)] = true
 	var left: Array[int] = []
 	for id in terrain_names.size():
-		var clash := false
+		var clash := banned.has(terrain_names[id])
 		for other: int in present:
 			if _avoids(terrain_names, surfaces, id, other):
 				clash = true

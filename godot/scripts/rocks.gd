@@ -18,6 +18,9 @@ const TOUCH_PX := 2.0
 ## Lávová puklina: vrstvy pod zemí jako důl, žár pulzuje. Svit vrstev od okraje ke dnu.
 const CRACK_SHADER := "res://shaders/crack_layer.gdshader"
 const CRACK_GLOW: Array[float] = [0.35, 0.6, 1.0]
+## Nejdelší posun vrstvy pukliny v px. O tolik hlubší vrstvy sahají pod kůru, viz MAX_SHIFT
+## v gen_crack.py.
+const CRACK_MAX_SHIFT := 22.0
 ## Puklina drží od skal, padlých stromů a jiných puklin tolik metrů po celé délce, ať jde obejít.
 const CRACK_GAP_M := 2.0
 ## Krok kontroly místa podél kapslí pukliny v px.
@@ -466,6 +469,7 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 		entry["wall_color"] = Color.html(str(info.get("wall", "6E6860")))
 	if bool(info.get("crack", false)):
 		entry["crack"] = true
+		entry["mask_path"] = "%s/%s/mask.png" % [_root(), kind_name]
 		_crack_materials(entry)
 	_foot = maxf(_foot, radius * FOOT_MARGIN)
 	_read_outline(info, int(entry["variants"]), radius * FOOT_MARGIN)
@@ -483,8 +487,27 @@ func _crack_materials(entry: Dictionary) -> void:
 		material.shader = shader
 		material.set_shader_parameter("height_m", float(info["height"]))
 		material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
+		material.set_shader_parameter("max_shift", CRACK_MAX_SHIFT)
 		material.set_shader_parameter("glow", CRACK_GLOW[mini(layer, CRACK_GLOW.size() - 1)])
 		info["material"] = material
+
+
+## Puklině se s texturami vrstev načte i maska díry pro hlubší vrstvy.
+func _load_textures(kind: int) -> void:
+	super._load_textures(kind)
+	var entry := _kinds[kind]
+	if not entry.has("mask_path") or entry.has("mask"):
+		return
+	var mask := _texture_from(str(entry["mask_path"]))
+	entry["mask"] = mask
+	if mask == null:
+		push_error("Puklině chybí maska %s." % entry["mask_path"])
+		return
+	var layers: Array = entry["layers"]
+	for layer in range(1, layers.size()):
+		var material: ShaderMaterial = layers[layer]["material"]
+		material.set_shader_parameter("mask", mask)
+		material.set_shader_parameter("masked", true)
 
 
 ## Kapsle variant. Řádek je šestice (jedna kapsle, padlý strom), nebo seznam šestic (puklina).
@@ -767,6 +790,11 @@ func pond_at(pos: Vector2, body: float) -> int:
 			best_dist = dist
 			best = slot
 	return best
+
+
+## Je střed postavy do body od obrysu dolu slot?
+func near_pond(slot: int, pos: Vector2, body: float) -> bool:
+	return _touches(pos, _pond_rock[slot], body)
 
 
 ## Doly materiálu mat.

@@ -147,14 +147,14 @@ ROCKS = {
         "variants": 6,
         "spacing": 2.0,
     },
-    # Lávová puklina: 3,75 až 6 m dlouhá, jde přeskočit jako důl.
+    # Lávová puklina: 4,2 až 6,75 m dlouhá, jde přeskočit jako důl.
     "puklina": {
         "crack": True,
         "layers": 3,
-        "widths": {1: 420, 2: 410, 3: 400},
-        "height": {1: 0.0, 2: -0.5, 3: -0.9},
-        "length": (240, 384),
-        "width": (15, 24),
+        "widths": {1: 472, 2: 461, 3: 450},
+        "height": {1: 0.0, 2: -0.8, 3: -1.4},
+        "length": (270, 432),
+        "width": (17, 27),
         "branches": (2, 4),
         "color": "2A2624",
         "lava": "FF7A1C",

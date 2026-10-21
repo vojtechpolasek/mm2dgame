@@ -1055,10 +1055,24 @@ func store_bay(pos: Vector2, body: float) -> int:
 			continue
 		var local := (pos - center).rotated(-float(_stores[store]["turn"]))
 		for bay in _bay_center.size():
-			var gap := ((local - _bay_center[bay]).abs() - _bay_half[bay]).max(Vector2.ZERO)
-			if gap.length() <= reach:
+			if _bay_gap(local, bay) <= reach:
 				return store * _bay_center.size() + bay
 	return -1
+
+
+## Je střed postavy do body od okraje plochy bay?
+func near_bay(bay: int, pos: Vector2, body: float) -> bool:
+	var count := maxi(_bay_center.size(), 1)
+	if bay < 0 or bay / count >= _stores.size():
+		return false
+	var store: Dictionary = _stores[bay / count]
+	var local := (pos - (store["pos"] as Vector2)).rotated(-float(store["turn"]))
+	return _bay_gap(local, bay % count) <= body + TOUCH_PX
+
+
+## Vzdálenost bodu local (v souřadnicích skladu) od okraje plochy bay skladu.
+func _bay_gap(local: Vector2, bay: int) -> float:
+	return ((local - _bay_center[bay]).abs() - _bay_half[bay]).max(Vector2.ZERO).length()
 
 
 ## Výměna na ploše skladu: na plochu se vejde jediný kámen. Postava vezme

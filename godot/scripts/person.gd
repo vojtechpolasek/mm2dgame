@@ -60,9 +60,9 @@ const PALM := Vector2(16.0, -16.0)
 const THROW_TIME := 0.45
 ## Kámen ukradený z ruky odletí za tolik sekund zpátky na plochu skladu, ze které ho postava vzala.
 const RETURN_TIME := 0.7
-## Dotek dolu nebo skladu vymění kámen hned. Když postava u něj zůstane, vymění znovu po tolika
-## sekundách, dokud neodejde.
-const SWAP_REPEAT := 1.0
+## Dotek dolu nebo skladu vymění kámen hned. Znovu u téhož až poté, co postava odejde aspoň tolik
+## metrů od jeho okraje.
+const REARM_METERS := 1.0
 const RETURN_ARC := 48.0
 ## Krok zazní dvakrát za cyklus chůze, při každém dosednutí nohy. Povrchy se zvukem kroků.
 ## Zvuk kroků podle povrchu. Nové povrchy si půjčují zvuk podobného.
@@ -106,10 +106,9 @@ var _held: Sprite2D
 var _held_mat := -1
 ## Plocha skladu (Town.store_bay), ze které je kámen v ruce, nebo -1. Tam se vrátí po krádeži.
 var _held_bay := -1
-## Důl, kterého se postava právě dotýká, a za kolik sekund u něj vymění znovu.
+## Důl a plocha skladu, u kterých postava naposledy měnila. Dokud od nich neodejde na REARM_METERS,
+## znovu nemění.
 var _touch_slot := -1
-var _touch_left := 0.0
-## Plocha skladu, které se postava právě dotýká. Odpočet sdílí s dolem.
 var _touch_bay := -1
 var _flyer: Sprite2D
 var _fly_from := Vector2.ZERO
@@ -169,7 +168,7 @@ func _process(delta: float) -> void:
 		_step_run(delta, direction)
 	if _flyer != null:
 		_advance_throw(delta)
-	_carry(delta)
+	_carry()
 	var touching := _town != null and _town.touches_factory(position, BODY)
 	if touching and not _at_factory:
 		touched_factory.emit()
@@ -361,15 +360,14 @@ func _attach_hand() -> void:
 
 
 ## Továrna vezme nesený kámen do zásobníku. Důl dá svůj materiál, když v ruce není stejný
-## nebo dražší kámen. Hned při doteku a potom každých SWAP_REPEAT sekund, dokud postava u dolu
-## stojí.
-func _carry(delta: float) -> void:
+## nebo dražší kámen. U dolu i skladu jednou za příchod, viz REARM_METERS.
+func _carry() -> void:
 	if _flyer != null or _crystal == null or _crystal.count() == 0 or _held == null:
 		return
 	if not _inside_square():
 		return
+	_rearm()
 	if _held_mat >= 0 and _town != null and _town.touches_factory(position, BODY):
-		_touch_slot = -1
 		# Zásobník na straně, u které postava stojí. Když tu kámen nikdo nechce, zůstane v ruce,
 		# ať ho postava donese na správnou stranu. Když ho nechce nikdo v celé továrně, odletí
 		# na nejbližší zásobník a rozplyne se.
@@ -379,35 +377,33 @@ func _carry(delta: float) -> void:
 		elif not _town.suit_factory().wanted(_held_mat):
 			_throw(_town.suit_factory().nearest_lane(position), true)
 		return
-	if _touch_store(delta):
+	if _touch_store():
 		return
 	var slot := _rocks.pond_at(position, BODY)
-	if slot < 0:
-		_touch_slot = -1
+	if slot < 0 or slot == _touch_slot:
 		return
-	if slot == _touch_slot:
-		_touch_left -= delta
-		if _touch_left > 0.0:
-			return
 	_touch_slot = slot
-	_touch_left = SWAP_REPEAT
 	_take(slot, _rocks.swap_gem(slot, _held_mat))
+
+
+## Důl a plocha, od kterých postava odešla na REARM_METERS, zase vymění.
+func _rearm() -> void:
+	var far := BODY + REARM_METERS * float(TerrainCatalog.TILE_SIZE)
+	if _touch_slot >= 0 and not _rocks.near_pond(_touch_slot, position, far):
+		_touch_slot = -1
+	if _touch_bay >= 0 and (_town == null or not _town.near_bay(_touch_bay, position, far)):
+		_touch_bay = -1
 
 
 ## Plocha skladu drží jediný kámen: prázdná si nesený vezme, plná ho vymění. Vrátí true, když se postava
 ## nějaké plochy dotýká.
-func _touch_store(delta: float) -> bool:
+func _touch_store() -> bool:
 	var bay := _town.store_bay(position, BODY) if _town != null else -1
 	if bay < 0:
-		_touch_bay = -1
 		return false
-	_touch_slot = -1
 	if bay == _touch_bay:
-		_touch_left -= delta
-		if _touch_left > 0.0:
-			return true
+		return true
 	_touch_bay = bay
-	_touch_left = SWAP_REPEAT
 	var held := _held_mat
 	var mat := _town.swap_store(bay, held)
 	if mat >= 0:
@@ -558,7 +554,6 @@ func leave_square() -> void:
 		held_changed.emit(-1)
 	_touch_slot = -1
 	_touch_bay = -1
-	_touch_left = 0.0
 
 
 ## Doly a továrna čtverce, na který postava právě přišla.
