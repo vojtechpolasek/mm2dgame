@@ -102,6 +102,8 @@ var _crowd: Crowd
 var _squares := {}
 ## Čtverce, které čekají, až se dotvoří jejich sousedé. Navazují pak na jejich kraje.
 var _waiting: Array[Vector2i] = []
+## Čtverce hotové z vlákna, které se po částech přidávají do scény (_finish_step).
+var _finishing: Array[Vector2i] = []
 var _where := {}
 var _world_rng := RandomNumberGenerator.new()
 var _opened := false
@@ -150,6 +152,8 @@ class Square:
 	var layout := ""
 	var level := 1
 	var task := -1
+	## Kolik částí _finish_step už do scény přidal.
+	var stage := 0
 	var ready := false
 	var awake := false
 	var map
@@ -333,8 +337,13 @@ func _poll() -> void:
 			continue
 		WorkerThreadPool.wait_for_task_completion(sq.task)
 		sq.task = -1
-		if not _closing:
-			_finish(sq)
+		if _closing:
+			continue
+		if sq.map == null or sq.walker == null:
+			push_error("Čtverec %s se nepodařilo vytvořit." % sq.coord)
+			continue
+		_finishing.append(sq.coord)
+	_finish_step()
 
 
 ## Nový čtverec. Se saved se postaví z uložené mapy, jinak se vytvoří a naváže na sousedy.
@@ -565,34 +574,56 @@ func _furnish(sq: Square, map: MapData) -> void:
 	sq.monsters.prepare(sq.rocks.pond_materials(), _crystal, sq.walker, sq.rocks, sq.forest)
 	sq.villagers.prepare(sq.walker, sq.rocks, sq.forest)
 	sq.rocks.prepare_bounds(Person.BODY)
+	# Textury tady ve vlákně, na hlavním by načtení zaseklo hru.
+	sq.rocks.load_used_textures()
+	sq.forest.load_used_textures()
 	var water := _water_map(map)
 	sq.water_side = int(water["side"])
 	sq.water_far = water["far"]
 	sq.map = map
 
 
-func _finish(sq: Square) -> void:
-	if sq.map == null or sq.walker == null:
-		push_error("Čtverec %s se nepodařilo vytvořit." % sq.coord)
+## Hotový čtverec z vlákna přichází do scény po částech, jedna za snímek, ať se hra
+## nezasekne. Dokud není ready, hra ho nepoužívá.
+func _finish_step() -> void:
+	if _finishing.is_empty():
 		return
-	sq.origin = _origin_of(sq.coord)
-	sq.rocks.relocate(sq.origin)
-	sq.forest.relocate(sq.origin)
-	sq.town.relocate(sq.origin)
-	sq.river.relocate(sq.origin)
-	sq.walker.set_space(sq.origin)
-	sq.monsters.set_space(sq.origin)
-	sq.villagers.set_space(sq.origin)
-	add_child(sq.rocks)
-	add_child(sq.forest)
-	add_child(sq.town)
+	var sq := _square(_finishing[0])
+	if sq == null:
+		_finishing.remove_at(0)
+		return
+	match sq.stage:
+		0:
+			sq.origin = _origin_of(sq.coord)
+			sq.rocks.relocate(sq.origin)
+			sq.forest.relocate(sq.origin)
+			sq.town.relocate(sq.origin)
+			sq.river.relocate(sq.origin)
+			sq.walker.set_space(sq.origin)
+			sq.monsters.set_space(sq.origin)
+			sq.villagers.set_space(sq.origin)
+			_show_terrain(sq)
+		1:
+			add_child(sq.town)
+			sq.town.spawn(_camera, _road, _props, _crystal)
+		2:
+			add_child(sq.rocks)
+			sq.rocks.spawn(_camera, _props, _chunks)
+		3:
+			add_child(sq.forest)
+			sq.forest.spawn(_camera, _props, _chunks)
+		4:
+			sq.river.spawn(_rivers, sq.origin)
+			sq.decor.spawn(_decor_kit, _decor, sq.origin)
+		_:
+			_finishing.remove_at(0)
+			_finish(sq)
+			return
+	sq.stage += 1
+
+
+func _finish(sq: Square) -> void:
 	add_child(sq.monsters)
-	_show_terrain(sq)
-	sq.town.spawn(_camera, _road, _props, _crystal)
-	sq.rocks.spawn(_camera, _props, _chunks)
-	sq.forest.spawn(_camera, _props, _chunks)
-	sq.river.spawn(_rivers, sq.origin)
-	sq.decor.spawn(_decor_kit, _decor, sq.origin)
 	# Nad čtvercem levelu visí jed, dokud továrna level nesplní.
 	sq.air = SquareAir.new()
 	sq.air.name = "Air_%d_%d" % [sq.coord.x, sq.coord.y]

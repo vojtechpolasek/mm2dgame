@@ -172,6 +172,16 @@ func spot_gaps() -> PackedFloat32Array:
 	return gaps
 
 
+## Načte textury druhů, které objekty mají. Volá se už ve vlákně tvorby čtverce, ať spawn
+## na hlavním vlákně nečeká na disk. Načtené textury se znovu nenačítají.
+func load_used_textures() -> void:
+	var used := {}
+	for kind in _kind:
+		used[kind] = true
+	for kind: int in used:
+		_load_textures(kind)
+
+
 ## Vytvoří přihrádky a napojí se na kameru. Uzly vzniknou pod host, až bude přihrádka v záběru.
 func spawn(camera: MapCamera, host: Node2D, chunks: PropChunks) -> void:
 	_camera = camera
@@ -179,11 +189,7 @@ func spawn(camera: MapCamera, host: Node2D, chunks: PropChunks) -> void:
 	_host = host
 	if _kinds.is_empty():
 		return
-	var used := {}
-	for kind in _kind:
-		used[kind] = true
-	for kind: int in used:
-		_load_textures(kind)
+	load_used_textures()
 	var view := _camera.get_viewport_rect().size
 	_measure(view)
 	_shader_on = ObjectLayers.shader_needed(view, _camera.zoom.x, _tallest)
