@@ -568,7 +568,7 @@ func _furnish(sq: Square, map: MapData) -> void:
 	# Řeka po skalách (pramení u nich) a před stromy, ty ji obejdou. Vlastní náhoda, ať
 	# nemění, co se losuje po ní.
 	sq.river = River.new()
-	sq.river.plan(map, sq.rocks, sq.town, hash(sq.plan_state) + 1)
+	sq.river.plan(map, sq.rocks, sq.town, hash(sq.plan_state) + 1, sq.painted["vertex"])
 	sq.forest.river = sq.river
 	sq.forest.plant(map, sq.rng, sq.rocks)
 	# Porost má vlastní náhodu, ať nemění, co se losuje po něm.

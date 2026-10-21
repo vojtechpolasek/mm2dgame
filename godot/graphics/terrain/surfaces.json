@@ -30,6 +30,10 @@
         "trava": 1.1,
         "kvetiny": 0.35
       },
+      "springs": [
+        "pramen_tun",
+        "pramen_kamen"
+      ],
       "forest": {
         "strom1": 0.073,
         "strom2": 0.042,
@@ -55,6 +59,10 @@
         "trava": 0.15,
         "houby": 0.05
       },
+      "springs": [
+        "pramen_mokrad",
+        "pramen_tun"
+      ],
       "forest": {
         "strom1": 1.15,
         "strom2": 1.0,
@@ -75,6 +83,9 @@
       "decor": {
         "trava_sucha": 0.06
       },
+      "springs": [
+        "pramen_tun"
+      ],
       "forest": {
         "strom_suchy": 0.02
       },
@@ -94,6 +105,9 @@
       "decor": {
         "trava_sucha": 0.04
       },
+      "springs": [
+        "pramen_kamen"
+      ],
       "forest": {
         "smrk_snih": 0.5,
         "borovice_snih": 0.2,
@@ -115,6 +129,9 @@
         "trava_sucha": 0.1,
         "kvetiny": 0.04
       },
+      "springs": [
+        "pramen_kamen"
+      ],
       "forest": {
         "strom_suchy": 0.012,
         "ker1": 0.01
@@ -132,6 +149,9 @@
       "decor": {
         "vyhonky": 0.15
       },
+      "springs": [
+        "pramen_kamen"
+      ],
       "forest": {
         "strom_ohoreny": 0.09,
         "strom_suchy": 0.012
@@ -152,6 +172,9 @@
         "ostrice": 0.6,
         "rakos": 0.35
       },
+      "springs": [
+        "pramen_mokrad"
+      ],
       "forest": {
         "vrba": 1.0,
         "strom1": 1.0,
@@ -172,6 +195,10 @@
         "vres": 0.5,
         "trava_sucha": 0.25
       },
+      "springs": [
+        "pramen_mokrad",
+        "pramen_kamen"
+      ],
       "forest": {
         "ker1": 0.07,
         "strom1": 0.012,

@@ -67,6 +67,9 @@ EDGE_SHIFT = (480.0 * PARALLAX, 260.0 * PARALLAX)
 # fallen je padlý strom, kreslí ho gen_fallen.py: pařez a stín kmene na zemi, ležící kmen
 # a koruna. length a crown jsou rozsahy délky kmene a dosahu koruny v px, kmen je o pětinu
 # užší než pařez. Je mezi skálami, ať se otáčí a sází jako ony. Kolize je kapsle kmene.
+# spring je prameniště řeky, kreslí ho gen_spring.py, kind je jeho typ (kamen, mokrad, tun).
+# Nesází se podle povrchu, staví ho řeka na začátek každého ramene (river.gd), typ podle
+# seznamu springs povrchu v generate.py. Překáží jako skála.
 # crack je lávová puklina, kreslí ji gen_crack.py. Vrstvy jdou pod zem jako u dolu. length
 # a width jsou rozsahy délky a největší šířky v px, branches počet odboček. lava je barva
 # žáru. Kolize je několik kapslí podél praskliny.
@@ -242,6 +245,47 @@ ROCKS = {
         "pond_ratio": 0.72,
         "variants": 1,
         "spacing": 4.6,
+    },
+    # Kamenný pramen: rock je skála jako skala1, kreslí ji draw_layer. Vrstvy prameniště
+    # 2 a 3 jsou její vyšší patra, widths 1 je celé prameniště i s tůňkou.
+    "pramen_kamen": {
+        "spring": True,
+        "kind": "kamen",
+        "layers": 3,
+        "widths": {1: 236, 2: 112, 3: 64},
+        "height": {1: 0.0, 2: 1.2, 3: 2.1},
+        "color": "8A8172",
+        "rock": {
+            "layers": 3,
+            "widths": {1: 156, 2: 112, 3: 64},
+            "height": {1: 0.0, 2: 1.2, 3: 2.1},
+            "color": "8A8172",
+            "rough": 0.26,
+        },
+        "variants": 6,
+        "spacing": 2.0,
+    },
+    "pramen_mokrad": {
+        "spring": True,
+        "kind": "mokrad",
+        "layers": 2,
+        "widths": {1: 150, 2: 140},
+        "height": {1: 0.0, 2: 0.3},
+        "color": "6A6A60",
+        "mud": "4E4430",
+        "preview_ground": "4E4A2F",
+        "variants": 6,
+        "spacing": 2.0,
+    },
+    "pramen_tun": {
+        "spring": True,
+        "kind": "tun",
+        "layers": 2,
+        "widths": {1: 96, 2: 90},
+        "height": {1: 0.0, 2: 0.12},
+        "color": "8C877F",
+        "variants": 6,
+        "spacing": 1.5,
     },
 }
 
@@ -1048,6 +1092,10 @@ def rock_info(rocks: dict) -> dict:
             from gen_crack import canvas_size as crack_canvas
 
             drawn = crack_canvas(preset)
+        elif preset.get("spring"):
+            from gen_spring import canvas_size as spring_canvas
+
+            drawn = spring_canvas(preset)
         else:
             drawn = canvas_size(preset)
         layer_cells = {
@@ -1075,6 +1123,8 @@ def rock_info(rocks: dict) -> dict:
         }
         if preset.get("crack"):
             catalog[name]["crack"] = True
+        if preset.get("spring"):
+            catalog[name]["spring"] = True
         if preset.get("mine"):
             catalog[name]["mine"] = True
             catalog[name]["wall"] = preset["wall"]
@@ -1175,6 +1225,13 @@ def generate_rocks(name: str, preset: dict, seed: int = 1, variants: int | None 
 
         saved = generate_crack(name, preset, out, PREVIEW, seed, count)
         print(f"{count} variant pukliny, buňky {min(saved)}–{max(saved)} -> {out}")
+        print(PREVIEW / f"{name}.png")
+        return out
+    if preset.get("spring"):
+        from gen_spring import generate_spring
+
+        saved = generate_spring(name, preset, out, PREVIEW, seed, count)
+        print(f"{count} variant prameniště, buňky {min(saved)}–{max(saved)} -> {out}")
         print(PREVIEW / f"{name}.png")
         return out
     size = canvas_size(preset)

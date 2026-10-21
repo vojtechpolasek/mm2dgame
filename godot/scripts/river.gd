@@ -1,14 +1,23 @@
 extends RefCounted
 
-## Řeka čtverce. Pramení u skály kousek od kraje čtverce a teče do největší vody na čtverci.
+## Řeka čtverce. Pramení kousek od kraje čtverce a teče do největší vody na čtverci.
 ## Čtverec bez vody řeku nemá. Trasu hledá A* po dlaždicích: skály, doly, továrna, domy
 ## a sklady jsou neprůchodné, jiná voda taky, šum v ceně řeku vlní. Na části čtverců vede
-## řeka schválně přes cestu (BRIDGE_CHANCE) a přes cestu je most. Z dlaždic se vezme každá několikátá a proloží se křivkou,
-## řeka proto není hranatá. U pramene je úzká, k ústí se rozšiřuje na WIDTH_MOUTH.
+## řeka schválně přes cestu (BRIDGE_CHANCE) a přes cestu je most. Z dlaždic se vezme
+## každá několikátá a proloží se křivkou, řeka proto není hranatá. U pramene je úzká,
+## k ústí se rozšiřuje na WIDTH_MOUTH.
 ##
-## Kreslí ji jedna síť (pás trojúhelníků podél křivky) se shaderem river.gdshader, most
-## přes cestu je sprite. Postava i příšery řekou projdou, ale zpomalí (water_at), most
-## je cesta a nezpomalí.
+## Ramena (lines): první je hlavní řeka, k jejímu začátku se připojí 0 až 2 zdrojnice
+## (BRANCH_WEIGHTS). Každé rameno začíná prameništěm (gen_spring.py), skalou, kterou řeka
+## postaví do rocks. Typ prameniště je ze seznamu springs povrchu, na kterém pramen leží.
+##
+## Kreslí ji jedna síť (pásy trojúhelníků podél ramen) se shaderem river.gdshader, dvakrát:
+## nejdřív písčité břehy všech ramen, pak voda všech ramen. Voda tak v soutoku překryje
+## břeh druhého ramene. Most přes cestu je sprite. Shader dostane masku vody čtverce
+## (water_mask): nad jezerem řeka nekreslí písčitý břeh a voda řeky se kousek za břehem
+## jezera ztratí v jeho mělčině. Ústí tak navazuje přímo na břeh a k jezeru se rozšíří
+## do nálevky. Postava i příšery řekou projdou, ale zpomalí (water_at), most je cesta
+## a nezpomalí.
 ##
 ## Průběh: plan ve vlákně (nesahá na scénu), spawn na hlavním.
 
@@ -19,9 +28,34 @@ const Rocks := preload("res://scripts/rocks.gd")
 
 const SHADER := "res://shaders/river.gdshader"
 const BRIDGE := "res://graphics/objects/bridge/most.png"
-## Šířka řeky v pixelech u pramene a v ústí, i s břehem.
-const WIDTH_SPRING := 18.0
+## Šířka řeky v pixelech u pramene a v ústí, i s břehem. Zdrojnice začíná na BRANCH_SPRING
+## a do soutoku dojde na BRANCH_JOIN_WIDTH šířky hlavní řeky.
+const WIDTH_SPRING := 8.0
 const WIDTH_MOUTH := 128.0
+const BRANCH_SPRING := 5.0
+const BRANCH_JOIN_WIDTH := 0.8
+## Šance na 0, 1 a 2 zdrojnice. Soutok je BRANCH_JOIN dlaždic po hlavní řece od pramene,
+## pramen zdrojnice BRANCH_LENGTH dlaždic od soutoku, proti proudu do stran.
+const BRANCH_WEIGHTS: Array[float] = [0.2, 0.45, 0.35]
+const BRANCH_JOIN := Vector2(4.0, 16.0)
+const BRANCH_LENGTH := Vector2(5.0, 11.0)
+## Jen posledních tolik dlaždic trasy zdrojnice smí vést vedle jiného ramene.
+const BRANCH_APPROACH := 3
+## Hlavní řeka je pro trasu zdrojnice drahá, ať nevede podél ní.
+const MAIN_WEIGHT := 60.0
+## Prameny od sebe aspoň tolik dlaždic.
+const SPRING_GAP := 4.0
+## Prameniště, když povrch žádné nemá.
+const SPRING_DEFAULT := "pramen_tun"
+## Rameno se na prvních START_FADE px objeví, pod tůňkou prameniště.
+const START_FADE := 16.0
+## Index úseku v _cells: rameno * LINE_STRIDE + první bod úseku.
+const LINE_STRIDE := 65536
+## Posledních FLARE_TILES dlaždic před koncem se řeka rozšíří až o FLARE, nálevka do jezera.
+const FLARE_TILES := 2.0
+const FLARE := 0.4
+## Šířka v barvě vrcholu je podíl WIDTH_MAX (barva má rozsah 0 až 1). Stejné číslo má shader.
+const WIDTH_MAX := 192.0
 ## Pramen leží tolik dlaždic od kraje čtverce. Blíž ke kraji by ho mohl uříznout soused.
 const SPRING_BAND := Vector2(6.0, 16.0)
 ## Pramen je od cílové vody aspoň tolik dlaždic, ať řeka není jen pahýl.
@@ -39,39 +73,68 @@ const CROSS_PX := 200.0
 const CROSS_SKIP := 12
 ## Šum v ceně dlaždice, řeka se vlní.
 const MEANDER := 3.0
+## Meandry přidané k hotové křivce (_meander): u pramene záhyby až BEND_TILES dlaždic do
+## strany s vlnou BEND_WAVE.x dlaždic, po proudu slábnou a vlna se prodlužuje k BEND_WAVE.y.
+## U hlavní řeky zmizí po BEND_REACH délky, zdrojnice se kroutí celá a k soutoku slábne.
+## Záhyb je nejvýš třetina vlny, ať se řeka nesmyčkuje.
+const BEND_TILES := 2.5
+const BRANCH_BEND_TILES := 1.4
+const BEND_WAVE := Vector2(6.0, 12.0)
+const BEND_REACH := 0.4
+## První BEND_START px od pramene se záhyb rozbíhá, osa vychází z prameniště rovně.
+const BEND_START := 64.0
+## Záhyb, který by vedl na neprůchodnou dlaždici nebo na cestu, se zmenší po krocích.
+const BEND_SHRINK: Array[float] = [1.0, 0.66, 0.33, 0.0]
+## Zdrojnice se záhybem nepřiblíží k jinému rameni na méně než BEND_GAP dlaždic, kromě
+## posledních BEND_JOIN dlaždic před soutokem.
+const BEND_GAP := 1.2
+const BEND_JOIN := 2.5
 ## Z cesty po dlaždicích se bere každý tolikátý bod jako opěrný bod křivky.
 const KNOT_STEP := 3
 ## Krok křivky v pixelech.
 const SAMPLE_PX := 12.0
-## Ústí sahá tolik dlaždic do vody, ať je přechod schovaný pod hladinou.
-const MOUTH_TILES := 1.6
+## Trasa končí na první dlaždici vody, osa sahá ještě o tolik dlaždic dál. Za břehem se
+## řeka ztratí v jezeře podle masky vody. Kdyby síť skončila dřív, posledních END_FADE px
+## se ztratí samo, konec nikdy není useknutý.
+const MOUTH_TILES := 2.0
+const END_FADE := 48.0
 ## Voda je vnitřní část šířky, zbytek je břeh. Zpomaluje jen voda.
 const WATER_SHARE := 0.78
 ## Délka mostu navíc k šířce řeky, v pixelech.
 const BRIDGE_OVERHANG := 72.0
 
-## Osa řeky ve čtverci (od pramene k ústí) a šířka v každém bodě.
+## Osa hlavní řeky ve čtverci (od pramene k ústí) a šířka v každém bodě.
 var points := PackedVector2Array()
 var widths := PackedFloat32Array()
+## Ramena: {points, widths, length (px), spring (druh prameniště)}. První je hlavní řeka.
+var lines: Array[Dictionary] = []
 ## Mosty: střed, natočení a délka v pixelech.
 var bridges: Array[Dictionary] = []
-## Dlaždice -> úseky osy, které jí vedou (index prvního bodu úseku).
+## Dlaždice -> úseky ramen, které jí vedou (viz LINE_STRIDE).
 var _cells := {}
 var _size := 0
 ## Posun čtverce ve světě. Dotazy berou světové souřadnice.
 var _origin := Vector2.ZERO
 ## Uzly ve scéně (síť a mosty), pro despawn.
 var _nodes: Array[Node] = []
+## Voda čtverce pro shader řeky (255 voda), vzniká ve vlákně v plan. Bere se z rohů
+## dlaždic (vertex), podle nich terén kreslí břeh. Bez nich po dlaždicích.
+var _water_mask: Image
+## Texel masky i leží na rohu dlaždice i (posun 0.5), nebo na jejím středu (0).
+var _mask_shift := 0.0
 
 
 func exists() -> bool:
-	return points.size() >= 2
+	return not lines.is_empty()
 
 
 ## Najde trasu. rocks a town už stojí. seed drží řeku stejnou i po načtení hry.
-func plan(map: MapData, rocks: Rocks, town: Town, seed: int) -> void:
+## vertex je terén rohů dlaždic ((size + 1)², viz MapGenerator.corner_data). Z něj je maska
+## vody pro shader, ať ústí sedí na břeh, jak ho kreslí terén.
+func plan(map: MapData, rocks: Rocks, town: Town, seed: int, vertex := PackedByteArray()) -> void:
 	points = PackedVector2Array()
 	widths = PackedFloat32Array()
+	lines.clear()
 	bridges.clear()
 	_cells.clear()
 	_size = map.size
@@ -85,8 +148,12 @@ func plan(map: MapData, rocks: Rocks, town: Town, seed: int) -> void:
 	rng.seed = seed
 	var grid := _grid(map, rocks, town, water, lake, rng)
 	var path: Array[Vector2i] = []
+	var spring_kind := ""
 	var crossing := town != null and rng.randf() < BRIDGE_CHANCE
-	for spring in _springs(map, rocks, grid, lake, rng):
+	for spring in _springs(map, grid, lake, rng):
+		spring_kind = _spring_kind(map, spring, rng)
+		if rocks != null and not rocks.spring_room(spring_kind, _center(spring)):
+			continue
 		if crossing:
 			path = _via_road(grid, spring, lake, town)
 		if path.is_empty():
@@ -96,8 +163,17 @@ func plan(map: MapData, rocks: Rocks, town: Town, seed: int) -> void:
 		path = []
 	if path.is_empty():
 		return
-	_shape(path)
+	_water_mask = _mask(map, water, vertex)
+	_mask_shift = 0.5 if _water_mask.get_width() > map.size else 0.0
+	var main := _shape(path, WIDTH_SPRING, WIDTH_MOUTH, true, grid, town, rng)
+	main["spring"] = spring_kind
+	lines.append(main)
+	points = main["points"]
+	widths = main["widths"]
+	_add_branches(map, rocks, town, grid, path, rng)
 	_index()
+	if rocks != null:
+		_place_springs(rocks, rng)
 	if town != null:
 		_place_bridges(town)
 
@@ -133,12 +209,16 @@ func _reach_at(local: Vector2, margin: float, share: float) -> bool:
 	var list: Variant = _cells.get(key)
 	if list == null:
 		return false
-	for at: int in list:
-		var a := points[at]
-		var b := points[at + 1]
+	for code: int in list:
+		var line := lines[code / LINE_STRIDE]
+		var line_points: PackedVector2Array = line["points"]
+		var line_widths: PackedFloat32Array = line["widths"]
+		var at := code % LINE_STRIDE
+		var a := line_points[at]
+		var b := line_points[at + 1]
 		var ab := b - a
 		var t := clampf((local - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
-		var half := lerpf(widths[at], widths[at + 1], t) * 0.5 * share + margin
+		var half := lerpf(line_widths[at], line_widths[at + 1], t) * 0.5 * share + margin
 		if local.distance_squared_to(a + ab * t) < half * half:
 			return true
 	return false
@@ -219,29 +299,158 @@ func _grid(map: MapData, rocks: Rocks, town: Town, water: int, lake: PackedVecto
 	return grid
 
 
-## Kandidáti na pramen, nejlepší první: u skal v pásu u kraje, daleko od vody. Když skála
-## není, náhodná místa v pásu. Bod je volná dlaždice mřížky.
-func _springs(map: MapData, rocks: Rocks, grid: AStarGrid2D, lake: PackedVector2Array, rng: RandomNumberGenerator) -> Array[Vector2i]:
+## Kandidáti na pramen, nejlepší první: náhodná volná místa v pásu u kraje, daleko od vody,
+## potom i blíž. Bod je volná dlaždice mřížky. Jestli se vejde prameniště, hlídá plan.
+func _springs(map: MapData, grid: AStarGrid2D, lake: PackedVector2Array, rng: RandomNumberGenerator) -> Array[Vector2i]:
 	var size := map.size
-	var tile := float(TerrainCatalog.TILE_SIZE)
 	var out: Array[Vector2i] = []
 	for far in [SPRING_FAR, SPRING_NEAR]:
-		var near_rocks: Array[Vector2i] = []
-		if rocks != null:
-			for pos in rocks.spot_positions():
-				var cell := Vector2i(floori(pos.x / tile), floori(pos.y / tile))
-				var free := _free_near(grid, cell)
-				if free.x >= 0 and _in_band(free, size) and _distance(lake, free) >= far:
-					near_rocks.append(free)
-		_shuffle(near_rocks, rng)
-		out.append_array(near_rocks.slice(0, 4))
-		for _try in 40:
-			if out.size() >= 8:
+		var found := 0
+		for _try in 80:
+			if found >= 8:
 				break
 			var cell := Vector2i(rng.randi_range(0, size - 1), rng.randi_range(0, size - 1))
 			if _in_band(cell, size) and not grid.is_point_solid(cell) and _distance(lake, cell) >= far:
 				out.append(cell)
+				found += 1
 	return out
+
+
+## Prameniště pro pramen na dlaždici cell: náhodné ze seznamu springs jejího povrchu.
+func _spring_kind(map: MapData, cell: Vector2i, rng: RandomNumberGenerator) -> String:
+	var info := map.info_of(map.terrain[cell.y * map.size + cell.x])
+	var list: Array = info.get("springs", [])
+	if list.is_empty():
+		return SPRING_DEFAULT
+	return str(list[rng.randi_range(0, list.size() - 1)])
+
+
+static func _center(cell: Vector2i) -> Vector2:
+	return (Vector2(cell) + Vector2(0.5, 0.5)) * float(TerrainCatalog.TILE_SIZE)
+
+
+## Zdrojnice: pramen proti proudu do strany od soutoku na začátku hlavní řeky (path),
+## trasa A* do soutoku. Hlavní řeka je pro ni drahá, ať nevede podél ní.
+func _add_branches(map: MapData, rocks: Rocks, town: Town, grid: AStarGrid2D, path: Array[Vector2i], rng: RandomNumberGenerator) -> void:
+	var count := rng.rand_weighted(PackedFloat32Array(BRANCH_WEIGHTS))
+	var last_join := mini(int(BRANCH_JOIN.y), path.size() / 2)
+	if count <= 0 or last_join < int(BRANCH_JOIN.x):
+		return
+	var main_cells := {}
+	for cell in path:
+		main_cells[cell] = true
+		grid.set_point_weight_scale(cell, MAIN_WEIGHT)
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var water := map.names.find("water")
+	var springs: Array[Vector2] = [(lines[0]["points"] as PackedVector2Array)[0]]
+	if rocks != null:
+		_avoid_spring(grid, springs[0], rocks.spring_reach(str(lines[0]["spring"])))
+	for _branch in count:
+		for _try in 40:
+			var join_at := rng.randi_range(int(BRANCH_JOIN.x), last_join)
+			var join := path[join_at]
+			var upstream := Vector2(path[maxi(join_at - 3, 0)] - join)
+			if upstream.length_squared() < 0.5:
+				continue
+			var angle := upstream.angle() + rng.randf_range(-1.1, 1.1)
+			var cell := join + Vector2i((Vector2.from_angle(angle) * rng.randf_range(BRANCH_LENGTH.x, BRANCH_LENGTH.y)).round())
+			if not grid.is_in_boundsv(cell) or grid.is_point_solid(cell) or main_cells.has(cell):
+				continue
+			if mini(mini(cell.x, cell.y), mini(map.size - 1 - cell.x, map.size - 1 - cell.y)) < EDGE_TILES + 2:
+				continue
+			if map.terrain[cell.y * map.size + cell.x] == water:
+				continue
+			var pos := _center(cell)
+			var crowded := false
+			for other in springs:
+				if other.distance_to(pos) < SPRING_GAP * tile:
+					crowded = true
+					break
+			if crowded:
+				continue
+			var kind := _spring_kind(map, cell, rng)
+			if rocks != null and not rocks.spring_room(kind, pos):
+				continue
+			var route := grid.get_id_path(cell, join)
+			if route.size() < 4 or _crosses(route, main_cells):
+				continue
+			# Do soutoku musí přitékat po proudu, ne proti němu.
+			var flow := Vector2(path[mini(join_at + 2, path.size() - 1)] - path[maxi(join_at - 2, 0)])
+			var inflow := Vector2(route[route.size() - 1] - route[maxi(route.size() - 4, 0)])
+			if inflow.dot(flow) < 0.0:
+				continue
+			var join_width := _width_near(lines[0], _center(join)) * BRANCH_JOIN_WIDTH
+			# Hlavní řeka má záhyby, soutok je na její skutečné ose, ne ve středu dlaždice.
+			var into := _point_near(lines[0], _center(join))
+			var line := _shape(route, BRANCH_SPRING, join_width, false, grid, town, rng, into)
+			line["spring"] = kind
+			lines.append(line)
+			springs.append(pos)
+			# Další zdrojnice tudy nepovede, ramena se nekříží.
+			for i in route.size() - 1:
+				main_cells[route[i]] = true
+				grid.set_point_weight_scale(route[i], MAIN_WEIGHT)
+			if rocks != null:
+				_avoid_spring(grid, pos, rocks.spring_reach(kind))
+			break
+
+
+## Prameniště stojí až po trasách. Dlaždice pod ním jsou pro další trasy drahé, ať pod skálou
+## nevede jiné rameno. Neprůchodné nejsou, rameno z prameniště musí ven.
+static func _avoid_spring(grid: AStarGrid2D, pos: Vector2, reach: float) -> void:
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var span := ceili(reach / tile)
+	var at := Vector2i((pos / tile).floor())
+	for y in range(at.y - span, at.y + span + 1):
+		for x in range(at.x - span, at.x + span + 1):
+			var cell := Vector2i(x, y)
+			if grid.is_in_boundsv(cell) and not grid.is_point_solid(cell) and _center(cell).distance_to(pos) <= reach:
+				grid.set_point_weight_scale(cell, MAIN_WEIGHT)
+
+
+## Vede trasa přes hlavní řeku nebo jinou zdrojnici, nebo těsně podél ní, jinde než u soutoku
+## (poslední BRANCH_APPROACH dlaždice)? Taková zdrojnice by se k řece přimkla a stočila háčkem.
+static func _crosses(route: Array[Vector2i], main_cells: Dictionary) -> bool:
+	for i in maxi(route.size() - BRANCH_APPROACH, 0):
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				if main_cells.has(route[i] + Vector2i(dx, dy)):
+					return true
+	return false
+
+
+## Bod osy ramene line nejblíž pos.
+static func _point_near(line: Dictionary, pos: Vector2) -> Vector2:
+	var best := INF
+	var at := Vector2.ZERO
+	for point: Vector2 in line["points"]:
+		var d := point.distance_squared_to(pos)
+		if d < best:
+			best = d
+			at = point
+	return at
+
+
+## Šířka ramene line v bodě osy nejblíž pos.
+static func _width_near(line: Dictionary, pos: Vector2) -> float:
+	var line_points: PackedVector2Array = line["points"]
+	var best := INF
+	var at := 0
+	for i in line_points.size():
+		var d := line_points[i].distance_squared_to(pos)
+		if d < best:
+			best = d
+			at = i
+	return (line["widths"] as PackedFloat32Array)[at]
+
+
+## Prameniště na začátek každého ramene, otočené po proudu. Když se nevejde, rameno se jen
+## objeví (START_FADE).
+func _place_springs(rocks: Rocks, rng: RandomNumberGenerator) -> void:
+	for line in lines:
+		var line_points: PackedVector2Array = line["points"]
+		var ahead := line_points[mini(4, line_points.size() - 1)] - line_points[0]
+		rocks.place_spring(str(line["spring"]), line_points[0], ahead.angle(), rng.randi())
 
 
 ## Trasa od pramene k vodě kolmo přes cestu: k dlaždici na straně pramene, rovně přes cestu
@@ -291,19 +500,6 @@ func _in_band(cell: Vector2i, size: int) -> bool:
 	return edge >= SPRING_BAND.x and edge <= SPRING_BAND.y
 
 
-## Volná dlaždice vedle skály, nejbližší první.
-func _free_near(grid: AStarGrid2D, cell: Vector2i) -> Vector2i:
-	for ring in range(1, 5):
-		for dy in range(-ring, ring + 1):
-			for dx in range(-ring, ring + 1):
-				if maxi(absi(dx), absi(dy)) != ring:
-					continue
-				var near := cell + Vector2i(dx, dy)
-				if grid.is_in_boundsv(near) and not grid.is_point_solid(near):
-					return near
-	return Vector2i(-1, -1)
-
-
 func _distance(lake: PackedVector2Array, cell: Vector2i) -> float:
 	return Vector2(cell).distance_to(Vector2(_nearest(lake, cell)))
 
@@ -320,36 +516,158 @@ func _nearest(lake: PackedVector2Array, cell: Vector2i) -> Vector2i:
 	return at
 
 
-static func _shuffle(list: Array[Vector2i], rng: RandomNumberGenerator) -> void:
-	for index in list.size():
-		var swap := rng.randi_range(index, list.size() - 1)
-		var saved := list[index]
-		list[index] = list[swap]
-		list[swap] = saved
-
-
-## Z dlaždic cesty křivka a šířky. Ústí se protáhne do vody.
-func _shape(path: Array[Vector2i]) -> void:
+## Z dlaždic cesty rameno: křivka s meandry a šířky od start do end. Hlavní řeka (mouth) se
+## protáhne do vody a k jezeru rozšíří do nálevky. end_at nahradí poslední bod trasy (soutok
+## zdrojnice na ose hlavní řeky).
+func _shape(
+	path: Array[Vector2i],
+	start: float,
+	end: float,
+	mouth: bool,
+	grid: AStarGrid2D,
+	town: Town,
+	rng: RandomNumberGenerator,
+	end_at := Vector2.INF,
+) -> Dictionary:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var knots := PackedVector2Array()
 	for index in path.size():
 		if index % KNOT_STEP == 0 or index == path.size() - 1:
-			knots.append((Vector2(path[index]) + Vector2(0.5, 0.5)) * tile)
-	if knots.size() >= 2:
+			knots.append(_center(path[index]))
+	if end_at != Vector2.INF and not knots.is_empty():
+		knots[knots.size() - 1] = end_at
+	if mouth and knots.size() >= 2:
 		var last := knots[knots.size() - 1]
 		var dir := (last - knots[knots.size() - 2]).normalized()
 		knots.append(last + dir * MOUTH_TILES * tile)
-	points = _spline(knots)
+	var line_points := _spline(knots)
+	if mouth:
+		line_points = _meander(line_points, BEND_TILES, BEND_REACH, grid, town, rng, [])
+	else:
+		line_points = _meander(line_points, BRANCH_BEND_TILES, 1.0, grid, town, rng, lines)
 	var length := 0.0
 	var along := PackedFloat32Array([0.0])
-	for i in range(1, points.size()):
-		length += points[i].distance_to(points[i - 1])
+	for i in range(1, line_points.size()):
+		length += line_points[i].distance_to(line_points[i - 1])
 		along.append(length)
-	widths.resize(points.size())
-	for i in points.size():
+	var line_widths := PackedFloat32Array()
+	line_widths.resize(line_points.size())
+	var flare_px := FLARE_TILES * tile
+	for i in line_points.size():
 		var t := along[i] / maxf(length, 1.0)
 		var wobble := 1.0 + 0.08 * sin(along[i] / 90.0)
-		widths[i] = lerpf(WIDTH_SPRING, WIDTH_MOUTH, pow(t, 0.85)) * wobble
+		var flare := 1.0 + FLARE * smoothstep(flare_px, 0.0, length - along[i]) if mouth else 1.0
+		# Zdrojnice se těsně před soutokem zúží, konec se schová ve vodě hlavní řeky.
+		if not mouth:
+			flare = lerpf(0.4, 1.0, smoothstep(0.0, end, length - along[i]))
+		line_widths[i] = lerpf(start, end, pow(t, 0.85)) * wobble * flare
+	return {"points": line_points, "widths": line_widths, "length": length}
+
+
+## Voda čtverce jako obrázek: pixel na roh dlaždice z vertex, bez něj pixel na dlaždici.
+## Shader ho čte s vyhlazením, hranice je oblá.
+static func _mask(map: MapData, water: int, vertex: PackedByteArray) -> Image:
+	var corners := vertex.size() == (map.size + 1) * (map.size + 1)
+	var span := map.size + 1 if corners else map.size
+	var source := vertex if corners else map.terrain
+	var bytes := PackedByteArray()
+	bytes.resize(span * span)
+	for cell in bytes.size():
+		if source[cell] == water:
+			bytes[cell] = 255
+	return Image.create_from_data(span, span, false, Image.FORMAT_L8, bytes)
+
+
+## Osa posunutá do stran vlnou se šumem. Záhyb je bend dlaždic u pramene a slábne do nuly
+## na reach podílu délky. Kde by bod vedl na neprůchodnou dlaždici, na cestu nebo blíž než
+## BEND_GAP k ramenům others, záhyb se zmenší a změna se rozleje do okolí, ať osa nemá zlom.
+static func _meander(
+	line_points: PackedVector2Array,
+	bend: float,
+	reach: float,
+	grid: AStarGrid2D,
+	town: Town,
+	rng: RandomNumberGenerator,
+	others: Array[Dictionary],
+) -> PackedVector2Array:
+	var count := line_points.size()
+	if count < 3:
+		return line_points
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var along := PackedFloat32Array([0.0])
+	for i in range(1, count):
+		along.append(along[i - 1] + line_points[i].distance_to(line_points[i - 1]))
+	var span := maxf(along[count - 1] * reach, 1.0)
+	var noise := FastNoiseLite.new()
+	noise.seed = rng.randi()
+	noise.frequency = 1.0 / (BEND_WAVE.x * tile)
+	var phase := rng.randf() * TAU
+	var normals := PackedVector2Array()
+	var offsets := PackedFloat32Array()
+	for i in count:
+		var ahead := line_points[mini(i + 1, count - 1)] - line_points[maxi(i - 1, 0)]
+		normals.append(ahead.normalized().orthogonal())
+		var t := clampf(along[i] / span, 0.0, 1.0)
+		var wave := lerpf(BEND_WAVE.x, BEND_WAVE.y, t) * tile
+		if i > 0:
+			phase += TAU * (along[i] - along[i - 1]) / wave
+		var size := minf(bend * tile, wave * 0.33) * pow(1.0 - t, 2.0)
+		size *= smoothstep(0.0, BEND_START, along[i])
+		offsets.append(size * (sin(phase) * 0.75 + noise.get_noise_1d(along[i]) * 0.5))
+	# Kolik záhybu se vejde: neprůchodná dlaždice ani cesta pod posunutým bodem.
+	var fit := PackedFloat32Array()
+	fit.resize(count)
+	var total := along[count - 1]
+	for i in count:
+		fit[i] = 0.0
+		var near_join := total - along[i] < BEND_JOIN * tile
+		for share in BEND_SHRINK:
+			var pos := line_points[i] + normals[i] * offsets[i] * share
+			if not _bend_clear(pos, line_points[i], grid, town):
+				continue
+			if share > 0.0 and not near_join and _near_lines(pos, others, BEND_GAP * tile):
+				continue
+			fit[i] = share
+			break
+	# Nejmenší v okolí, potom průměr, ať se záhyb kolem překážky zmenší plynule.
+	var reach_px := 4
+	var low := PackedFloat32Array()
+	low.resize(count)
+	for i in count:
+		var least := 1.0
+		for k in range(maxi(i - reach_px, 0), mini(i + reach_px, count - 1) + 1):
+			least = minf(least, fit[k])
+		low[i] = least
+	var out := PackedVector2Array()
+	for i in count:
+		var sum := 0.0
+		var n := 0
+		for k in range(maxi(i - reach_px, 0), mini(i + reach_px, count - 1) + 1):
+			sum += low[k]
+			n += 1
+		out.append(line_points[i] + normals[i] * offsets[i] * sum / float(n))
+	return out
+
+
+## Leží pos blíž než gap k ose některého z ramen?
+static func _near_lines(pos: Vector2, others: Array[Dictionary], gap: float) -> bool:
+	for line in others:
+		for point: Vector2 in line["points"]:
+			if pos.distance_squared_to(point) < gap * gap:
+				return true
+	return false
+
+
+## Smí osa vést bodem pos? Ne přes neprůchodnou dlaždici a ne na cestu, pokud na ní už
+## nebyl původní bod (přechod přes cestu s mostem zůstane, jak byl).
+static func _bend_clear(pos: Vector2, from: Vector2, grid: AStarGrid2D, town: Town) -> bool:
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var cell := Vector2i((pos / tile).floor())
+	if grid == null or not grid.is_in_boundsv(cell) or grid.is_point_solid(cell):
+		return false
+	if town != null and town.road_near(pos, tile * 0.3) and not town.road_near(from, tile * 0.3):
+		return false
+	return true
 
 
 ## Catmull-Rom přes opěrné body, krok SAMPLE_PX.
@@ -372,36 +690,43 @@ static func _spline(knots: PackedVector2Array) -> PackedVector2Array:
 	return out
 
 
-## Každý úsek osy do dlaždic, kterých se dotkne i se šířkou.
+## Každý úsek každého ramene do dlaždic, kterých se dotkne i se šířkou.
 func _index() -> void:
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	for i in points.size() - 1:
-		var half := maxf(widths[i], widths[i + 1]) * 0.5 + tile
-		var low := points[i].min(points[i + 1]) - Vector2(half, half)
-		var high := points[i].max(points[i + 1]) + Vector2(half, half)
-		for cy in range(floori(low.y / tile), floori(high.y / tile) + 1):
-			for cx in range(floori(low.x / tile), floori(high.x / tile) + 1):
-				var key := Vector2i(cx, cy)
-				var list: PackedInt32Array = _cells.get(key, PackedInt32Array())
-				list.append(i)
-				_cells[key] = list
+	for line_index in lines.size():
+		var line_points: PackedVector2Array = lines[line_index]["points"]
+		var line_widths: PackedFloat32Array = lines[line_index]["widths"]
+		for i in line_points.size() - 1:
+			var half := maxf(line_widths[i], line_widths[i + 1]) * 0.5 + tile
+			var low := line_points[i].min(line_points[i + 1]) - Vector2(half, half)
+			var high := line_points[i].max(line_points[i + 1]) + Vector2(half, half)
+			for cy in range(floori(low.y / tile), floori(high.y / tile) + 1):
+				for cx in range(floori(low.x / tile), floori(high.x / tile) + 1):
+					var key := Vector2i(cx, cy)
+					var list: PackedInt32Array = _cells.get(key, PackedInt32Array())
+					list.append(line_index * LINE_STRIDE + i)
+					_cells[key] = list
 
 
 ## Most tam, kde řeka překročí cestu: kolmo přes řeku podél cesty, dlouhý jako řeka a kus navíc.
 func _place_bridges(town: Town) -> void:
-	var inside := false
-	var first := 0
-	for i in points.size():
-		var on := town.on_road(points[i])
-		if on and not inside:
-			first = i
-		if inside and (not on or i == points.size() - 1):
-			var middle := (first + i) / 2
-			var heading := town.road_heading(points[middle])
-			var across := absf(sin(heading - (points[mini(middle + 1, points.size() - 1)] - points[maxi(middle - 1, 0)]).angle()))
-			var span := widths[middle] / maxf(across, 0.5) + BRIDGE_OVERHANG
-			bridges.append({"pos": points[middle], "turn": heading, "length": span})
-		inside = on
+	for line in lines:
+		var line_points: PackedVector2Array = line["points"]
+		var line_widths: PackedFloat32Array = line["widths"]
+		var inside := false
+		var first := 0
+		for i in line_points.size():
+			var on := town.on_road(line_points[i])
+			if on and not inside:
+				first = i
+			if inside and (not on or i == line_points.size() - 1):
+				var middle := (first + i) / 2
+				var heading := town.road_heading(line_points[middle])
+				var along := line_points[mini(middle + 1, line_points.size() - 1)] - line_points[maxi(middle - 1, 0)]
+				var across := absf(sin(heading - along.angle()))
+				var span := line_widths[middle] / maxf(across, 0.5) + BRIDGE_OVERHANG
+				bridges.append({"pos": line_points[middle], "turn": heading, "length": span})
+			inside = on
 
 
 # --- Scéna ---
@@ -410,14 +735,26 @@ func _place_bridges(town: Town) -> void:
 func spawn(host: Node2D, origin: Vector2) -> void:
 	if not exists():
 		return
-	var node := MeshInstance2D.new()
-	node.mesh = _mesh()
-	node.position = origin
-	var material := ShaderMaterial.new()
-	material.shader = load(SHADER)
-	node.material = material
-	host.add_child(node)
-	_nodes.append(node)
+	var mesh := _mesh()
+	var mask := ImageTexture.create_from_image(_water_mask) if _water_mask != null else null
+	# Nejdřív břehy všech ramen, potom voda všech ramen.
+	for part in 2:
+		var node := MeshInstance2D.new()
+		node.mesh = mesh
+		node.position = origin
+		var material := ShaderMaterial.new()
+		material.shader = load(SHADER)
+		material.set_shader_parameter("part", part)
+		if mask != null:
+			material.set_shader_parameter("water_mask", mask)
+			material.set_shader_parameter("mask_size", float(_water_mask.get_width()))
+			material.set_shader_parameter("mask_shift", _mask_shift)
+		material.set_shader_parameter("length_px", float(lines[0]["length"]))
+		material.set_shader_parameter("end_fade", END_FADE)
+		material.set_shader_parameter("start_fade", START_FADE)
+		node.material = material
+		host.add_child(node)
+		_nodes.append(node)
 	var texture := load(BRIDGE) as Texture2D
 	if texture == null:
 		return
@@ -439,40 +776,47 @@ func despawn() -> void:
 	_nodes.clear()
 
 
-## Pás trojúhelníků. UV.x je vzdálenost od pramene v px, UV.y napříč 0 až 1.
-## Barva vrcholu nese poměr délky (r) a šířku v px (g, děleno WIDTH_MOUTH).
+## Pásy trojúhelníků všech ramen, hlavní řeka poslední. UV.x je vzdálenost od pramene
+## ramene v px, UV.y napříč 0 až 1. Barva vrcholu nese šířku v px (g, děleno WIDTH_MAX)
+## a hlavní řeku (b = 1), jen ta se v ústí ztrácí. Zdrojnice končí pod vodou hlavní řeky.
 func _mesh() -> ArrayMesh:
 	var vertices := PackedVector2Array()
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
-	var along := 0.0
-	var total := 0.0
-	for i in range(1, points.size()):
-		total += points[i].distance_to(points[i - 1])
-	var left := PackedVector2Array()
-	var right := PackedVector2Array()
-	var dist := PackedFloat32Array()
-	for i in points.size():
-		var prev := points[maxi(i - 1, 0)]
-		var next := points[mini(i + 1, points.size() - 1)]
-		var normal := (next - prev).normalized().orthogonal()
-		left.append(points[i] + normal * widths[i] * 0.5)
-		right.append(points[i] - normal * widths[i] * 0.5)
-		if i > 0:
-			along += points[i].distance_to(points[i - 1])
-		dist.append(along)
-	for i in points.size() - 1:
-		var quad := [left[i], right[i], right[i + 1], left[i], right[i + 1], left[i + 1]]
-		var quad_uv := [
-			Vector2(dist[i], 0.0), Vector2(dist[i], 1.0), Vector2(dist[i + 1], 1.0),
-			Vector2(dist[i], 0.0), Vector2(dist[i + 1], 1.0), Vector2(dist[i + 1], 0.0),
-		]
-		var ends := [i, i, i + 1, i, i + 1, i + 1]
-		for k in 6:
-			vertices.append(quad[k])
-			uvs.append(quad_uv[k])
-			var at: int = ends[k]
-			colors.append(Color(dist[at] / maxf(total, 1.0), widths[at] / WIDTH_MOUTH, 0.0, 1.0))
+	# Hlavní řeka poslední: její voda v soutoku překryje konec zdrojnice.
+	var order: Array[int] = []
+	for line_index in range(1, lines.size()):
+		order.append(line_index)
+	order.append(0)
+	for line_index in order:
+		var line_points: PackedVector2Array = lines[line_index]["points"]
+		var line_widths: PackedFloat32Array = lines[line_index]["widths"]
+		var main := 1.0 if line_index == 0 else 0.0
+		var along := 0.0
+		var left := PackedVector2Array()
+		var right := PackedVector2Array()
+		var dist := PackedFloat32Array()
+		for i in line_points.size():
+			var prev := line_points[maxi(i - 1, 0)]
+			var next := line_points[mini(i + 1, line_points.size() - 1)]
+			var normal := (next - prev).normalized().orthogonal()
+			left.append(line_points[i] + normal * line_widths[i] * 0.5)
+			right.append(line_points[i] - normal * line_widths[i] * 0.5)
+			if i > 0:
+				along += line_points[i].distance_to(line_points[i - 1])
+			dist.append(along)
+		for i in line_points.size() - 1:
+			var quad := [left[i], right[i], right[i + 1], left[i], right[i + 1], left[i + 1]]
+			var quad_uv := [
+				Vector2(dist[i], 0.0), Vector2(dist[i], 1.0), Vector2(dist[i + 1], 1.0),
+				Vector2(dist[i], 0.0), Vector2(dist[i + 1], 1.0), Vector2(dist[i + 1], 0.0),
+			]
+			var ends := [i, i, i + 1, i, i + 1, i + 1]
+			for k in 6:
+				vertices.append(quad[k])
+				uvs.append(quad_uv[k])
+				var at: int = ends[k]
+				colors.append(Color(0.0, line_widths[at] / WIDTH_MAX, main, 1.0))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices

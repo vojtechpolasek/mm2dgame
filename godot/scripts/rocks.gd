@@ -25,6 +25,7 @@ const CRACK_MAX_SHIFT := 22.0
 const CHART_ROCK := Color(0.55, 0.53, 0.5)
 const CHART_CRACK := Color(0.85, 0.36, 0.12)
 const CHART_LOG := Color(0.33, 0.24, 0.17)
+const CHART_SPRING := Color(0.2, 0.47, 0.6)
 ## Puklina drží od skal, padlých stromů a jiných puklin tolik metrů po celé délce, ať jde obejít.
 const CRACK_GAP_M := 2.0
 ## Krok kontroly místa podél kapslí pukliny v px.
@@ -392,6 +393,35 @@ func _is_crack(kind: int) -> bool:
 	return kind >= 0 and kind < _kinds.size() and bool(_kinds[kind].get("crack", false))
 
 
+func _is_spring(kind: int) -> bool:
+	return kind >= 0 and kind < _kinds.size() and bool(_kinds[kind].get("spring", false))
+
+
+## Vejde se prameniště name na pos? Mimo vesnici a bez jiné skály v dosahu jeho paty.
+## Volá ho řeka ve vlákně, po plant.
+func spring_room(name: String, pos: Vector2) -> bool:
+	var kind := int(_kind_of.get(name, -1))
+	if not _is_spring(kind):
+		return false
+	return not _in_town(pos, _kind_foot[kind]) and not _crowded_by(pos, _kind_foot[kind])
+
+
+## Dosah paty prameniště name v px, 0 když takové není.
+func spring_reach(name: String) -> float:
+	var kind := int(_kind_of.get(name, -1))
+	return _kind_foot[kind] if _is_spring(kind) else 0.0
+
+
+## Prameniště name na pos, otočené o turn (řeka teče ve směru turn). variant je náhoda
+## varianty od řeky, ať je čtverec po načtení stejný. Vrátí false, když se nevejde.
+func place_spring(name: String, pos: Vector2, turn: float, variant: int) -> bool:
+	if not spring_room(name, pos):
+		return false
+	var kind := int(_kind_of[name])
+	_keep_shaped(kind, pos, posmod(variant, int(_kinds[kind]["variants"])), turn)
+	return true
+
+
 ## Vrstvy pod zemí: důl a puklina.
 func _is_pit(kind: int) -> bool:
 	return _is_mine(kind) or _is_crack(kind)
@@ -471,6 +501,8 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 		entry["mine"] = true
 		entry["rim_color"] = Color.html(str(info.get("color", "7C6A54")))
 		entry["wall_color"] = Color.html(str(info.get("wall", "6E6860")))
+	if bool(info.get("spring", false)):
+		entry["spring"] = true
 	if bool(info.get("crack", false)):
 		entry["crack"] = true
 		entry["mask_path"] = "%s/%s/mask.png" % [_root(), kind_name]
@@ -818,6 +850,8 @@ func paint_chart(chart: Image) -> void:
 			color = _crystal.color_of(mat) if _crystal != null and mat >= 0 else CHART_ROCK
 		elif _is_crack(kind):
 			color = CHART_CRACK
+		elif _is_spring(kind):
+			color = CHART_SPRING
 		elif _capsule_at[kind] >= 0:
 			color = CHART_LOG
 		# Dlaždice pod středem vždycky, malý balvan jinak středy dlaždic mine.

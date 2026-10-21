@@ -24,11 +24,13 @@ SURFACES_PATH = ROOT / "godot" / "graphics" / "terrain" / "surfaces.json"
 # Sníh má víc stromů než tráva a míň než hlína. Skal je málo, malých kamenů víc.
 # Padlé stromy (padly_strom mezi skálami) leží hlavně na trávě, v lese na hlíně a v močálu.
 # decor je průchozí porost z gen_decor.py, počet trsů na dlaždici. Shlukuje se podle druhu.
+# springs jsou prameniště řeky (gen_spring.py), ze kterých si pramen na tom terénu vybere.
 # Čtverec světa si vybere jen pár terénů. avoid jsou terény, se kterými se nevybere
 # společně (platí oběma směry), třeba "avoid": ["desert"] u sněhu. Teď ho nemá žádný terén.
 TERRAINS = {
     "grass": {
         "name": "grass",
+        "springs": ["pramen_tun", "pramen_kamen"],
         "base": "4F9A3C",
         "hue": 5.0,
         "contrast": 28.0,
@@ -40,6 +42,7 @@ TERRAINS = {
     },
     "dirt": {
         "name": "dirt",
+        "springs": ["pramen_mokrad", "pramen_tun"],
         "base": "7A5A3A",
         "hue": 3.0,
         "contrast": 14.0,
@@ -53,6 +56,7 @@ TERRAINS = {
     },
     "desert": {
         "name": "desert",
+        "springs": ["pramen_tun"],
         "base": "E2C48A",
         "hue": 2.0,
         "contrast": 9.0,
@@ -64,6 +68,7 @@ TERRAINS = {
     },
     "snow": {
         "name": "snow",
+        "springs": ["pramen_kamen"],
         "base": "E8EEF2",
         "hue": 2.0,
         "contrast": 6.0,
@@ -78,6 +83,7 @@ TERRAINS = {
     # Kamenná suť: drobné i větší ostrohranné kameny, hodně skal, skoro žádné stromy.
     "scree": {
         "name": "scree",
+        "springs": ["pramen_kamen"],
         "base": "7E7A73",
         "hue": 2.0,
         "contrast": 12.0,
@@ -90,6 +96,7 @@ TERRAINS = {
     # Černý popel po požáru: závěje popela, uhlíky, jen ohořelé suché stromy a lávové pukliny.
     "ash": {
         "name": "ash",
+        "springs": ["pramen_kamen"],
         "base": "3B3937",
         "hue": 1.5,
         "contrast": 18.0,
@@ -101,6 +108,7 @@ TERRAINS = {
     # Močál: bahno, louže a trsy ostřice, keře a pár stromů. Břeh nemá, bahno přejde rovnou do vody.
     "swamp": {
         "name": "swamp",
+        "springs": ["pramen_mokrad"],
         "base": "4E4A2F",
         "hue": 3.0,
         "contrast": 14.0,
@@ -117,6 +125,7 @@ TERRAINS = {
     # Vřesoviště: fialový vřes, borůvčí a olivová tráva. Keře, řídké stromy a balvany.
     "heath": {
         "name": "heath",
+        "springs": ["pramen_mokrad", "pramen_kamen"],
         "base": "5E5040",
         "hue": 3.0,
         "contrast": 14.0,
@@ -467,6 +476,14 @@ def surface_info() -> dict:
                 raise SystemExit(f"{name}: avoid obsahuje neznámý terén {other}")
         if avoid:
             entry["avoid"] = list(avoid)
+        springs = preset.get("springs") or []
+        if springs:
+            from gen_rocks import ROCKS as SPRING_ROCKS
+
+            for spring in springs:
+                if not SPRING_ROCKS.get(spring, {}).get("spring"):
+                    raise SystemExit(f"{name}: springs obsahuje {spring}, to není prameniště")
+            entry["springs"] = list(springs)
         forest = preset.get("forest") or {}
         for tree, amount in forest.items():
             if tree not in TREES:
