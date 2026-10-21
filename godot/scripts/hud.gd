@@ -1,8 +1,9 @@
 extends Control
 
 ## Údaje hry v horních rozích a okno na konci hry. Sám nic nepočítá, svět mu říká, co ukázat.
-## Vlevo co nese každý hráč (kroužek v barvě jeho trika), vpravo level, kolik kamenů je
-## v zásobnících továrny a malým písmem čas hry. Úplně vpravo je logo „MM“, tlačítko menu.
+## Vlevo mapa objeveného světa (MiniMap), vždy vidět. Vpravo level, kolik kamenů je
+## v zásobnících továrny a malým písmem čas hry, vedle logo „MM“, tlačítko menu. Pod nimi
+## co nese každý hráč (kroužek v barvě jeho trika).
 ## Panely mají styl panelů menu. Okno konce hry běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
@@ -10,10 +11,18 @@ const PauseMenu := preload("res://scripts/pause_menu.gd")
 const THEME := preload("res://themes/menu.tres")
 const MENU_ICON := preload("res://graphics/menu/logo_mm.png")
 const MaterialTitle := preload("res://scripts/material_title.gd")
+const MiniMap := preload("res://scripts/minimap.gd")
 
-## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře víc, jsou tam panely.
+## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře drží ARROW_BELOW pod
+## panely v rozích, nejméně ARROW_TOP.
 const ARROW_EDGE := 44.0
 const ARROW_TOP := 96.0
+const ARROW_BELOW := 24.0
+## Panel mapy je MAP_SHARE šířky panelu levelu. Než se panel levelu rozměří, počítá se
+## s šířkou MAP_WIDTH.
+const MAP_WIDTH := 200.0
+const MAP_SHARE := 0.8
+const MAP_MARGIN := 6.0
 ## Blikání šipky u kraje čtverce za sekundu, výrazné je rychlejší.
 const BLINK_HZ := 2.0
 const BLINK_STRONG_HZ := 4.5
@@ -69,8 +78,12 @@ var _result_buttons: VBoxContainer
 ## Panely v horních rozích a nahoře uprostřed. Volný pohyb je skryje.
 var _corners: Array[Control] = []
 var _menu_button: Button
-## Pravý horní roh: panel postupu a vedle něj tlačítko menu.
+## Pravý horní roh: panel postupu a vedle něj tlačítko menu, pod nimi nesené kameny.
+var _right_column: VBoxContainer
 var _right: HBoxContainer
+var _score_panel: PanelContainer
+var _map_panel: PanelContainer
+var minimap: MiniMap
 var _pause: PauseMenu
 
 
@@ -78,8 +91,9 @@ func _ready() -> void:
 	theme = THEME
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_build_held()
 	_build_right()
+	_build_held()
+	_build_map()
 	_arrow = FactoryArrow.new()
 	_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_arrow.visible = false
@@ -145,7 +159,8 @@ func point_factory(from: Vector2, to: Vector2) -> void:
 	if to == Vector2.INF or view.has_point(to) or from.distance_squared_to(to) < 1.0:
 		_arrow.visible = false
 		return
-	var inner := Rect2(Vector2(ARROW_EDGE, ARROW_TOP), size - Vector2(ARROW_EDGE * 2.0, ARROW_TOP + ARROW_EDGE))
+	var top := maxf(ARROW_TOP, maxf(_map_panel.get_rect().end.y, _right_column.get_rect().end.y) + ARROW_BELOW)
+	var inner := Rect2(Vector2(ARROW_EDGE, top), size - Vector2(ARROW_EDGE * 2.0, top + ARROW_EDGE))
 	var start := Vector2(clampf(from.x, inner.position.x, inner.end.x), clampf(from.y, inner.position.y, inner.end.y))
 	var dir := (to - start).normalized()
 	var reach := INF
@@ -165,7 +180,7 @@ func point_factory(from: Vector2, to: Vector2) -> void:
 	_arrow.visible = true
 
 
-## Volný pohyb: bez nesených kamenů, času, levelu a šipky. Zůstanou jen hlášky.
+## Volný pohyb: bez nesených kamenů, času, levelu a šipky. Zůstanou mapa a hlášky.
 func free_roam() -> void:
 	for panel in _corners:
 		panel.visible = false
@@ -188,7 +203,10 @@ func show_result(title: String, note: String) -> void:
 # --- Stavba ---
 
 func _build_held() -> void:
-	var panel := _corner_panel(Control.PRESET_TOP_LEFT, Control.GROW_DIRECTION_END)
+	var panel := _panel()
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_END
+	_right_column.add_child(panel)
+	_corners.append(panel)
 	_held_rows = GridContainer.new()
 	_held_rows.add_theme_constant_override("h_separation", 14)
 	_held_rows.add_theme_constant_override("v_separation", 2)
@@ -262,17 +280,40 @@ static func _short(title: String) -> String:
 
 
 func _build_right() -> void:
+	_right_column = VBoxContainer.new()
+	_right_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_right_column.add_theme_constant_override("separation", 10)
+	add_child(_right_column)
+	_right_column.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, int(EDGE))
+	_right_column.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_right = HBoxContainer.new()
 	_right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_right.add_theme_constant_override("separation", 10)
-	add_child(_right)
-	_right.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, int(EDGE))
-	_right.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	var panel := _panel()
-	_right.add_child(panel)
-	_corners.append(panel)
-	_build_score(panel)
+	_right.size_flags_horizontal = Control.SIZE_SHRINK_END
+	_right_column.add_child(_right)
+	_score_panel = _panel()
+	_right.add_child(_score_panel)
+	_corners.append(_score_panel)
+	_build_score(_score_panel)
 	_build_menu_button()
+
+
+## Čtvercová mapa vlevo nahoře, o pětinu užší než panel levelu. Volný pohyb ji neskryje.
+func _build_map() -> void:
+	_map_panel = PanelContainer.new()
+	_map_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_panel.add_theme_stylebox_override("panel", _panel_box(MAP_MARGIN, MAP_MARGIN))
+	add_child(_map_panel)
+	_map_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(EDGE))
+	minimap = MiniMap.new()
+	minimap.custom_minimum_size = Vector2.ONE * roundf(MAP_WIDTH * MAP_SHARE - MAP_MARGIN * 2.0)
+	_map_panel.add_child(minimap)
+	_score_panel.resized.connect(_fit_map)
+
+
+func _fit_map() -> void:
+	var width := _score_panel.size.x if _score_panel.size.x > 0.0 else MAP_WIDTH
+	minimap.custom_minimum_size = Vector2.ONE * roundf(width * MAP_SHARE - MAP_MARGIN * 2.0)
 
 
 ## Nahoře level a malý čas hry, pod nimi kameny v zásobnících a tenký pruh postupu.
@@ -464,16 +505,6 @@ func _result_button(text: String, chosen: Signal) -> Button:
 	button.pressed.connect(func() -> void: chosen.emit())
 	_result_buttons.add_child(button)
 	return button
-
-
-## Ostrůvek ukotvený k horní hraně. Roste od kotvy, ať při delším textu nevyjede z obrazovky.
-func _corner_panel(preset: Control.LayoutPreset, grow: Control.GrowDirection) -> PanelContainer:
-	var panel := _panel()
-	add_child(panel)
-	panel.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, int(EDGE))
-	panel.grow_horizontal = grow
-	_corners.append(panel)
-	return panel
 
 
 func _panel() -> PanelContainer:

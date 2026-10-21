@@ -21,6 +21,10 @@ const CRACK_GLOW: Array[float] = [0.35, 0.6, 1.0]
 ## Nejdelší posun vrstvy pukliny v px. O tolik hlubší vrstvy sahají pod kůru, viz MAX_SHIFT
 ## v gen_crack.py.
 const CRACK_MAX_SHIFT := 22.0
+## Barvy skal na mapě, viz paint_chart.
+const CHART_ROCK := Color(0.55, 0.53, 0.5)
+const CHART_CRACK := Color(0.85, 0.36, 0.12)
+const CHART_LOG := Color(0.33, 0.24, 0.17)
 ## Puklina drží od skal, padlých stromů a jiných puklin tolik metrů po celé délce, ať jde obejít.
 const CRACK_GAP_M := 2.0
 ## Krok kontroly místa podél kapslí pukliny v px.
@@ -795,6 +799,39 @@ func pond_at(pos: Vector2, body: float) -> int:
 ## Je střed postavy do body od obrysu dolu slot?
 func near_pond(slot: int, pos: Vector2, body: float) -> bool:
 	return _touches(pos, _pond_rock[slot], body)
+
+
+## Skály do mapy (MiniMap.chart): dlaždice pod obrysem obarví. Skála je šedá, puklina žhne,
+## padlý strom je tmavé dřevo, důl má barvu svého materiálu. Volá se ve vlákně tvorby čtverce,
+## polohy jsou ještě bez posunu čtverce.
+func paint_chart(chart: Image) -> void:
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var side := chart.get_width()
+	var mine_mat := {}
+	for slot in _pond_rock.size():
+		mine_mat[_pond_rock[slot]] = _pond_mat[slot]
+	for index in _pos.size():
+		var kind := _kind[index]
+		var color := CHART_ROCK
+		if mine_mat.has(index):
+			var mat: int = mine_mat[index]
+			color = _crystal.color_of(mat) if _crystal != null and mat >= 0 else CHART_ROCK
+		elif _is_crack(kind):
+			color = CHART_CRACK
+		elif _capsule_at[kind] >= 0:
+			color = CHART_LOG
+		# Dlaždice pod středem vždycky, malý balvan jinak středy dlaždic mine.
+		var at := Vector2i((_pos[index] / tile).floor())
+		if at.x >= 0 and at.y >= 0 and at.x < side and at.y < side:
+			chart.set_pixelv(at, color)
+		var reach := _radius[kind]
+		var from := ((_pos[index] - Vector2(reach, reach)) / tile).floor()
+		var to := ((_pos[index] + Vector2(reach, reach)) / tile).floor()
+		for y in range(maxi(int(from.y), 0), mini(int(to.y), side - 1) + 1):
+			for x in range(maxi(int(from.x), 0), mini(int(to.x), side - 1) + 1):
+				var delta := Vector2(x + 0.5, y + 0.5) * tile - _pos[index]
+				if delta.length() <= _sample(_outline, kind, _variant[index], _turn[index], delta.angle()):
+					chart.set_pixel(x, y, color)
 
 
 ## Doly materiálu mat.

@@ -47,6 +47,7 @@ const SuitSaves := preload("res://scripts/suit_saves.gd")
 const GroundDecor := preload("res://scripts/ground_decor.gd")
 const SquareAir := preload("res://scripts/square_air.gd")
 const River := preload("res://scripts/river.gd")
+const MiniMap := preload("res://scripts/minimap.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
@@ -104,6 +105,9 @@ var _squares := {}
 var _waiting: Array[Vector2i] = []
 ## Čtverce hotové z vlákna, které se po částech přidávají do scény (_finish_step).
 var _finishing: Array[Vector2i] = []
+## Objevené dlaždice mapy v rohu: souřadnice čtverce -> PackedByteArray, 255 objevená.
+## Ukládá se s hrou a drží i čtverce, které se mezitím uvolnily.
+var _seen := {}
 var _where := {}
 var _world_rng := RandomNumberGenerator.new()
 var _opened := false
@@ -169,6 +173,8 @@ class Square:
 	## Vzduch nad čtvercem (mlha, sníh, jed) a jeho maska terénu z vlákna.
 	var air
 	var air_mask: Image
+	## Obrázek čtverce pro mapu v rohu, pixel na dlaždici (MiniMap.chart).
+	var chart: Image
 	var rng: RandomNumberGenerator
 	## Stav rng po nakreslení terénu. Odtud se sází továrna, skály a stromy, takže čtverec
 	## jde z uložené mapy postavit znovu stejně.
@@ -580,6 +586,9 @@ func _furnish(sq: Square, map: MapData) -> void:
 	var water := _water_map(map)
 	sq.water_side = int(water["side"])
 	sq.water_far = water["far"]
+	# Menu mapu v rohu nemá.
+	if not _flyover:
+		sq.chart = MiniMap.chart(map, sq.rocks, sq.forest, sq.town, sq.river)
 	sq.map = map
 
 
@@ -633,10 +642,23 @@ func _finish(sq: Square) -> void:
 	_chunks.refresh()
 	_built_square(sq)
 	sq.ready = true
+	_chart(sq)
 	if not _opened and _opens_at(sq):
 		_open_play(sq)
 	elif _opened and sq.layout != "empty":
 		_add_labels(sq)
+
+
+## Čtverec do mapy v rohu: jeho obrázek a značky továrny a skladů.
+func _chart(sq: Square) -> void:
+	if _hud == null or sq.chart == null:
+		return
+	var marks: Array = []
+	if sq.town.suit_factory() != null and sq.town.center() != Vector2.INF:
+		marks.append([sq.town.center(), true])
+	for store in sq.town.store_count():
+		marks.append([sq.town.store_center(store), false])
+	_hud.minimap.add_square(sq.coord, sq.origin, sq.chart, marks)
 
 
 func _built_square(sq: Square) -> void:
@@ -696,6 +718,11 @@ func _open_play(sq: Square) -> void:
 	_host.get_node("Hint").add_child(_hud)
 	_setup_hud(sq)
 	_host._hud = _hud
+	_hud.minimap.setup(_camera, _host._persons, _seen, _side)
+	for key in _squares:
+		var built: Square = _squares[key]
+		if built.ready:
+			_chart(built)
 	for person in _host._persons:
 		person.held_changed.connect(_hud.set_held.bind(person.player_index))
 		_dress(person)
@@ -1133,6 +1160,9 @@ func _load(data: Dictionary) -> void:
 	_world_rng.state = int(data.get("rng", _world_rng.state))
 	_pending = data.get("state", {})
 	_stores = data.get("stores", {})
+	var seen: Dictionary = data.get("seen", {})
+	for coord: Vector2i in seen:
+		_seen[coord] = (seen[coord] as PackedByteArray).decompress(_side * _side, FileAccess.COMPRESSION_ZSTD)
 	var persons: Array = _pending.get("persons", [])
 	var first: Vector2 = _origin_of(_active) + Vector2(_span(), _span()) * 0.5
 	if not persons.is_empty():
@@ -1402,6 +1432,9 @@ func _snapshot() -> Dictionary:
 			sq.blob = raw.compress(FileAccess.COMPRESSION_ZSTD)
 			sq.blob_size = raw.size()
 		squares.append({"coord": coord, "size": sq.blob_size, "data": sq.blob})
+	var seen := {}
+	for coord: Vector2i in _seen:
+		seen[coord] = (_seen[coord] as PackedByteArray).compress(FileAccess.COMPRESSION_ZSTD)
 	var done := {}
 	for coord: Vector2i in _done:
 		var finished: SuitGame = _games.get(coord)
@@ -1439,6 +1472,7 @@ func _snapshot() -> Dictionary:
 		"rng": _world_rng.state,
 		"terrains": _catalog.names,
 		"squares": squares,
+		"seen": seen,
 		"stores": stores,
 		"state": state,
 	}
