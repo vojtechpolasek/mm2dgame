@@ -28,7 +28,6 @@ PREVIEW = ROOT / "tools" / "preview"
 CELL = 64
 PAD = 4
 COLUMNS = 8
-SHADOW = (24, 30, 14)
 
 # Druhy porostu. variants je počet buněk, patch jak moc se druh shlukuje (0 rovnoměrně,
 # 1 jen v ostrůvcích), scale rozsah zvětšení ve hře.
@@ -67,28 +66,19 @@ class Sprite:
         mixed = lerp_rgb(old[:3], color, alpha)
         self.pixels[px, py] = (*mixed, max(old[3], int(alpha * 255)))
 
-    def shadow(self, x: float, y: float, alpha: float = 0.35) -> None:
-        """Stín jen tam, kde ještě nic není. Kreslí se jako první."""
-        px, py = int(round(x)) + 1, int(round(y)) + 2
-        if self.inside(px, py) and self.pixels[px, py][3] == 0:
-            self.pixels[px, py] = (*SHADOW, int(alpha * 255))
 
-
-def blade(sprite: Sprite, x: float, y: float, angle: float, length: float, dark, tip, bend: float, width: int = 1,
-          shadow: bool = False) -> tuple[float, float]:
+def blade(sprite: Sprite, x: float, y: float, angle: float, length: float, dark, tip, bend: float,
+          width: int = 1) -> tuple[float, float]:
     """Stéblo od (x, y): tmavé u země, světlá špička. Vrací konec stébla."""
     steps = max(2, int(length))
     for step in range(steps + 1):
         t = step / steps
         px = x + math.cos(angle) * step
         py = y + math.sin(angle) * step
-        if shadow:
-            sprite.shadow(px, py)
-        else:
-            color = lerp_rgb(dark, tip, t ** 0.8)
-            sprite.put(px, py, color)
-            if width > 1 and t < 0.5:
-                sprite.put(px + math.sin(angle), py - math.cos(angle), scale_rgb(color, 0.9))
+        color = lerp_rgb(dark, tip, t ** 0.8)
+        sprite.put(px, py, color)
+        if width > 1 and t < 0.5:
+            sprite.put(px + math.sin(angle), py - math.cos(angle), scale_rgb(color, 0.9))
         angle += bend
     return x + math.cos(angle) * steps, y + math.sin(angle) * steps
 
@@ -102,8 +92,6 @@ def tuft(sprite: Sprite, rng: random.Random, dark, tip, count: tuple[int, int], 
         oy = sprite.c + rng.uniform(-spread, spread)
         angle = rng.uniform(0, math.tau)
         blades.append((ox, oy, angle, rng.uniform(*length), rng.uniform(-0.06, 0.06), rng.uniform(0.85, 1.12)))
-    for ox, oy, angle, size, bend, _shade in blades:
-        blade(sprite, ox, oy, angle, size, dark, tip, bend, width, shadow=True)
     for ox, oy, angle, size, bend, tone in blades:
         blade(sprite, ox, oy, angle, size, scale_rgb(dark, tone), scale_rgb(tip, tone), bend, width)
 
@@ -146,9 +134,6 @@ def draw_kvetiny(sprite: Sprite, rng: random.Random, index: int) -> None:
     for _ in range(rng.randint(5, 9)):
         heads.append((sprite.c + rng.uniform(-12, 12), sprite.c + rng.uniform(-12, 12)))
     for x, y in heads:
-        for ox, oy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
-            sprite.shadow(x + ox, y + oy, 0.4)
-    for x, y in heads:
         for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)):
             edge = abs(ox) + abs(oy) == 2
             sprite.put(x + ox, y + oy, scale_rgb(petal, 0.88 if edge else 1.0), 0.75 if edge else 1.0)
@@ -164,33 +149,26 @@ def draw_kapradi(sprite: Sprite, rng: random.Random, index: int) -> None:
     for i in range(count):
         angle = (i + rng.uniform(0.2, 0.8)) / count * math.tau
         fronds.append((angle, rng.uniform(17, 26), rng.uniform(-0.04, 0.04)))
-    for shadow in (True, False):
-        for angle, length, bend in fronds:
-            x, y = sprite.c, sprite.c
-            a = angle
-            for step in range(int(length)):
-                t = step / length
-                if shadow:
-                    sprite.shadow(x, y)
-                else:
-                    sprite.put(x, y, lerp_rgb(dark, light, t * 0.6))
-                if step >= 2 and step % 2 == 0:
-                    side = 1 if (step // 2) % 2 else -1
-                    reach = max(1, int((1 - t) * 6))
-                    for r in range(1, reach + 1):
-                        lx = x + math.cos(a + side * 1.3) * r
-                        ly = y + math.sin(a + side * 1.3) * r
-                        if shadow:
-                            sprite.shadow(lx, ly)
-                        else:
-                            sprite.put(lx, ly, lerp_rgb(dark, light, 0.4 + 0.5 * t + 0.1 * r / reach))
-                x += math.cos(a)
-                y += math.sin(a)
-                a += bend
+    for angle, length, bend in fronds:
+        x, y = sprite.c, sprite.c
+        a = angle
+        for step in range(int(length)):
+            t = step / length
+            sprite.put(x, y, lerp_rgb(dark, light, t * 0.6))
+            if step >= 2 and step % 2 == 0:
+                side = 1 if (step // 2) % 2 else -1
+                reach = max(1, int((1 - t) * 6))
+                for r in range(1, reach + 1):
+                    lx = x + math.cos(a + side * 1.3) * r
+                    ly = y + math.sin(a + side * 1.3) * r
+                    sprite.put(lx, ly, lerp_rgb(dark, light, 0.4 + 0.5 * t + 0.1 * r / reach))
+            x += math.cos(a)
+            y += math.sin(a)
+            a += bend
 
 
 def draw_houby(sprite: Sprite, rng: random.Random, index: int) -> None:
-    """Jedna až tři houby: klobouk shora se světlou stranou vlevo nahoře, muchomůrka s tečkami."""
+    """Jedna až tři houby: klobouk shora, uprostřed světlejší, muchomůrka s tečkami."""
     red = index % 2 == 1
     cap = (186, 44, 32) if red else hsv_to_rgb(rng.uniform(24, 32), rng.uniform(0.45, 0.6), rng.uniform(0.5, 0.62))
     caps = []
@@ -199,16 +177,10 @@ def draw_houby(sprite: Sprite, rng: random.Random, index: int) -> None:
     for cx, cy, r in caps:
         for y in range(int(cy - r) - 1, int(cy + r) + 2):
             for x in range(int(cx - r) - 1, int(cx + r) + 2):
-                if math.hypot(x - cx, y - cy) <= r:
-                    sprite.shadow(x, y, 0.45)
-    for cx, cy, r in caps:
-        for y in range(int(cy - r) - 1, int(cy + r) + 2):
-            for x in range(int(cx - r) - 1, int(cx + r) + 2):
                 d = math.hypot(x - cx, y - cy) / r
                 if d > 1:
                     continue
-                light = -((x - cx) * 0.6 + (y - cy) * 0.8) / r
-                color = scale_rgb(cap, 1 + 0.22 * light - 0.2 * d * d)
+                color = scale_rgb(cap, 1.08 - 0.28 * d * d)
                 if red and d < 0.8 and hash_unit(x, y, index * 7) > 0.8:
                     color = (240, 236, 226)
                 sprite.put(x, y, color)
@@ -222,10 +194,6 @@ def draw_rakos(sprite: Sprite, rng: random.Random, index: int) -> None:
     for _ in range(rng.randint(1, 3)):
         angle = rng.uniform(0, math.tau)
         end = blade(sprite, sprite.c, sprite.c, angle, rng.uniform(12, 19), (90, 96, 50), (130, 124, 70), 0.0)
-        for step in range(-3, 4):
-            x = end[0] + math.cos(angle) * step
-            y = end[1] + math.sin(angle) * step
-            sprite.shadow(x, y, 0.4)
         for step in range(-3, 4):
             x = end[0] + math.cos(angle) * step
             y = end[1] + math.sin(angle) * step
@@ -250,13 +218,11 @@ def draw_vres(sprite: Sprite, rng: random.Random, index: int) -> None:
             d = math.hypot(dx, dy) / (radius * lobe)
             if d <= 1:
                 spots.append((x, y, d))
-    for x, y, _d in spots:
-        sprite.shadow(x, y, 0.3)
     for x, y, d in spots:
         roll = hash_unit(x, y, index * 13 + 5)
         if roll > 0.8 + (1 - d) * 0.15:
             continue
-        pick = hash_unit(x, y, index * 13 + 9) + (0.2 if (x - sprite.c) + (y - sprite.c) < 0 else -0.1)
+        pick = hash_unit(x, y, index * 13 + 9) + (0.2 if d < 0.55 else -0.1)
         color = HEATHER[0] if pick < 0.3 else HEATHER[1] if pick < 0.7 else HEATHER[2] if pick < 0.92 else HEATHER[3]
         sprite.put(x, y, color)
 
@@ -267,8 +233,6 @@ def draw_vyhonky(sprite: Sprite, rng: random.Random, index: int) -> None:
         ox = sprite.c + rng.uniform(-7, 7)
         oy = sprite.c + rng.uniform(-7, 7)
         leaves = [(rng.uniform(0, math.tau), rng.uniform(5, 9)) for _ in range(rng.randint(4, 7))]
-        for angle, length in leaves:
-            blade(sprite, ox, oy, angle, length, (60, 120, 40), (150, 210, 80), 0.0, shadow=True)
         for angle, length in leaves:
             blade(sprite, ox, oy, angle, length, (60, 120, 40), (150, 210, 80), 0.0, width=2)
 

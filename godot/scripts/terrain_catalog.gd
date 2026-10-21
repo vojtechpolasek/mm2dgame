@@ -140,6 +140,7 @@ func _build_material(terrains: Texture2DArray) -> void:
 	_set_param("terrains", terrains)
 	_set_param("tile_size", float(TILE_SIZE))
 	_set_param("atlas_columns", float(ATLAS_COLUMNS))
+	_set_param("variant_count", float(variant_count))
 	var styles := PackedFloat32Array()
 	styles.resize(16)
 	styles.fill(0.0)
@@ -184,3 +185,5 @@ func _apply_wave(wave: Dictionary) -> void:
 	_set_param("wave_dir_b", Vector2(-sin(angle + 1.15), cos(angle + 1.15)))
 	_set_param("wave_dir_c", Vector2(-sin(angle + 2.4), cos(angle + 2.4)))
 	_set_param("mask_start", float(wave.get("mask_start", 0.7)))
+	_set_param("glint_scale", float(wave.get("glint_scale", 36.0)))
+	_set_param("glint_strength", float(wave.get("glint", 0.4)))

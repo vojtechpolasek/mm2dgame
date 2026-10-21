@@ -550,7 +550,8 @@ def paint_gable(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> None:
     curve = thatch_curve(x, y, salt)
     down = np.abs(y) / hy
     across = np.where(y < 0.0, x + m(0.1), x) + curve
-    bias = np.where(y < 0.0, 0.74, 1.0).astype(np.float32)
+    # Obě strany štítu stejně světlé, dům se ve hře otáčí.
+    bias = np.full_like(x, 0.87, dtype=np.float32)
     roof = inside & ragged(across, hy - np.abs(y), salt)
     mask.fill(roof, ROOF, thatch_shade(down, across, salt + 11, bias, x, y))
     # Štítové hrany drží dřevo. Okap je střapatý konec došku, ne prkno.
@@ -566,11 +567,8 @@ def paint_hip(mask: Mask, x: np.ndarray, y: np.ndarray, house: House) -> None:
     inside = (np.abs(x) <= hx) & (np.abs(y) <= hy)
     sides = rect_sides(x, y, hx, hy)
     slope = np.maximum(np.abs(x) / hx, np.abs(y) / hy)
-    bias = np.ones_like(slope)
-    bias = np.where(sides["south"], 1.0, bias)
-    bias = np.where(sides["east"], 0.86, bias)
-    bias = np.where(sides["west"], 0.8, bias)
-    bias = np.where(sides["north"], 0.7, bias)
+    # Všechny strany stejně světlé, dům se ve hře otáčí. Plochy dělí nároží a okap.
+    bias = np.full_like(slope, 0.84)
     # Od vrcholu dolů k okapu. Na bocích by rovnoběžné řady zase vypadaly jako stěna.
     bundles = max(28, int(math.tau * max(hx, hy) / m(0.22)))
     ang = np.mod(np.arctan2(y, x) + math.pi, math.tau)

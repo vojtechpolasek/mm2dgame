@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Padlý strom pro pohled kolmo shora: kmen zlomený u země leží vedle pařezu.
 
-Vrstva 1 je na zemi (výška 0): pařez s třískami po zlomu a stín ležícího kmene.
+Vrstva 1 je na zemi (výška 0): pařez s třískami po zlomu. Stín do obrázku nepatří, strom
+se ve hře otáčí, stín kreslí hra. Světlo je kolmo shora, ze všech stran stejné.
 Vrstva 2 je ležící kmen se silnými větvemi, vrstva 3 koruna s pár listy. Kmen je
 o pětinu užší než pařez. Překáží jen kmen s pařezem: kapsle (úsečka od pařezu ke
 konci kmene, poloměr se zužuje) jde do capsule.json vedle atlasů a odtud do rocks.json.
@@ -9,7 +10,7 @@ Koruna v chůzi nepřekáží.
 
 Kmen leží v obrázku vodorovně, pařez vlevo, koruna vpravo. Ve hře se strom otočí
 náhodně jako skála. Střed obrázku je uprostřed celého stromu, leží vždycky na kmeni,
-obrys paty z něj proto jde po paprscích.
+obrys (z vrstvy kmene, pro mapu v rohu) z něj proto jde po paprscích.
 
 Generuje ho gen_rocks.py (druh s "fallen": True), sám se spustí jen pro náhled:
   py tools/gen_fallen.py
@@ -114,40 +115,12 @@ def broken_end(plan: Plan, v: float, salt: int) -> float:
 def draw_ground(plan: Plan, size: int, rng: random.Random, bark: tuple[int, int, int], salt: int) -> Image.Image:
     image = blank(size)
     pixels = image.load()
-    # Stín kmene: plný pod kmenem (obrys paty), měkký okraj.
-    x0 = int(plan.at(-4)[0]) - 6
-    x1 = int(plan.at(plan.length)[0]) + 6
-    reach = int(plan.base_w / 2 + 10)
-    for x in range(max(0, x0), min(size, x1)):
-        for y in range(max(0, int(plan.cy) - reach - 8), min(size, int(plan.cy) + reach + 8)):
-            u, v = plan.local(x + 0.5 - 2, y + 0.5 - 3)
-            if u < broken_end(plan, v, salt) or u > plan.length:
-                continue
-            half = plan.width(u) / 2
-            out = abs(v) - half
-            if out > 4:
-                continue
-            alpha = 170 if out <= 0 else int(170 * (1 - out / 4) * 0.6)
-            pixels[x, y] = (22, 20, 14, alpha)
-    # Řídký stín koruny, slabší než obrys paty, aby korunou šlo projít.
-    end = plan.at(plan.length)
+    # Stín kmene a koruny na zemi tu není, strom se ve hře otáčí a stín kreslí hra.
+    # Náhoda se losuje dál stejně, ať se pařez a třísky nezmění.
     for _ in range(26):
-        angle = rng.uniform(-1.4, 1.4)
-        dist = rng.uniform(10, plan.crown * 0.85)
-        cx = end[0] + math.cos(angle) * dist + 3
-        cy = end[1] + math.sin(angle) * dist * 1.1 + 4
-        radius = rng.uniform(6, 14)
-        for y in range(int(cy - radius), int(cy + radius) + 1):
-            for x in range(int(cx - radius), int(cx + radius) + 1):
-                if not (0 <= x < size and 0 <= y < size):
-                    continue
-                d = math.hypot(x - cx, y - cy) / radius
-                if d > 1:
-                    continue
-                alpha = int(60 * (1 - d))
-                old = pixels[x, y]
-                if old[3] < alpha:
-                    pixels[x, y] = (22, 20, 14, alpha)
+        rng.uniform(-1.4, 1.4)
+        rng.uniform(10, plan.crown * 0.85)
+        rng.uniform(6, 14)
     # Pařez s kořeny a třískami na straně, kam strom padl.
     sx, sy = plan.at(plan.stump_u)
     draw_stump(image, rng, sx, sy, shade(bark, 1.15), plan.stump_r, plan.stump_r * 1.4)
@@ -203,14 +176,14 @@ def draw_trunk(plan: Plan, size: int, rng: random.Random, bark: tuple[int, int, 
             if abs(v) > half:
                 continue
             across = v / half
-            # Válec: světlo shora zleva, kraje tmavší.
-            value = 0.92 - 0.2 * across - 0.22 * across * across
+            # Válec: světlo kolmo shora, oba kraje stejně tmavší.
+            value = 0.92 - 0.3 * across * across
             groove = hash01(int(u / 7), int((v + 40) / 2.2), salt)
             if groove > 0.78:
                 value *= 0.72
             value *= 0.92 + 0.14 * hash01(x, y, salt + 3)
             color = shade(bark, value)
-            if moss is not None and across < 0.2:
+            if moss is not None and abs(across) < 0.55:
                 patch = hash01(int(u / 18), int((v + 40) / 9), patch_salt) * 0.7 + hash01(x // 3, y // 3, patch_salt + 1) * 0.3
                 if patch > 0.66:
                     color = mix_rgb(color, shade(moss, 0.8 + 0.3 * hash01(x, y, patch_salt + 2)), 0.85)

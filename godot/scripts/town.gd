@@ -3,8 +3,11 @@ extends Node
 ## Továrna uprostřed mapy, cesta od jejího výstupku ve tvaru T a domy kolem cesty.
 ## Nožka T vede od výstupku, příčka jde napříč na obě strany. Obojí je křivka přes vybočené body,
 ## takže T není rovné. Do vody cesta nevede: rameno se ohne, a když to nestačí, zkrátí se.
+## Řeka už stojí: cesta ji přejde kdekoli (most postaví řeka), ze zkoušených natočení vyhraje
+## to s kolmými přechody přes úzkou řeku. Domy a sklady se řece vyhnou.
 ## Továrna a domy jsou neprůchodné pro postavy i příšery. Na vyšlapaném středu cesty postava
-## běží rychleji (Person.ROAD_BOOST). Stromy, skály a doly se cestě, továrně a domům vyhnou.
+## běží rychleji (Person.ROAD_BOOST). Skály, které tu už stály, zmizí, doly a stromy se cestě,
+## továrně a domům vyhnou.
 ##
 ## Vesnice s továrnou má navíc tři sklady (stores): kříže s plochou na konci každého ramene.
 ## Plocha drží jeden kámen. Zastřešený střed kříže i plochy jsou
@@ -19,12 +22,22 @@ const MapData := preload("res://scripts/map_data.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Crystal := preload("res://scripts/crystal.gd")
 const SuitFactory := preload("res://scripts/suit_factory.gd")
+const Shadows := preload("res://scripts/shadows.gd")
 
 const FACTORY_CATALOG := "res://graphics/objects/factory/tovarna.json"
 const PATH_CATALOG := "res://graphics/paths/paths.json"
 const HOUSE_CATALOG := "res://graphics/objects/houses/houses.json"
 const STORE_CATALOG := "res://graphics/objects/warehouse/sklad.json"
 
+## Přechod cesty přes řeku ubere z hodnocení natočení (_road_score) CROSS_COST_M metrů, šikmý
+## navíc až SKEW_COST_M (podle 1 - |sin| úhlu) a přes řeku širší než WIDE_PX ještě WIDE_COST_M.
+## Vybere se tak natočení s kolmými přechody přes úzkou řeku. Most postaví řeka.
+const CROSS_COST_M := 2.0
+const SKEW_COST_M := 12.0
+const WIDE_PX := 96.0
+const WIDE_COST_M := 10.0
+## Domy a sklady drží od řeky (i s břehem) tolik metrů.
+const RIVER_CLEAR_M := 0.6
 ## Nožka T a půlka příčky na každou stranu, v metrech.
 const STEM_M := 20.0
 const ARM_M := 10.0
@@ -101,6 +114,8 @@ var _palettes: Array[Dictionary] = []
 var _house_shader: Shader
 ## Vesnice chce sklady. Nastaví svět před plan.
 var stores := false
+## Řeka čtverce, už stojí. Domy a sklady se jí vyhnou, cesta ji přejde. Nastaví svět před plan.
+var river
 var _store_info := {}
 var _store_base: Texture2D
 var _store_roof: Texture2D
@@ -279,8 +294,9 @@ func plan(map: MapData, rng: RandomNumberGenerator, layout: String = "") -> void
 	for _try in TURN_TRIES:
 		var turn := rng.randf() * TAU
 		var road := _lay_road(map, turn, rng) if not _patterns.is_empty() else [PackedVector2Array(), PackedVector2Array(), 0.0]
-		if float(road[2]) > best:
-			best = float(road[2])
+		var score := _road_score(road)
+		if score > best:
+			best = score
 			_turn = turn
 			_stem = road[0]
 			_bar = road[1]
@@ -352,8 +368,9 @@ func _plan_layout(map: MapData, rng: RandomNumberGenerator, layout: String) -> v
 	for _try in TURN_TRIES:
 		var turn := rng.randf() * TAU
 		var road := _lay_cross(map, turn, rng) if cross else _lay_road(map, turn, rng, stem_m, arm_m)
-		if float(road[2]) > best:
-			best = float(road[2])
+		var score := _road_score(road)
+		if score > best:
+			best = score
 			_turn = turn
 			_stem = road[0]
 			_bar = road[1]
@@ -363,6 +380,20 @@ func _plan_layout(map: MapData, rng: RandomNumberGenerator, layout: String) -> v
 	_index_road()
 	_place_houses(map, rng, houses_lo, houses_hi)
 	_measure()
+
+
+## Hodnocení cesty [nožka, příčka, délka]: délka bez ceny přechodů přes řeku.
+func _road_score(road: Array) -> float:
+	var score := float(road[2])
+	if river == null or not river.exists():
+		return score
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	for line: PackedVector2Array in [road[0], road[1]]:
+		for crossing: Vector2 in river.crossings(line):
+			score -= (CROSS_COST_M + SKEW_COST_M * (1.0 - crossing.x)) * tile
+			if crossing.y > WIDE_PX:
+				score -= WIDE_COST_M * tile
+	return score
 
 
 ## Kříž 25 m, křižovatka v polovině osy za výdejnou, příčka taky 25 m.
@@ -636,7 +667,8 @@ func _house_solid(info: Dictionary, pos: Vector2, turn: float) -> Solid:
 	return Solid.new(points)
 
 
-## Celý dům na souši, dál od kraje mapy, od cesty, továrny a ostatních domů. Levné zkoušky první.
+## Celý dům na souši, dál od kraje mapy, od cesty, továrny, ostatních domů a od řeky.
+## Levné zkoušky první.
 func _house_fits(map: MapData, solid: Solid) -> bool:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var world := float(map.size) * tile
@@ -665,8 +697,9 @@ func _house_fits(map: MapData, solid: Solid) -> bool:
 		var x := rect.position.x
 		while x <= rect.end.x:
 			var spot := Vector2(x, y)
-			if solid.signed(spot) <= tile * 0.25 and not _land(map, spot):
-				return false
+			if solid.signed(spot) <= tile * 0.25:
+				if not _land(map, spot) or (river != null and river.near(spot, RIVER_CLEAR_M * tile)):
+					return false
 			x += tile * 0.5
 		y += tile * 0.5
 	return true
@@ -692,7 +725,7 @@ static func _vary(color: Color, rng: RandomNumberGenerator, hue: float, sat: flo
 ## Poloměr je půlka vzdálenosti k nejvzdálenějšímu dolu. Trojúhelník se natáčí, dokud se
 ## nevejdou všechny tři. Když to nejde, bere natočení, kde se jich vešlo nejvíc, a sklad,
 ## který se nevejde, posune na nejbližší volné místo. Kde není ani to, sklad chybí.
-## Běží ve vlákně po dolech, před stromy a skálami. Ty se pak skladům vyhnou.
+## Běží ve vlákně po dolech, před stromy. Skály v cestě pak zmizí, stromy se skladům vyhnou.
 func plan_stores(map: MapData, rng: RandomNumberGenerator, mines: PackedVector2Array, mine_reach: float) -> void:
 	_clear_stores()
 	if not stores or _store_info.is_empty() or _center == Vector2.INF or mines.is_empty():
@@ -1196,6 +1229,9 @@ func spawn(camera: MapCamera, road: Node2D, props: Node2D, crystal: Crystal) -> 
 	props.add_child(_factory)
 	_factory.setup(_factory_info, _factory_suits, _factory_ring, _factory_shader, crystal, camera)
 	_factory.configure(_factory_info, suit_plan, suit_recipe, hash(_center))
+	var shadows := Shadows.current as Shadows
+	if shadows != null:
+		_factory.cast_shadows(shadows)
 	_spawn_houses(props)
 	_spawn_stores(props)
 	camera.view_changed.connect(_fit_roofs)
@@ -1286,8 +1322,11 @@ func _spawn_houses(props: Node2D) -> void:
 		node.z_index = 2
 		props.add_child(node)
 		_house_nodes.append(node)
-		_house_sprite(node, info["wall"], 1.0, float(info["wall_height"]), house["colors"])
-		_roofs.append(_house_sprite(node, info["roof"], 0.0, float(info["roof_height"]), house["colors"]))
+		var wall := _house_sprite(node, info["wall"], 1.0, float(info["wall_height"]), house["colors"])
+		var roof := _house_sprite(node, info["roof"], 0.0, float(info["roof_height"]), house["colors"])
+		_roofs.append(roof)
+		if Shadows.current != null:
+			Shadows.current.follow([wall, roof], [float(info["wall_height"]), float(info["roof_height"])], true)
 
 
 ## Vlastní materiál místo instančních uniforem: těch je na celou hru jen pár tisíc.
@@ -1318,13 +1357,16 @@ func _spawn_stores(props: Node2D) -> void:
 		node.rotation = _stores[store]["turn"]
 		props.add_child(node)
 		_store_nodes.append(node)
-		_store_sprite(node, _store_base, layers.get("base", {}))
+		var base := _store_sprite(node, _store_base, layers.get("base", {}))
 		var gems := Node2D.new()
 		gems.name = "Gems"
 		node.add_child(gems)
 		var roof := _store_sprite(node, _store_roof, layers.get("roof", {}))
 		roof.z_index = 2
 		_roofs.append(roof)
+		if Shadows.current != null:
+			var heights := [float((layers.get("base", {}) as Dictionary).get("height", 0.0)), float((layers.get("roof", {}) as Dictionary).get("height", 0.0))]
+			Shadows.current.follow([base, roof], heights, true)
 		_refresh_store(store)
 
 

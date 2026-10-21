@@ -49,20 +49,19 @@ void fragment() {
 		COLOR = vec4(surface, 1.0);
 	} else {
 		float amount = smoothstep(mask_start, 1.0, share);
-		float wavelength = max(wave_scale, 1.0);
-		float phase = dot(world_pos, wave_dir_a) * 6.2831853 / wavelength - TIME * wave_speed;
-		float phase_b = dot(world_pos, wave_dir_b) * 6.2831853 / (wavelength * 0.72) - TIME * wave_speed * 1.17;
-		float phase_c = dot(world_pos, wave_dir_c) * 6.2831853 / (wavelength * 1.35) - TIME * wave_speed * 0.83;
-		float height = (sin(phase) + sin(phase_b) * 0.65 + sin(phase_c) * 0.4) / 2.05;
-		float shift = cos(phase) * wave_swell * amount;
+		vec3 phases = wave_phases(world_pos);
+		float height = wave_height(phases);
+		float shift = cos(phases.x) * wave_swell * amount;
 		if (amount > 0.001) {
 			vec2 shifted_uv = clamp(local_uv + wave_dir_a * shift, vec2(0.001), vec2(0.999));
 			vec2 chunk_uv = clamp(UV + (shifted_uv - local_uv) * tile_size / chunk_px, vec2(0.0), vec2(1.0));
 			vec3 shifted = texture(TEXTURE, chunk_uv).rgb;
 			surface = mix(surface, shifted, smoothstep(mask_start, 1.0, share_at(shifted_uv, packed_ids)));
 		}
-		vec3 band = mix(deep_color, highlight_color, height * 0.5 + 0.5);
-		vec3 color = mix(surface, band, wave_tint * amount);
+		vec3 color = mix(surface, wave_band(height), wave_tint * amount);
+		// Odlesky protažené podél hřebene, plují pomalu s první vlnou.
+		vec2 ridge = vec2(dot(world_pos, vec2(wave_dir_a.y, -wave_dir_a.x)), dot(world_pos, wave_dir_a) - TIME * wave_speed * 6.0);
+		color = mix(color, highlight_color, water_glints(ridge) * glint_strength * amount * (0.5 + 0.5 * height));
 		float crest = smoothstep(0.35, 0.9, 1.0 - (height * 0.5 + 0.5));
 		float center = mix(0.74, 0.66, crest);
 		float half_width = mix(0.035, 0.09, crest);

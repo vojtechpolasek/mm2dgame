@@ -5,6 +5,8 @@ extends Node
 ##
 ## Průběh: load_catalog na hlavním vlákně, plant potomka smí běžet ve vlákně (nesahá na scénu),
 ## spawn zase na hlavním. Uzly vznikají až pro viditelné přihrádky a po skrytí se vrací do zásobníku.
+## Uzel má ve stínech (Shadows) svůj držák se stínem každé vrstvy nad zemí. Vzniká, posouvá
+## se, schovává a zaniká s uzlem.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -12,6 +14,7 @@ const MapData := preload("res://scripts/map_data.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const PropChunks := preload("res://scripts/prop_chunks.gd")
 const Town := preload("res://scripts/town.gd")
+const Shadows := preload("res://scripts/shadows.gd")
 const _SHADER_PATH := "res://shaders/tree_layer.gdshader"
 
 ## Továrna, cesta a domy. Nic se nesází na cestu ani k nim. Nastaví svět před sázením.
@@ -44,6 +47,8 @@ var _grow_map := PackedByteArray()
 var _pools: Array[Array] = []
 ## Uzel v záběru -> číslo druhu.
 var _active := {}
+## Uzel -> držák jeho stínů ve Shadows.current.
+var _shadow_of := {}
 var _material_for_height := {}
 var _tallest := 0.0
 var _reach := 8.0
@@ -211,6 +216,7 @@ func acquire(index: int) -> Node2D:
 	if pool.is_empty():
 		node = _build(kind)
 		_host.add_child(node)
+		_build_shadow(node, kind)
 	else:
 		node = pool.pop_back()
 	node.position = _pos[index]
@@ -222,12 +228,23 @@ func acquire(index: int) -> Node2D:
 		sprite.frame = clampi(_variant[index], 0, sprite.hframes * sprite.vframes - 1)
 	_fit(node, kind)
 	node.visible = true
+	var holder: Node2D = _shadow_of.get(node)
+	if holder != null:
+		holder.position = node.position
+		holder.rotation = node.rotation
+		for child in holder.get_children():
+			var shadow := child as Sprite2D
+			shadow.frame = clampi(_variant[index], 0, shadow.hframes * shadow.vframes - 1)
+		holder.visible = true
 	_active[node] = kind
 	return node
 
 
 func release(index: int, node: Node2D) -> void:
 	node.visible = false
+	var holder: Node2D = _shadow_of.get(node)
+	if holder != null:
+		holder.visible = false
 	_active.erase(node)
 	_pools[_kind[index]].append(node)
 
@@ -241,6 +258,45 @@ func despawn() -> void:
 		for node: Node2D in pool:
 			node.queue_free()
 	_pools.clear()
+	for holder: Node2D in _shadow_of.values():
+		if is_instance_valid(holder):
+			holder.queue_free()
+	_shadow_of.clear()
+
+
+## Stíny vrstev nad zemí nového uzlu. Sprity jdou ve stejném pořadí jako vrstvy (viz _fit).
+func _build_shadow(node: Node2D, kind: int) -> void:
+	var shadows := Shadows.current as Shadows
+	if shadows == null:
+		return
+	var layers: Array = _kinds[kind]["layers"]
+	var heights: Array = []
+	for layer: Dictionary in layers:
+		heights.append(float(layer["height"]))
+	var sweep := Shadows.sweeps(heights, _solid_shadow())
+	var holder: Node2D = null
+	var layer_i := 0
+	for child in node.get_children():
+		var sprite := child as Sprite2D
+		if sprite == null:
+			continue
+		if layer_i >= heights.size():
+			break
+		var height: float = heights[layer_i]
+		if height > 0.0:
+			if holder == null:
+				holder = Node2D.new()
+				shadows.add_child(holder)
+			shadows.shadow_of(sprite, height, sweep[layer_i], holder)
+		layer_i += 1
+	if holder != null:
+		_shadow_of[node] = holder
+
+
+## Je druh plné těleso od země (skála)? Pak se stín vrstev táhne až k patě (Shadows.sweeps).
+## Strom ne: koruna stojí na kmeni a stín má od paty mezeru.
+func _solid_shadow() -> bool:
+	return false
 
 
 func _index_surfaces(terrain_names: PackedStringArray, surfaces: Dictionary) -> void:

@@ -8,6 +8,7 @@ extends Node2D
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
+const Shadows := preload("res://scripts/shadows.gd")
 const Walker := preload("res://scripts/walker.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
@@ -194,6 +195,8 @@ func setup(
 	var listed: Dictionary = info.get("layers", {})
 	var keys: Array = listed.keys()
 	keys.sort_custom(func(a: Variant, b: Variant) -> bool: return int(a) < int(b))
+	var casters: Array = []
+	var cast_heights: Array = []
 	for i in keys.size():
 		var layer: Dictionary = listed[keys[i]]
 		var sprite := Sprite2D.new()
@@ -222,11 +225,19 @@ func setup(
 			# Stín leží na zemi pod postavou, i když tvor letí nad vším.
 			sprite.z_as_relative = false
 			sprite.z_index = 0
+			# Se slunci tvor vrhá stín ze svých vrstev (Shadows), vlastní stín pod sebou nepotřebuje.
+			sprite.visible = Shadows.current == null
+		else:
+			casters.append(sprite)
+			cast_heights.append(height)
 		add_child(sprite)
 		_sprites.append(sprite)
 		_heights.append(height)
 	position = at
 	rotation = _rng.randf() * TAU
+	# Létající tvor je od země odtržený, jeho stín taky.
+	if Shadows.current != null:
+		Shadows.current.follow(casters, cast_heights, not _flying)
 	_pick_target()
 	camera.view_changed.connect(_on_view_changed)
 	_fit(camera.get_viewport_rect().size)

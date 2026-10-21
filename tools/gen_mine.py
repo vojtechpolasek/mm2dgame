@@ -41,8 +41,7 @@ SHIFT_PER_M = 14.0
 MOUTH_SHRINK = 0.7
 # Podíl buněk stěny, které jsou kámen materiálu, po vrstvách od okraje.
 ORE_SHARE = {1: 0.0, 2: 0.3, 3: 0.36, 4: 0.3}
-# Světlo jde zleva shora, stejně jako u skal.
-LIGHT = (-0.63, -0.77)
+# Světlo je kolmo shora a ze všech stran stejné, stejně jako u skal: důl se ve hře otáčí.
 
 
 class Blob:
@@ -238,16 +237,14 @@ def draw_rim(size: int, pit: Pit, rng: random.Random, salt: int) -> Image.Image:
             dist = math.hypot(dx, dy) or 1.0
             ndx = dx / dist
             ndy = dy / dist
-            # Val: hřbet je ve třetině od ústí. Vnitřní svah padá do díry, vnější ven.
+            # Val: hřbet je ve třetině od ústí. Vnitřní svah padá do díry, vnější ven,
+            # hřbet je nejsvětlejší.
             crest = 0.35
             if u < crest:
                 slope = (crest - u) / crest
-                nx, ny = -ndx, -ndy
             else:
                 slope = (u - crest) / (1 - crest)
-                nx, ny = ndx, ndy
-            lit = nx * LIGHT[0] + ny * LIGHT[1]
-            value = 0.82 + 0.3 * lit * slope
+            value = 0.9 - 0.18 * slope
             value *= 0.9 + 0.16 * hash01(x, y, salt)
             value *= 0.92 + 0.14 * hash01(x // 3, y // 3, salt + 7)
             # Hrana ústí tmavne do díry.
@@ -266,7 +263,8 @@ def draw_rim(size: int, pit: Pit, rng: random.Random, salt: int) -> Image.Image:
                 ry = (-ddx * math.sin(tilt) + ddy * math.cos(tilt)) * 1.3
                 if rx * rx + ry * ry > sr * sr:
                     continue
-                side = (ddx * LIGHT[0] + ddy * LIGHT[1]) / sr
+                # Kámen je vypouklý: nahoře světlý, ke kraji tmavne.
+                side = 0.6 - 1.6 * math.sqrt(rx * rx + ry * ry) / sr
                 value = (0.9 + 0.32 * max(-1.0, min(1.0, side))) * bias
                 ore = sore
                 if sore and hash01(x, y, salt + 13) > 0.8:
@@ -278,7 +276,7 @@ def draw_rim(size: int, pit: Pit, rng: random.Random, salt: int) -> Image.Image:
 
 def draw_wall(size: int, pit: Pit, layer: int, rng: random.Random, salt: int) -> Image.Image:
     """Stěna nebo dno: kameny jako Voroného buňky, část z nich je materiál dolu.
-    Hlubší vrstva je tmavší. Stěna svítí, kde se obrací ke světlu, tedy na protější straně."""
+    Hlubší vrstva je tmavší. Stěna je stejná dokola, důl se ve hře otáčí."""
     image = blank(size)
     pixels = image.load()
     outer = pit.outer[layer]
@@ -307,20 +305,13 @@ def draw_wall(size: int, pit: Pit, layer: int, rng: random.Random, salt: int) ->
                 lip = -mouth.edge(px, py)
                 if lip < 0:
                     continue
-            dx = px - outer.cx
-            dy = py - outer.cy
-            dist = math.hypot(dx, dy) or 1.0
-            # Stěna nálevky se dívá do středu: na pravé dolní straně ke světlu.
-            lit = -(dx / dist) * LIGHT[0] - (dy / dist) * LIGHT[1]
-            if floor:
-                lit *= 0.2
             index, near, second = _nearest(cells, px, py)
             cx, cy, bias, roll = cells[index]
             is_ore = roll < share
             border = second - near < 1.1
-            value = (0.62 - 0.2 * depth) * (0.86 + 0.3 * lit)
-            # Kámen je vypouklý: strana ke světlu světlejší.
-            bulge = ((px - cx) * LIGHT[0] + (py - cy) * LIGHT[1]) / 4.0
+            value = (0.62 - 0.2 * depth) * 0.86
+            # Kámen je vypouklý: uprostřed světlejší, ke spáře tmavne.
+            bulge = 0.6 - 1.6 * math.hypot(px - cx, py - cy) / 4.0
             value *= bias * (1.0 + 0.16 * max(-1.0, min(1.0, bulge)))
             value *= 0.92 + 0.14 * hash01(x, y, salt)
             # Pod hranou vrstvy nad ní je stín.
@@ -328,7 +319,7 @@ def draw_wall(size: int, pit: Pit, layer: int, rng: random.Random, salt: int) ->
             if 0 <= under < 5.0:
                 value *= 0.62 + 0.38 * under / 5.0
             if lip < 3.0:
-                value *= 1.0 + 0.18 * (1.0 - lip / 3.0) * max(0.0, lit)
+                value *= 1.0 + 0.08 * (1.0 - lip / 3.0)
             ore = 0.0
             blue = 0.0
             if border:

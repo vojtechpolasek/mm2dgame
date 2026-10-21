@@ -670,15 +670,17 @@ def stroke(canvas: Image.Image, branch: Branch) -> None:
                 edge = (hash01(x, y, branch.salt) - 0.5) * 1.15
                 if dist > radius + edge:
                     continue
-                light = -(dx * 0.45 + dy * 0.9) / max(radius, 0.8)
+                # Světlo kolmo shora: větev je světlá podél osy a ke krajům tmavne, ze všech
+                # stran stejně. Strom se ve hře otáčí.
                 rim = dist / max(radius, 0.8)
                 grain = hash01(x, y, branch.salt + 17)
-                value = 1.0 + 0.16 * light - 0.24 * rim
+                value = 1.0 - 0.24 * rim
                 if grain > 0.94:
                     value *= 0.7
                 wood = shade(branch.color, value)
                 if branch.snow is not None:
-                    up = -dy / max(radius, 0.8)
+                    # Sníh leží na hřbetu větve, podél osy.
+                    up = 1.0 - 2.0 * rim
                     cap = max(0.0, min(1.0, (up + 0.2) / 0.65))
                     cap = cap ** 0.55
                     cap *= 0.88 + 0.12 * hash01(x, y, branch.salt + 41)
@@ -860,12 +862,12 @@ def draw_stump(
             if dist > edge:
                 continue
             grain = hash01(x, y, 3)
-            value = 0.5 + 0.16 * grain - 0.05 * dx - 0.04 * dy
+            value = 0.5 + 0.16 * grain
             if grain > 0.93:
                 value *= 0.78
             wood = shade(color, value)
             if snow is not None:
-                up = max(0.0, -dy)
+                up = max(0.0, 1.0 - dist)
                 cap = 0.7 + 0.3 * up
                 cap *= 0.92 + 0.08 * grain
                 if dist > edge * 0.72:

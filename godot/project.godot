@@ -73,3 +73,7 @@ sparkle_on={
 "type": "float",
 "value": 1.0
 }
+sun_shadow={
+"type": "vec2",
+"value": Vector2(0, 0)
+}

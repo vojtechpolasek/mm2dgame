@@ -5,6 +5,7 @@ extends RefCounted
 ## směry otáčí host. Barvy jsou instance parametry, materiály vrstev sdílí všechny postavy.
 
 const ObjectLayers := preload("res://scripts/object_layers.gd")
+const Shadows := preload("res://scripts/shadows.gd")
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 
 const CATALOG := "res://graphics/characters/person/person.json"
@@ -99,6 +100,8 @@ func build(host: Node2D, walk: bool, cycle_m: float) -> bool:
 	_build_gear(host, info, walk, columns, root, by_key)
 	tint(info.get("colors", {}))
 	set_gear(GEAR_ON_START)
+	if Shadows.current != null:
+		Shadows.current.follow(_sprites + _gear_sprites, Array(_heights + _gear_heights), true)
 	var hold_info: Dictionary = info.get("hold", {})
 	_hold_texture = load("%s/%s" % [root, str(hold_info.get("file", ""))]) as Texture2D
 	if _hold_texture == null:

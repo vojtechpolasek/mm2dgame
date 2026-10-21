@@ -84,23 +84,46 @@ var mine_plan := PackedInt32Array()
 ## Pás dolů jednoho materiálu kolem továrny je široký nejvýš tolik metrů. Záporné nechá
 ## pásy roztáhnout po celé mapě.
 var band_max := -1.0
+## Kruhy (střed x, y a poloměr v px), kam nesmí zasahovat pata skály: vtok řeky od souseda
+## musí zůstat průchozí (River.clear_spots). Nastaví svět před sázením.
+var keep_clear := PackedVector3Array()
+## Řeka čtverce. Doly se jí a jejím prameništím vyhnou. Nastaví svět před plant_town.
+var river
 
 
-## Továrna, cesta a domy (town) už stojí. Nejdřív doly kolem továrny, podle nich sklady
-## (jen když je town chce), potom skály podle povrchu. Stromy se sází až potom. Nesahá
-## na scénu, smí běžet ve vlákně.
+## Přírodní skály podle povrchu, hned po terénu. Řeka je pak obteče a postaví k nim
+## prameniště. Nesahá na scénu, smí běžet ve vlákně.
 func plant(map: MapData, rng: RandomNumberGenerator) -> void:
 	_pond_kind = int(_kind_of[MINE]) if _kind_of.has(MINE) else -1
 	if _kinds.is_empty():
 		return
 	_begin_plant(map)
+	_scatter(map, rng)
+
+
+## Doly a sklady, až stojí řeka a továrna, cesta a domy (town). Doly v pásech kolem továrny
+## mimo řeku, podle nich sklady (jen když je town chce). Přírodní skála, která by překážela
+## vesnici, dolu nebo skladu, zmizí. Prameniště zůstanou, vesnice i doly se jim vyhnou.
+## Bez továrny nedělá nic. Stromy se sází až potom.
+func plant_town(map: MapData, rng: RandomNumberGenerator) -> void:
+	if _kinds.is_empty() or town == null or town.center() == Vector2.INF:
+		return
+	var pos := _pos.duplicate()
+	var kind := _kind.duplicate()
+	var variant := _variant.duplicate()
+	var turn := _turn.duplicate()
+	_begin_plant(map)
 	_place_ponds(map, rng)
-	if town != null and town.stores:
+	if town.stores:
 		var mines := PackedVector2Array()
 		for index in _pond_rock:
 			mines.append(_pos[index])
 		town.plan_stores(map, rng, mines, _kind_foot[_pond_kind] if _pond_kind >= 0 else 0.0)
-	_scatter(map, rng)
+	for index in pos.size():
+		if _is_spring(kind[index]) or _fits(pos[index], kind[index], map):
+			_keep_shaped(kind[index], pos[index], variant[index], turn[index])
+	# Puklina při kontrole místa vybrala tvar, ten se tu nepoužije.
+	_shaped_kind = -1
 
 
 func bind_crystal(crystal: Crystal) -> void:
@@ -242,12 +265,18 @@ func _pond_site(map: MapData, pos: Vector2) -> bool:
 		return false
 	if _walkable[map.terrain[y * map.size + x]] != 1:
 		return false
+	if river != null and river.near(pos, _kind_foot[_pond_kind]):
+		return false
 	return _fits(pos, _pond_kind, map)
 
 
-## Rozestup podle povrchu a k tomu mimo cestu, továrnu a domy. Skála nesmí ležet na kmeni
-## a od pukliny drží CRACK_GAP_M. Puklina se zkouší po celé délce, viz _crack_fits.
+## Mimo kruhy keep_clear, rozestup podle povrchu a k tomu mimo cestu, továrnu a domy. Skála
+## nesmí ležet na kmeni a od pukliny drží CRACK_GAP_M. Puklina se zkouší po celé délce, viz _crack_fits.
 func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
+	for spot in keep_clear:
+		var reach := spot.z + _kind_foot[kind]
+		if pos.distance_squared_to(Vector2(spot.x, spot.y)) < reach * reach:
+			return false
 	if _is_crack(kind):
 		return super._fits(pos, kind, map) and _crack_fits(pos, kind, map)
 	if not super._fits(pos, kind, map) or _in_town(pos, _kind_foot[kind]):
@@ -383,6 +412,11 @@ func acquire(index: int) -> Node2D:
 	if slot >= 0 and _is_mine(_kind[index]):
 		_paint_mine(node, _kind[index], _pond_mat[slot])
 	return node
+
+
+## Skála je plná od země, její stín se od paty neodtrhne.
+func _solid_shadow() -> bool:
+	return true
 
 
 func _is_mine(kind: int) -> bool:

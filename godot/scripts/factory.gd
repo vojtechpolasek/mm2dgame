@@ -217,6 +217,11 @@ func lift(deck: float, ring: float) -> void:
 	_fit()
 
 
+## Stíny plošiny a mezikruží ve výškách z lift. Volá se po lift.
+func cast_shadows(shadows) -> void:
+	shadows.follow([_base, _ring], [_deck_height, _ring_height], true)
+
+
 ## Výška plošiny v metrech. Tam dopadají hozené kameny.
 func deck_height() -> float:
 	return _deck_height

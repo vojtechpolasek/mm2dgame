@@ -526,15 +526,14 @@ static func _shrink_to_share(
 ## Okraj mapy se počítá jako břeh, odtud se voda taky smí ubírat.
 ## Voda blíž ke středu než radius převezme terén sousední souše, od kraje kruhu dovnitř.
 ## Kde souš v dosahu není, zůstane tráva.
-static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size: int, liquid: int, fallback: int, radius: float) -> void:
+static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size: int, liquid: int, fallback: int, radius: float, center := Vector2(-1.0, -1.0)) -> void:
 	if liquid < 0:
 		return
-	var center := Vector2(float(size), float(size)) * 0.5
-	var lo := maxi(int(center.x - radius) - 1, 0)
-	var hi := mini(int(center.x + radius) + 1, size - 1)
+	if center.x < 0.0:
+		center = Vector2(float(size), float(size)) * 0.5
 	var pending := PackedInt32Array()
-	for y in range(lo, hi + 1):
-		for x in range(lo, hi + 1):
+	for y in range(maxi(int(center.y - radius) - 1, 0), mini(int(center.y + radius) + 1, size - 1) + 1):
+		for x in range(maxi(int(center.x - radius) - 1, 0), mini(int(center.x + radius) + 1, size - 1) + 1):
 			var index := y * size + x
 			if terrain[index] != liquid:
 				continue
@@ -551,6 +550,13 @@ static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size
 static func clear_disk(map: MapData, radius: float) -> void:
 	var land := map.land if map.land >= 0 else maxi(map.names.find("grass"), 0)
 	_clear_center(map.terrain, map.cost, map.size, map.names.find("water"), land, radius)
+
+
+## Voda v kruhu kolem center (v dlaždicích) se změní na souš. Pro vtok řeky od souseda,
+## ať k němu řeka dojde.
+static func clear_circle(map: MapData, center: Vector2, radius: float) -> void:
+	var land := map.land if map.land >= 0 else maxi(map.names.find("grass"), 0)
+	_clear_center(map.terrain, map.cost, map.size, map.names.find("water"), land, radius, center)
 
 
 ## Za krajem mapy je souš, pokud tam ring nemá stejnou vodu od souseda.

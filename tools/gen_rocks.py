@@ -62,7 +62,9 @@ EDGE_SHIFT = (480.0 * PARALLAX, 260.0 * PARALLAX)
 # menší, protože hrboly díru stáhnou dovnitř skály.
 # snow je barva čepice. Leží na vrchní ploše a na římse, spodní obruba zůstane kámen.
 # Vyšší vrstva má sněhu víc.
-# moss je barva mechu. Roste ve skvrnách, hlavně nahoře a na stinné straně.
+# moss je barva mechu. Roste ve skvrnách, hlavně nahoře a ve stínu u kraje vrstvy.
+# Světlo je kolmo shora a ze všech stran stejné, skály se ve hře náhodně otáčejí. Stín
+# na zemi do obrázku nepatří, ten kreslí hra.
 # columns je průměr sloupu v px: vrchní plochy se rozpadnou na sloupy oddělené spárami (čedič).
 # fallen je padlý strom, kreslí ho gen_fallen.py: pařez a stín kmene na zemi, ležící kmen
 # a koruna. length a crown jsou rozsahy délky kmene a dosahu koruny v px, kmen je o pětinu
@@ -418,8 +420,8 @@ def soft_noise(x: float, y: float, scale: float, salt: int) -> float:
     return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
 
 
-def moss_amount(x: int, y: int, wy: float, lit: float, cap: float, salt: int) -> float:
-    """Podíl mechu: skvrny ze šumu, víc na vrchní ploše a na stinné straně."""
+def moss_amount(x: int, y: int, lit: float, cap: float, salt: int) -> float:
+    """Podíl mechu: skvrny ze šumu, víc na vrchní ploše a ve stínu u kraje vrstvy."""
     patch = soft_noise(x, y, 9.0, salt) * 0.7 + soft_noise(x, y, 3.5, salt + 5) * 0.3
     grows = 0.35 + 0.45 * cap + 0.3 * (1 - lit)
     edge = 0.62 - 0.22 * grows
@@ -750,13 +752,12 @@ def pond_pixel(
     color: tuple[int, int, int],
     salt: int,
 ) -> tuple[int, int, int, int]:
-    """Plocha vody. Ke středu tmavší, u kraje světlejší pruh, ať drží i bez shaderu."""
+    """Plocha vody. Ke středu tmavší, u kraje světlejší pruh, ať drží i bez shaderu.
+    Bez směru světla, skála se ve hře otáčí."""
     dx = x + 0.5 - shape.cx
     dy = y + 0.5 - shape.cy
     dist = math.hypot(dx, dy) / max(radius, 1.0)
-    light = max(-1.0, min(1.0, (-0.45 * dx - 0.35 * dy) / max(radius, 1.0)))
     value = 0.78 + 0.2 * dist * dist
-    value *= 0.9 + 0.18 * (light * 0.5 + 0.5)
     value *= 0.97 + 0.06 * hash01(x, y, salt + 5)
     if dist > 0.78:
         value *= 1 + 0.16 * (dist - 0.78) / 0.22
@@ -764,13 +765,13 @@ def pond_pixel(
     return (*shade(color, value), 255)
 
 
-def snow_amount(wy: float, covered: float, above_t: float | None, strength: float) -> float:
-    """Podíl sněhu na pixelu. covered 0 je střed vrstvy, wy > 0 míří dolů po obrazovce.
+def snow_amount(covered: float, above_t: float | None, strength: float) -> float:
+    """Podíl sněhu na pixelu. covered 0 je střed vrstvy, 1 její kraj.
 
-    Čepice kryje horní plochu a odhalenou římsu. Spodní obruba a tenký kraj obrysu
-    zůstanou kámen, ať skála nesplyne se sněhem.
+    Čepice kryje horní plochu a odhalenou římsu. Obruba dokola a tenký kraj obrysu
+    zůstanou kámen, ať skála nesplyne se sněhem. Ze všech stran stejně, skála se otáčí.
     """
-    skirt = max(0.0, min(1.0, (wy - 0.02) / 0.85))
+    skirt = max(0.0, min(1.0, (covered - 0.45) / 0.55)) * 0.5
     rim = max(0.0, min(1.0, (covered - 0.82) / 0.18))
     if above_t is not None and above_t < 1.08:
         return 0.0
@@ -852,9 +853,9 @@ def draw_layer(
                     pixels[x, y] = pond_pixel(x, y, shape, pond.radius, pond.color, salt)
                     continue
 
-            wx = (x + 0.5 - shape.cx) / max(shape.rx, 1.0)
-            wy = (y + 0.5 - shape.cy) / max(shape.ry, 1.0)
-            light = max(-1.0, min(1.0, -0.7 * wx - 0.86 * wy))
+            # Světlo kolmo shora, ze všech stran stejně (skála se ve hře otáčí):
+            # střed vrstvy je světlejší, kraj, kde se plocha láme dolů, tmavší.
+            light = max(-1.0, min(1.0, 0.9 - 1.6 * covered))
             lit = light * 0.5 + 0.5
             grain = 0.9 + 0.16 * hash01(x, y, salt)
             grain *= 0.9 + 0.22 * hash01(x // 4, y // 4, salt + 9)
@@ -872,7 +873,7 @@ def draw_layer(
                     brightness = bias
                 elif dist < second:
                     second = dist
-            # Světlo jde zleva shora. Vršek je světlejší, odhalená stěna pod ním tmavší.
+            # Vršek je světlejší, odhalená stěna pod ním tmavší.
             value = (0.74 + 0.22 * lit) * brightness * grain
             relief = 0.0
             for bx, by, br, strength in bumps:
@@ -882,7 +883,8 @@ def draw_layer(
                 if dist >= 1:
                     continue
                 dome = (1 - dist * dist) * strength
-                side = max(-1.0, min(1.0, -(dx + dy) / br))
+                # Hrbol svítí nahoře a tmavne po celém obvodu.
+                side = 0.6 - 1.6 * dist
                 relief += dome * (0.28 + 0.8 * side)
             if relief:
                 if pond is not None and pond.dry and not pond.hole and inside_mouth:
@@ -907,12 +909,12 @@ def draw_layer(
             if (x, y) in cracks:
                 value *= 0.62
             if columns:
-                # Spára mezi sloupy: tmavá, se světlou hranou na straně ke světlu.
+                # Spára mezi sloupy: tmavá, se světlou hranou po obou stranách.
                 gap = math.sqrt(second) - math.sqrt(best)
                 if gap < 1.4:
                     value *= 0.5
-                elif gap < 2.6 and light > 0:
-                    value *= 1.1
+                elif gap < 2.6:
+                    value *= 1.06
             if pond is not None and pond.dry and not pond.hole and inside_mouth:
                 value *= 0.9
             if pond is not None and mouth_out > 0.0 and not (pond.dry and not pond.hole):
@@ -931,7 +933,7 @@ def draw_layer(
             value = min(1.15, max(0.4, value))
             rgb = shade(color, value)
             if snow is not None:
-                cap = snow_amount(wy, covered, None if above is None else above_t, snow_strength)
+                cap = snow_amount(covered, None if above is None else above_t, snow_strength)
                 cap *= 0.78 + 0.22 * hash01(x, y, salt + 29)
                 if hash01(x, y, salt + 31) > 0.93:
                     cap *= 0.4
@@ -940,8 +942,8 @@ def draw_layer(
                 if cap > 0.03:
                     rgb = mix_rgb(rgb, shade(snow, min(1.12, 0.9 + 0.16 * value)), cap)
             if moss is not None:
-                cap = snow_amount(wy, covered, None if above is None else above_t, 1.0)
-                amount = moss_amount(x, y, wy, lit, cap, salt + 41)
+                cap = snow_amount(covered, None if above is None else above_t, 1.0)
+                amount = moss_amount(x, y, lit, cap, salt + 41)
                 if amount > 0.03:
                     tuft = 0.86 + 0.28 * hash01(x, y, salt + 43)
                     rgb = mix_rgb(rgb, shade(moss, min(1.2, (0.7 + 0.4 * value) * tuft)), amount)
@@ -1104,7 +1106,9 @@ def rock_info(rocks: dict) -> dict:
         }
         size = max(layer_cells.values())
         variants = int(preset.get("variants", 9))
-        outline = foot_outline(OUT_DIR / name / "layer_1.png", variants, ATLAS_COLUMNS)
+        # Padlý strom má na zemi jen pařez, obrys (pro mapu v rohu) dává ležící kmen.
+        foot = 2 if preset.get("fallen") else 1
+        outline = foot_outline(OUT_DIR / name / f"layer_{foot}.png", variants, ATLAS_COLUMNS)
         catalog[name] = {
             "variants": int(preset.get("variants", 9)),
             "canvas": size,

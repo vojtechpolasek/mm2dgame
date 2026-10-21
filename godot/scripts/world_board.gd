@@ -19,6 +19,8 @@ extends Node
 ## postaví stejně, jako když se načítá uložená hra.
 ## Průlet v menu (start_flyover): stejná krajina, bez postavy. Kamera jede stálou rychlostí
 ## šikmo nahoru doprava a podle ní se otevírají další čtverce. Nic se neukládá.
+## Den a noc (DayNight): slunce a měsíc obíhají, objekty vrhají stíny (Shadows) a v noci
+## se svět ztmaví. Denní doba se ukládá s hrou.
 ## Hra se ukládá sama (SuitSaves): každých SAVE_EVERY sekund, po splnění levelu a při odchodu.
 ## Uloží se mapy všech hotových čtverců, kameny ve skladech všech čtverců a přesný stav levelu:
 ## postavy a co nesou, zásobníky továrny, vesničané a příšery jeho čtverce. Po načtení se hraje
@@ -48,6 +50,8 @@ const GroundDecor := preload("res://scripts/ground_decor.gd")
 const SquareAir := preload("res://scripts/square_air.gd")
 const River := preload("res://scripts/river.gd")
 const MiniMap := preload("res://scripts/minimap.gd")
+const Shadows := preload("res://scripts/shadows.gd")
+const DayNight := preload("res://scripts/day_night.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
@@ -60,6 +64,9 @@ const START_BANNED: PackedStringArray = ["swamp", "water"]
 const APPROACH := 32.0
 ## Kolem továrny se voda vysuší, ať nestojí v jezeře. Kraj čtverce to nemění.
 const CLEAR := 12.0
+## Řeka drží od středu továrny tolik metrů: továrna, výstupek a začátek cesty. Dál ji
+## cesta přejde po mostě a domy, doly a sklady se jí vyhnou.
+const RIVER_CLEAR := 7.0
 ## Střed dolu neblíž ke kraji než tolik metrů. Ústí dolu zůstane na mapě.
 const EDGE := 2.0
 const WATER_CELL := 4
@@ -96,6 +103,9 @@ var _rivers: Node2D
 var _decor: Node2D
 var _decor_kit := {}
 var _props: Node2D
+## Stíny objektů mezi porostem a objekty, a den s nocí.
+var _shadows: Shadows
+var _day: DayNight
 var _chunks: PropChunks
 var _hud: Hud
 var _party: Party
@@ -179,6 +189,9 @@ class Square:
 	## Stav rng po nakreslení terénu. Odtud se sází továrna, skály a stromy, takže čtverec
 	## jde z uložené mapy postavit znovu stejně.
 	var plan_state := 0
+	## Řeky přes kraj (River.plan): open, bity stran bez mapy souseda, a inlets, vtoky
+	## hotových sousedů. Platí, jak byly při tvoření, ukládají se s mapou.
+	var river_links := {}
 	## Uložená mapa (_record), ze které se čtverec staví místo tvoření.
 	var saved := {}
 	## _record zabalený pro soubor uložení a jeho délka před zabalením. Mapa se po vytvoření
@@ -234,6 +247,14 @@ func start(host) -> void:
 	_props.y_sort_enabled = true
 	_host.add_child(_props)
 	_host.move_child(_props, _decor.get_index() + 1)
+	_shadows = Shadows.new()
+	_shadows.name = "Shadows"
+	_host.add_child(_shadows)
+	_host.move_child(_shadows, _props.get_index())
+	_day = DayNight.new()
+	_day.name = "DayNight"
+	_host.add_child(_day)
+	_day.setup(_camera, _shadows)
 	_chunks = PropChunks.new()
 	_chunks.name = "PropChunks"
 	_chunks.setup(_camera)
@@ -259,6 +280,9 @@ func tick(delta: float) -> void:
 	_dispatch()
 	if not _opened:
 		return
+	_day.advance(delta)
+	if _hud != null:
+		_hud.set_sky(_day.phase)
 	if _flyover:
 		_drift(delta)
 		_consider(_camera.position)
@@ -369,6 +393,7 @@ func _enqueue(coord: Vector2i, saved: Dictionary = {}) -> void:
 		sq.layout = str(saved["layout"])
 		sq.level = int(saved["level"])
 		sq.plan_state = int(saved["plan_state"])
+		sq.river_links = saved.get("river", {})
 		sq.saved = saved
 	sq.rocks = Rocks.new()
 	sq.forest = Forest.new()
@@ -444,6 +469,7 @@ func _dispatch() -> void:
 			continue
 		var ring := _ring_of(coord)
 		var fixed := _fixed_vertices(coord)
+		sq.river_links = _river_links(coord)
 		sq.task = WorkerThreadPool.add_task(_generate.bind(sq, ring, fixed), true, "Čtverec")
 
 
@@ -487,6 +513,26 @@ func _ring_of(coord: Vector2i) -> PackedByteArray:
 	return ring
 
 
+## Řeky přes kraje čtverce: strany, za kterými ještě není mapa (rameno odtud smí přitékat,
+## soused ho pak dovede od pramene), a vtoky hotových sousedů na společných krajích.
+func _river_links(coord: Vector2i) -> Dictionary:
+	var open := 0
+	var inlets: Array = []
+	for side in River.SIDES.size():
+		var at: Vector2i = coord + River.SIDES[side]
+		var other := _built(at)
+		if other != null:
+			for exit: Dictionary in other.river.exits:
+				if River.SIDES[int(exit["side"])] == -River.SIDES[side]:
+					inlets.append({"side": side, "at": exit["at"], "width": exit["width"]})
+			continue
+		var known := _square(at)
+		if _parked.has(at) or (known != null and not known.saved.is_empty()):
+			continue
+		open |= 1 << side
+	return {"open": open, "inlets": inlets}
+
+
 ## Vrcholy terénu na krajích, které už nakreslil soused. Převezmou se beze změny, jinak by
 ## každá strana kreslila přechod jinak a na kraji by byl vidět řez.
 func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
@@ -514,6 +560,10 @@ func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> voi
 	map.surfaces = _catalog.surfaces
 	if sq.layout != "empty":
 		MapGenerator.clear_disk(map, CLEAR)
+	# U vtoku řeky od souseda je souš, jinak by řeka skončila na kraji.
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	for spot in River.clear_spots(sq.river_links.get("inlets", []), _side):
+		MapGenerator.clear_circle(map, Vector2(spot.x, spot.y) / tile, spot.z / tile)
 	sq.painted = MapGenerator.corner_data(map, sq.rng, _catalog.variant_count, fixed)
 	sq.plan_state = sq.rng.state
 	_furnish(sq, map)
@@ -559,16 +609,30 @@ func _record(sq: Square) -> Dictionary:
 		"vertex": sq.painted["vertex"],
 		"variants": sq.painted["variants"],
 		"halo": [sq.map.halo_w, sq.map.halo_e, sq.map.halo_n, sq.map.halo_s],
+		"river": sq.river_links,
 	}
 
 
+## Čtverec po terénu, jako by rostl: přírodní skály, řeky mezi nimi, vesnice (domy a sklady
+## mimo řeku, cesta přes ni po mostě), doly, nakonec stromy a porost. Co by vesnici nebo
+## dolům překáželo, zmizí, řeka zůstane. Místo pro továrnu (RIVER_CLEAR) řeka obteče.
 func _furnish(sq: Square, map: MapData) -> void:
-	sq.town.plan(map, sq.rng, sq.layout)
+	var inlets: Array = sq.river_links.get("inlets", [])
+	sq.rocks.keep_clear = River.clear_spots(inlets, map.size)
 	sq.rocks.plant(map, sq.rng)
-	# Řeka po skalách (pramení u nich) a před stromy, ty ji obejdou. Vlastní náhoda, ať
-	# nemění, co se losuje po ní.
+	# Řeka má vlastní náhodu, ať nemění, co se losuje po ní.
 	sq.river = River.new()
-	sq.river.plan(map, sq.rocks, sq.town, hash(sq.plan_state) + 1, sq.painted["vertex"])
+	var reserve := Vector3.ZERO
+	if sq.layout != "empty":
+		var middle := float(map.size * TerrainCatalog.TILE_SIZE) * 0.5
+		reserve = Vector3(middle, middle, RIVER_CLEAR * TerrainCatalog.TILE_SIZE)
+	var open := int(sq.river_links.get("open", 0))
+	sq.river.plan(map, sq.rocks, reserve, hash(sq.plan_state) + 1, sq.painted["vertex"], open, inlets)
+	sq.town.river = sq.river
+	sq.town.plan(map, sq.rng, sq.layout)
+	sq.rocks.river = sq.river
+	sq.rocks.plant_town(map, sq.rng)
+	sq.river.place_bridges(sq.town)
 	sq.forest.river = sq.river
 	sq.forest.plant(map, sq.rng, sq.rocks)
 	# Porost má vlastní náhodu, ať nemění, co se losuje po něm.
@@ -622,7 +686,7 @@ func _finish_step() -> void:
 			add_child(sq.forest)
 			sq.forest.spawn(_camera, _props, _chunks)
 		4:
-			sq.river.spawn(_rivers, sq.origin)
+			sq.river.spawn(_rivers, sq.origin, _catalog.water_material)
 			sq.decor.spawn(_decor_kit, _decor, sq.origin)
 		_:
 			_finishing.remove_at(0)
@@ -1153,6 +1217,7 @@ func _load(data: Dictionary) -> void:
 	_level = int(data.get("level", 1))
 	_time = float(data.get("time", 0.0))
 	_level_time = float(data.get("level_time", 0.0))
+	_day.phase = float(data.get("day", DayNight.START))
 	_active = data.get("active", Vector2i.ZERO)
 	_locked = bool(data.get("locked", true))
 	_levels = data.get("levels", {Vector2i.ZERO: 1})
@@ -1465,6 +1530,7 @@ func _snapshot() -> Dictionary:
 		"level": _level,
 		"time": _time,
 		"level_time": _level_time,
+		"day": _day.phase,
 		"active": _active,
 		"locked": _locked,
 		"levels": _levels,

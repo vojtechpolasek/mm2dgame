@@ -1,9 +1,9 @@
 extends Control
 
 ## Údaje hry v horních rozích a okno na konci hry. Sám nic nepočítá, svět mu říká, co ukázat.
-## Vlevo mapa objeveného světa (MiniMap), vždy vidět. Vpravo level, kolik kamenů je
-## v zásobnících továrny a malým písmem čas hry, vedle logo „MM“, tlačítko menu. Pod nimi
-## co nese každý hráč (kroužek v barvě jeho trika).
+## Vlevo mapa objeveného světa (MiniMap), vždy vidět. Vpravo obzor se sluncem nebo měsícem
+## (SkyDial, vždy vidět), level, kolik kamenů je v zásobnících továrny a malým písmem čas hry,
+## vedle logo „MM“, tlačítko menu. Pod nimi co nese každý hráč (kroužek v barvě jeho trika).
 ## Panely mají styl panelů menu. Okno konce hry běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
@@ -82,6 +82,7 @@ var _menu_button: Button
 var _right_column: VBoxContainer
 var _right: HBoxContainer
 var _score_panel: PanelContainer
+var _sky: SkyDial
 var _map_panel: PanelContainer
 var minimap: MiniMap
 var _pause: PauseMenu
@@ -144,6 +145,11 @@ func set_progress(done: int) -> void:
 
 
 ## Uběhlý čas hry.
+## Den a noc: phase jako DayNight.phase, 0 východ slunce, 0.5 východ měsíce.
+func set_sky(phase: float) -> void:
+	_sky.set_phase(phase)
+
+
 func set_time(seconds: float) -> void:
 	var whole := maxi(floori(seconds), 0)
 	if whole == _shown_seconds:
@@ -291,6 +297,12 @@ func _build_right() -> void:
 	_right.add_theme_constant_override("separation", 10)
 	_right.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_right_column.add_child(_right)
+	var sky_panel := _panel()
+	_sky = SkyDial.new()
+	_sky.custom_minimum_size = Vector2(84, BAR_HEIGHT - 10.0)
+	_sky.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sky_panel.add_child(_sky)
+	_right.add_child(sky_panel)
 	_score_panel = _panel()
 	_right.add_child(_score_panel)
 	_corners.append(_score_panel)
@@ -592,6 +604,48 @@ class ClockIcon:
 		draw_arc(center, radius, 0.0, TAU, 24, color, 1.5, true)
 		draw_line(center, center + Vector2(0, -radius * 0.65), color, 1.5, true)
 		draw_line(center, center + Vector2(radius * 0.5, 0), color, 1.5, true)
+
+
+## Náčrt obzoru: oblouk, po kterém jde ve dne slunce a v noci měsíc. Vychází vpravo,
+## nahoře je poledne (půlnoc), zapadá vlevo.
+class SkyDial:
+	extends Control
+
+	const LINE := Color(0.95, 0.93, 0.88, 0.55)
+	const PATH := Color(0.95, 0.93, 0.88, 0.22)
+	const GROUND := Color(0.95, 0.93, 0.88, 0.08)
+	const SUN := Color(0.98, 0.78, 0.3)
+	const MOON := Color(0.82, 0.88, 1.0)
+	const CRATER := Color(0.62, 0.7, 0.86)
+
+	var _phase := 0.0
+
+	func set_phase(phase: float) -> void:
+		# Překreslí se, až se slunce posune aspoň o kus (asi o pixel oblouku).
+		if absf(phase - _phase) < 0.0015:
+			return
+		_phase = phase
+		queue_redraw()
+
+	func _draw() -> void:
+		var horizon := size.y - 6.0
+		var radius := minf(size.x * 0.5 - 8.0, horizon - 6.0)
+		var center := Vector2(size.x * 0.5, horizon)
+		draw_rect(Rect2(Vector2(2.0, horizon), Vector2(size.x - 4.0, size.y - horizon)), GROUND)
+		draw_arc(center, radius, PI, TAU, 40, PATH, 1.5, true)
+		draw_line(Vector2(2.0, horizon), Vector2(size.x - 2.0, horizon), LINE, 1.5, true)
+		var along := fposmod(_phase * 2.0, 1.0)
+		var angle := PI * along
+		var at := center + Vector2(cos(angle), -sin(angle)) * radius
+		if _phase < 0.5:
+			for ray in 8:
+				var dir := Vector2.from_angle(TAU * float(ray) / 8.0)
+				draw_line(at + dir * 7.0, at + dir * 9.5, SUN, 1.5, true)
+			draw_circle(at, 5.5, SUN)
+		else:
+			draw_circle(at, 5.5, MOON)
+			draw_circle(at + Vector2(-1.6, -1.2), 1.3, CRATER)
+			draw_circle(at + Vector2(1.8, 1.4), 1.0, CRATER)
 
 
 ## Kroužek, do kterého se kreslí nesený kámen. Obrys má barvu trika hráče, prázdný je tlumenější.

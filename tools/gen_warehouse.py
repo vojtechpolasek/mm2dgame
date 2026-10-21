@@ -96,10 +96,12 @@ TINTS_ROOF = (
     FACTORY_RING[2],  # lem a spáry
 )
 
-# Směry ramen: východ, jih, západ, sever (jih je +y). Světlo jako u domečků.
+# Směry ramen: východ, jih, západ, sever (jih je +y).
 DIRS = ((1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0))
-# Jehlan potřebuje větší rozdíl ploch než došek domečků, jinak splývá v jednu desku.
-FACE_LIGHT = {"south": 1.0, "east": 0.8, "west": 0.7, "north": 0.56}
+# Světlost ploch jehlanu. Všechny stejné, sklad se ve hře otáčí. Plochy dělí nárožní lišty
+# a tmavnutí od vrcholu k okapu (ROOF_FALL).
+FACE_LIGHT = 0.765
+ROOF_FALL = 0.22
 
 
 def m(meters: float) -> float:
@@ -239,19 +241,11 @@ def paint_roof(x0: np.ndarray, y0: np.ndarray, salt: int = 0) -> Mask:
     roof = big <= rh
     down = big / rh  # 0 na vrcholu, 1 u okapu
     ns = ay >= ax
-    sides = {
-        "south": ns & (y > 0),
-        "north": ns & (y <= 0),
-        "east": ~ns & (x > 0),
-        "west": ~ns & (x <= 0),
-    }
-    bias = np.ones_like(x)
-    for name, where in sides.items():
-        bias = np.where(where, FACE_LIGHT[name], bias)
+    bias = np.full_like(x, FACE_LIGHT)
     across = np.where(ns, x, y)
     rib = 0.5 + 0.5 * np.sin(across / m(RIB_PITCH) * math.tau)
     weather = 0.9 + 0.16 * fbm(x, y, m(0.9), 623 + salt)
-    shade = bias * (0.58 + 0.24 * rib) * weather * (0.92 + 0.1 * down)
+    shade = bias * (0.58 + 0.24 * rib) * weather * (1.08 - ROOF_FALL * down)
     mask.fill(roof, PLATE, shade)
 
     # Rez stéká po spádu, víc u okapu.

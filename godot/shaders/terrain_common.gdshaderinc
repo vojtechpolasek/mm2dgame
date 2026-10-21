@@ -1,11 +1,13 @@
 // Společné uniformy a funkce terénu. Předpéká je terrain_bake (souš a břehy do textur chunků)
-// a terrain_water (animovaná voda nad předpečenou texturou).
+// a terrain_water (animovaná voda nad předpečenou texturou). Vzhled vody (vlny, odlesky,
+// textura vody ve světě) z něj bere i řeka (river.gdshader), ať vypadá jako jezero.
 uniform sampler2DArray terrains : source_color, filter_linear_mipmap, repeat_disable;
 uniform sampler2D corner_map : filter_nearest, repeat_disable;
 uniform sampler2D variant_map : filter_nearest, repeat_disable;
 uniform float map_size = 64.0;
 uniform float tile_size = 64.0;
 uniform float atlas_columns = 4.0;
+uniform float variant_count = 16.0;
 uniform int water_index = 3;
 uniform float shore_style[16];
 
@@ -38,6 +40,10 @@ uniform vec2 wave_dir_a = vec2(-0.5, 0.866);
 uniform vec2 wave_dir_b = vec2(-0.995, -0.103);
 uniform vec2 wave_dir_c = vec2(-0.218, -0.976);
 uniform float mask_start = 0.7;
+// Odlesky na hladině: protáhlé světlé skvrny dlouhé asi glint_scale px, síla glint_strength.
+// Na jezeře plují pomalu s vlnou, na řece s proudem.
+uniform float glint_scale = 36.0;
+uniform float glint_strength = 0.4;
 
 
 // Hash bez sinu (Dave Hoskins). sin velkého čísla ztrácí přesnost na velkých mapách.
@@ -256,4 +262,42 @@ vec3 apply_shore(vec3 color, float share, float shore_kind, vec2 world_pos) {
 	float end_share = ice_to + shift * 1.4;
 	float gate = 0.3 + 0.7 * noise;
 	return mix(color, ice_color, hump(share, start, end_share) * ice_strength * gate);
+}
+
+
+// --- Voda: jezero (terrain_water) i řeka (river) ---
+
+// Fáze tří vln jezera v bodě světa.
+vec3 wave_phases(vec2 world) {
+	float wavelength = max(wave_scale, 1.0);
+	return vec3(
+		dot(world, wave_dir_a) * 6.2831853 / wavelength - TIME * wave_speed,
+		dot(world, wave_dir_b) * 6.2831853 / (wavelength * 0.72) - TIME * wave_speed * 1.17,
+		dot(world, wave_dir_c) * 6.2831853 / (wavelength * 1.35) - TIME * wave_speed * 0.83
+	);
+}
+
+// Výška vlny z fází, -1 až 1.
+float wave_height(vec3 phases) {
+	return (sin(phases.x) + sin(phases.y) * 0.65 + sin(phases.z) * 0.4) / 2.05;
+}
+
+// Barva vlny: v údolí tmavá, na hřebeni světlá.
+vec3 wave_band(float height) {
+	return mix(deep_color, highlight_color, height * 0.5 + 0.5);
+}
+
+// Odlesky 0 až 1. p je bod v px, osa x je směr, kterým jsou skvrny protažené.
+float water_glints(vec2 p) {
+	vec2 at = p / vec2(glint_scale, glint_scale * 0.4);
+	float ripple = value_noise(at) * 0.6 + value_noise(at * vec2(2.3, 1.7) + 11.0) * 0.4;
+	return smoothstep(0.62, 0.85, ripple);
+}
+
+// Textura vody z atlasu terénů v bodě světa: každá dlaždice světa má svou variantu.
+// lod podle velikosti pixelu obrazovky ve světě, ať se textura při oddálení nemihotá.
+vec3 water_texture(vec2 world, float lod) {
+	vec2 tile = floor(world / tile_size);
+	float variant = floor(hash(tile + vec2(71.0, 13.0)) * variant_count);
+	return sample_layer(float(water_index), min(variant, variant_count - 1.0), world / tile_size - tile, lod);
 }
