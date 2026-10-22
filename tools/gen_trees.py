@@ -7,6 +7,8 @@ a střed zůstává, ať se patra při vystředění v Godotu nerozjedou.
 Nejvyšší vrstva je hromada listů, hustší uprostřed. Každá nižší je vějíř
 větví: silnější konec míří ke středu a na větvích sedí díly z vrstev nad ní.
 Pařez je vlastní atlas a při skládání zůstává uprostřed.
+Okraje větví, kořenů, pařezu a listů jsou vyhlazené (poloprůhledné), ať strom ve hře
+po natočení a zmenšení nezubatí.
 
 Příklad:
   py tools/gen_trees.py
@@ -182,45 +184,17 @@ def _rotate_raw(
     return rotated, (ncx + rx, ncy + ry)
 
 
-def _majority(colors: list[tuple[int, int, int]]) -> tuple[int, int, int]:
-    counts: dict[tuple[int, int, int], int] = {}
-    best = colors[0]
-    best_count = 0
-    for color in colors:
-        count = counts.get(color, 0) + 1
-        counts[color] = count
-        if count > best_count:
-            best = color
-            best_count = count
-    return best
-
-
-def _downscale_crisp(
+def _downscale_smooth(
     src: Image.Image,
     scale: int,
     anchor: tuple[float, float],
 ) -> tuple[Image.Image, tuple[float, float]]:
+    """Zmenší průměrem bloků scale x scale. Barva se průměruje s krytím, okraj je poloprůhledný."""
     width = max(1, math.ceil(src.width / scale))
     height = max(1, math.ceil(src.height / scale))
-    out = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    src_px = src.load()
-    out_px = out.load()
-    for y in range(height):
-        for x in range(width):
-            colors: list[tuple[int, int, int]] = []
-            for oy in range(scale):
-                sy = y * scale + oy
-                if sy >= src.height:
-                    continue
-                for ox in range(scale):
-                    sx = x * scale + ox
-                    if sx >= src.width:
-                        continue
-                    pixel = src_px[sx, sy]
-                    if pixel[3] > 128:
-                        colors.append((pixel[0], pixel[1], pixel[2]))
-            if len(colors) >= 2:
-                out_px[x, y] = (*_majority(colors), 255)
+    padded = Image.new("RGBA", (width * scale, height * scale), (0, 0, 0, 0))
+    padded.paste(src, (0, 0))
+    out = padded.convert("RGBa").resize((width, height), Image.Resampling.BOX).convert("RGBA")
     small = (
         (anchor[0] - (scale - 1) / 2) / scale,
         (anchor[1] - (scale - 1) / 2) / scale,
@@ -233,12 +207,12 @@ def rotate_about(
     degrees_ccw: float,
     anchor: tuple[float, float],
 ) -> tuple[Image.Image, tuple[float, float]]:
-    # Větší obrázek se otočí a složí zpátky, aby v listu nezůstaly díry.
-    scale = 3
+    # Větší obrázek se otočí a zmenší průměrem: v listu nezůstanou díry a okraj je hladký.
+    scale = 4
     big = src.resize((src.width * scale, src.height * scale), Image.Resampling.NEAREST)
     big_anchor = (anchor[0] * scale + (scale - 1) / 2, anchor[1] * scale + (scale - 1) / 2)
     rotated, rotated_anchor = _rotate_raw(big, degrees_ccw, big_anchor)
-    return _downscale_crisp(rotated, scale, rotated_anchor)
+    return _downscale_smooth(rotated, scale, rotated_anchor)
 
 
 def fit_length(
@@ -647,8 +621,30 @@ def attach_children(ctx: Grow, branch: Branch, depth: int, max_radius: float | N
             add_leaf(ctx, branch, origin, heading, max(width, 3.0), ctx.rng.uniform(0.88, 1.06))
 
 
+def coverage(inside: float) -> float:
+    """Krytí pixelu, jehož střed je inside px uvnitř tvaru (záporné venku). Hrana je 1 px měkká."""
+    return max(0.0, min(1.0, inside + 0.5))
+
+
+def paint_over(pixels, x: int, y: int, rgb: tuple[int, int, int], cover: float) -> None:
+    """Položí barvu s krytím cover přes pixel plátna (jako alpha_composite)."""
+    if cover <= 0.0:
+        return
+    if cover >= 1.0:
+        pixels[x, y] = (*rgb, 255)
+        return
+    red, green, blue, alpha = pixels[x, y]
+    below = alpha / 255.0 * (1.0 - cover)
+    total = cover + below
+    mixed = tuple(int(round((c * cover + b * below) / total)) for c, b in zip(rgb, (red, green, blue)))
+    pixels[x, y] = (*mixed, int(round(total * 255)))
+
+
 def stroke(canvas: Image.Image, branch: Branch) -> None:
     pixels = canvas.load()
+    # Krytí a barva každého pixelu větve. Kolečka podél větve se překrývají, platí největší
+    # krytí, ať se měkký okraj opakovaným kreslením nezatvrdí.
+    painted: dict[tuple[int, int], tuple[float, tuple[int, int, int]]] = {}
     span = math.hypot(branch.p1[0] - branch.p0[0], branch.p1[1] - branch.p0[1])
     span += math.hypot(branch.p2[0] - branch.p1[0], branch.p2[1] - branch.p1[1])
     steps = max(2, int(span / 0.65))
@@ -667,8 +663,10 @@ def stroke(canvas: Image.Image, branch: Branch) -> None:
                 dx = x - pos[0]
                 dy = y - pos[1]
                 dist = math.hypot(dx, dy)
-                edge = (hash01(x, y, branch.salt) - 0.5) * 1.15
-                if dist > radius + edge:
+                # Kůra: okraj se o kousek vlní, s vyhlazením stačí jemně.
+                edge = (hash01(x, y, branch.salt) - 0.5) * 0.55
+                cover = coverage(radius + edge - dist)
+                if cover <= 0.0 or painted.get((x, y), (0.0, None))[0] > cover:
                     continue
                 # Světlo kolmo shora: větev je světlá podél osy a ke krajům tmavne, ze všech
                 # stran stejně. Strom se ve hře otáčí.
@@ -690,7 +688,9 @@ def stroke(canvas: Image.Image, branch: Branch) -> None:
                     if cap > 0.04:
                         snow = shade(branch.snow, 0.92 + 0.12 * max(0.0, min(1.0, up)))
                         wood = mix_rgb(wood, snow, min(1.0, cap))
-                pixels[x, y] = (*wood, 255)
+                painted[(x, y)] = (cover, wood)
+    for (x, y), (cover, wood) in painted.items():
+        paint_over(pixels, x, y, wood, cover)
 
 
 def paint_branch(canvas: Image.Image, branch: Branch) -> None:
@@ -815,8 +815,8 @@ def draw_stump(
     color: tuple[int, int, int],
     radius: float,
     root_length: float,
-    snow: tuple[int, int, int] | None = None,
 ) -> None:
+    """Pařez s kořeny. Je to řez kmenem pod korunou, sníh na něm neleží ani u zasněženého stromu."""
     color = vary_color(color, rng, hue=4, value=0.04)
     radius *= rng.uniform(0.92, 1.1)
     root_length *= rng.uniform(0.92, 1.12)
@@ -859,21 +859,15 @@ def draw_stump(
             dist = math.hypot(dx, dy)
             ang = math.atan2(dy, dx)
             edge = 0.9 + 0.1 * math.sin(ang * 2 + phase) + 0.07 * math.sin(ang * 5 + phase_b)
-            if dist > edge:
+            cover = coverage((edge - dist) * min(rx, ry))
+            if cover <= 0.0:
                 continue
             grain = hash01(x, y, 3)
             value = 0.5 + 0.16 * grain
             if grain > 0.93:
                 value *= 0.78
             wood = shade(color, value)
-            if snow is not None:
-                up = max(0.0, 1.0 - dist)
-                cap = 0.7 + 0.3 * up
-                cap *= 0.92 + 0.08 * grain
-                if dist > edge * 0.72:
-                    cap *= 0.35
-                wood = mix_rgb(wood, shade(snow, 0.94 + 0.1 * up), min(1.0, cap))
-            pixels[x, y] = (*wood, 255)
+            paint_over(pixels, x, y, wood, cover)
 
 
 def blank(size: int) -> Image.Image:
@@ -1165,7 +1159,6 @@ def generate_trees(name: str, preset: dict, seed: int = 1, variants: int | None 
             stump_color,
             float(preset["stump"]["radius"]),
             float(preset["stump"]["root_length"]),
-            ctx.snow,
         )
         for layer, image in layers.items():
             layer_frames[layer].append(image)

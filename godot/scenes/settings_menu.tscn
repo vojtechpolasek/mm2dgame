@@ -67,6 +67,11 @@ custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
 text = "Třpyt kamenů: zapnutý"
 
+[node name="Shadows" type="Button" parent="Center/Panel/Column"]
+custom_minimum_size = Vector2(420, 52)
+layout_mode = 2
+text = "Stíny: zapnuté"
+
 [node name="Gap2" type="Control" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2

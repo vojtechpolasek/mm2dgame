@@ -13,6 +13,8 @@ const DENSE_TREE_GAP := 0.66
 const LOW := 1.5
 ## Od cesty a staveb drží strom aspoň tuto část koruny, ať je nezakrývá.
 const TOWN_CROWN := 0.5
+## Kmen stromu (jen ve stínu) má takový podíl poloměru pařezu.
+const TRUNK_SHARE := 0.6
 
 var _spacing := {}
 var _tree := PackedByteArray()
@@ -85,6 +87,20 @@ func _build(kind: int) -> Node2D:
 
 func _surface_key() -> String:
 	return "forest"
+
+
+## Strom má kmen od země k nejnižší vrstvě koruny, keř ne.
+func _trunk(kind: int) -> Vector2:
+	if _tree[kind] != 1:
+		return Vector2.ZERO
+	var lowest := INF
+	for layer: Dictionary in _kinds[kind]["layers"]:
+		var height := float(layer["height"])
+		if height > 0.0:
+			lowest = minf(lowest, height)
+	if lowest == INF:
+		return Vector2.ZERO
+	return Vector2(_solid[kind] * TRUNK_SHARE, lowest)
 
 
 func _read_catalog(parsed: Dictionary) -> void:

@@ -3,6 +3,10 @@ extends RefCounted
 ## Pohyb po zemi, společný postavě i příšerám. Překážky jsou paty skal, keře a kmeny, továrna
 ## a domy, ostatní tvorové z crowd, neschůdný povrch je voda a mimo mapu se nesmí. Tělo je kruh o poloměru
 ## body v pixelech. who je číslo tvora v crowd, -1 ostatní tvory nebere v úvahu.
+##
+## Do vody se smí jen na mělčinu: dlaždice vody, která sousedí se souší (i úhlopříčně). Jde se
+## po ní pomalu jako brodem v řece. Dlaždice vody u kraje čtverce může mít souš až u souseda,
+## to rozhodne svět (WorldBoard.is_dry), sama mělčinou není.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const Rocks := preload("res://scripts/rocks.gd")
@@ -14,8 +18,14 @@ const Crowd := preload("res://scripts/crowd.gd")
 ## Střed těla nesmí blíž ke kraji čtverce než tolik metrů. Platí pro postavy, příšery
 ## i vesničany, chodící i létající.
 const EDGE_M := 1.0
-## Ve vodě řeky se jde poloviční rychlostí.
-const RIVER_PACE := 0.5
+## Ve vodě řeky a na mělčině se jde pomaleji.
+const RIVER_PACE := 0.8
+## Povrch dlaždice (ground): souš, mělčina, voda u kraje čtverce (mělčina, má-li souš soused)
+## a hluboká voda.
+const LAND := 1
+const SHALLOW := 3
+const EDGE_WATER := 2
+const DEEP := 0
 ## Body na obvodu těla, které musí stát na souši.
 const PROBES: Array[Vector2] = [
 	Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
@@ -34,6 +44,7 @@ var _tiles := 0
 var space_origin := Vector2.ZERO
 ## Když je nastavená, chůze sahá přes víc čtverců. Jinak platí tahle jedna mapa.
 var world_board = null
+## Povrch každé dlaždice: LAND, SHALLOW, EDGE_WATER nebo DEEP.
 var _walkable := PackedByteArray()
 ## Jméno povrchu -> násobek rychlosti chůze (speed v surfaces.json). Jména platí ve všech čtvercích.
 var _pace := {}
@@ -57,17 +68,37 @@ func _init(rocks: Rocks, forest: Forest, town_at: Town, map: MapData) -> void:
 	_walkable.resize(map.terrain.size())
 	for index in map.terrain.size():
 		var info: Dictionary = map.surfaces.get(map.names[map.terrain[index]], {})
-		_walkable[index] = 1 if bool(info.get("walkable", true)) else 0
+		_walkable[index] = LAND if bool(info.get("walkable", true)) else DEEP
+	_mark_shallows()
 	for surface_name in map.names:
 		var info: Dictionary = map.surfaces.get(surface_name, {})
 		_pace[surface_name] = float(info.get("speed", 1.0))
 
 
-## Označí v mřížce buňky (dlaždice), na kterých se nedá stát: voda.
+## Voda vedle souše je mělčina. U kraje čtverce, kde vedle souš není, rozhodne soused.
+func _mark_shallows() -> void:
+	var last := _tiles - 1
+	for y in _tiles:
+		for x in _tiles:
+			if _walkable[y * _tiles + x] != DEEP:
+				continue
+			var shore := false
+			for ny in range(maxi(y - 1, 0), mini(y + 1, last) + 1):
+				for nx in range(maxi(x - 1, 0), mini(x + 1, last) + 1):
+					if _walkable[ny * _tiles + nx] == LAND:
+						shore = true
+			if shore:
+				_walkable[y * _tiles + x] = SHALLOW
+			elif x == 0 or y == 0 or x == last or y == last:
+				_walkable[y * _tiles + x] = EDGE_WATER
+
+
+## Označí v mřížce buňky (dlaždice), na kterých se nedá stát: voda mimo mělčinu.
 func block_water(grid: AStarGrid2D) -> void:
 	for y in _tiles:
 		for x in _tiles:
-			if _walkable[y * _tiles + x] != 1:
+			var ground := _walkable[y * _tiles + x]
+			if ground != LAND and ground != SHALLOW:
 				grid.set_point_solid(Vector2i(x, y))
 
 
@@ -84,8 +115,10 @@ func pace(pos: Vector2) -> float:
 	return ground * river_pace(pos)
 
 
-## Ve vodě řeky RIVER_PACE, jinde a na mostě 1. pos je bod ve světě.
+## Ve vodě řeky a na mělčině RIVER_PACE, jinde a na mostě 1. pos je bod ve světě.
 func river_pace(pos: Vector2) -> float:
+	if ground(pos) != LAND:
+		return RIVER_PACE
 	if river == null or not river.water_at(pos):
 		return 1.0
 	if town != null and town.on_road(pos):
@@ -166,7 +199,7 @@ func contains(pos: Vector2, margin: float = 0.0) -> bool:
 	return local.x >= margin and local.y >= margin and local.x < _map_size.x - margin and local.y < _map_size.y - margin
 
 
-## Střed i obvod těla musí být na schůdném povrchu. Voda má walkable false.
+## Střed i obvod těla musí být na schůdném povrchu: souš nebo mělčina.
 func stands(pos: Vector2, body: float) -> bool:
 	if not dry(pos):
 		return false
@@ -179,13 +212,19 @@ func stands(pos: Vector2, body: float) -> bool:
 func dry(pos: Vector2) -> bool:
 	if world_board != null:
 		return world_board.is_dry(pos)
+	var at := ground(pos)
+	return at == LAND or at == SHALLOW
+
+
+## Povrch dlaždice pod bodem na téhle mapě (LAND, SHALLOW, EDGE_WATER, DEEP). Mimo mapu DEEP.
+func ground(pos: Vector2) -> int:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var local := pos - space_origin
 	var x := floori(local.x / tile)
 	var y := floori(local.y / tile)
 	if x < 0 or y < 0 or x >= _tiles or y >= _tiles:
-		return false
-	return _walkable[y * _tiles + x] == 1
+		return DEEP
+	return _walkable[y * _tiles + x]
 
 
 ## Stojí tělo v překážce nebo na vodě? Překážka by ho posunula, voda neunese.

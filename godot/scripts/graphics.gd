@@ -1,7 +1,7 @@
 extends Node
 
-## Nastavení grafiky: rozlišení vykreslování a třpyt kamenů. Ukládá se do stejného souboru
-## jako zvuk, do vlastní sekce.
+## Nastavení grafiky: rozlišení vykreslování, třpyt kamenů a stíny. Ukládá se do stejného
+## souboru jako zvuk, do vlastní sekce.
 ##
 ## Úsporné rozlišení kreslí hru v základní velikosti okna z projektu (1280 × 720, širší
 ## obrazovka přidá do strany) a obrazovka ji jen roztáhne. Na velkém displeji je to několikrát
@@ -9,6 +9,7 @@ extends Node
 ## Na ARM (Raspberry Pi) je úsporné výchozí.
 ##
 ## Třpyt vypne odlesky kamenů, příšer a dolů přes globální uniformu sparkle_on.
+## Stíny vypnou stíny od slunce, měsíce i čelovek (Shadows). Den, noc a světlo čelovek zůstanou.
 
 signal changed
 
@@ -17,6 +18,7 @@ const SECTION := "graphics"
 
 var _reduced := false
 var _sparkle := true
+var _shadows := true
 
 
 func _ready() -> void:
@@ -26,6 +28,7 @@ func _ready() -> void:
 	if config.load(SETTINGS) == OK:
 		_reduced = bool(config.get_value(SECTION, "reduced", _reduced))
 		_sparkle = bool(config.get_value(SECTION, "sparkle", _sparkle))
+		_shadows = bool(config.get_value(SECTION, "shadows", _shadows))
 	_apply()
 
 
@@ -35,6 +38,16 @@ func reduced() -> bool:
 
 func sparkle_on() -> bool:
 	return _sparkle
+
+
+func shadows_on() -> bool:
+	return _shadows
+
+
+func set_shadows(on: bool) -> void:
+	_shadows = on
+	_apply()
+	_save()
 
 
 func set_reduced(on: bool) -> void:
@@ -62,4 +75,5 @@ func _save() -> void:
 	config.load(SETTINGS)
 	config.set_value(SECTION, "reduced", _reduced)
 	config.set_value(SECTION, "sparkle", _sparkle)
+	config.set_value(SECTION, "shadows", _shadows)
 	config.save(SETTINGS)

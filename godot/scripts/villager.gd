@@ -43,6 +43,7 @@ const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
 const Monster := preload("res://scripts/monster.gd")
 const SuitFactory := preload("res://scripts/suit_factory.gd")
+const Splashes := preload("res://scripts/splashes.gd")
 
 ## Chůze je poloviční rychlost běhu hráče.
 const WALK_METERS := Person.RUN_METERS * 0.5
@@ -77,11 +78,8 @@ const GEM_ALPHA := 0.65
 const GEM_SCALE := 0.8
 const BOB_PX := 3.0
 const BOB_SPEED := 2.4
-## Zvuk kroků podle povrchu. Nové povrchy si půjčují zvuk podobného.
-const STEP_SOUNDS := {
-	"grass": "grass", "dirt": "dirt", "desert": "desert", "snow": "snow",
-	"heath": "grass", "swamp": "dirt", "scree": "dirt", "ash": "desert",
-}
+## Zvuk kroků podle povrchu, jako u postavy. Ve vodě šplouchnutí (Person.WADE_SOUND).
+const STEP_SOUNDS := Person.STEP_SOUNDS
 const STEP_VARIANTS := 4
 const STEP_DB := -14.0
 ## Pomoc při honičce: cílové místo je tenhle díl cesty od příšery k honěné postavě. Místo se
@@ -175,6 +173,8 @@ var _stall := 0.0
 var _stall_tries := 0
 var _travel := 0.0
 var _step_travel := 0.0
+## Která noha teď došlápla (cákání ve vodě).
+var _left_foot := false
 var _pointing := false
 var _point_slot := -1
 var _point_at: Person
@@ -506,6 +506,14 @@ func _footstep(moved: float) -> void:
 		return
 	_step_travel = fmod(_step_travel, _figure.cycle_px * 0.5)
 	if not _on_screen(0.0):
+		return
+	# Ve vodě cákne od nohy (Splashes), střídavě vlevo a vpravo, a místo kroku šplouchne.
+	_left_foot = not _left_foot
+	if Splashes.current != null and Splashes.current.wet(global_position):
+		var forward := Vector2.from_angle(rotation - PI * 0.5)
+		var side := forward.orthogonal() * (Person.FOOT_SIDE if _left_foot else -Person.FOOT_SIDE)
+		Splashes.current.splash(global_position + side + forward * Person.FOOT_AHEAD, forward)
+		Sound.at_variant(Person.WADE_SOUND, STEP_VARIANTS, global_position, STEP_DB + Person.WADE_DB)
 		return
 	var ground := _walker.surface(global_position)
 	if STEP_SOUNDS.has(ground):

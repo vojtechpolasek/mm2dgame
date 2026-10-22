@@ -1,7 +1,8 @@
 shader_type texture_blit;
 
 // Předpečení chunku terénu: souš, přechody a břehy jednou do textury. Pixel textury je pixel
-// světa. Vodu nad tím rozvlní terrain_water.gdshader.
+// světa. Vodu nad tím rozvlní terrain_water.gdshader. Kolem jezera je svah dolů k hladině
+// podle terénu (lake_bank), stejný jako u řeky. Stín břehu přidá terrain_water.
 
 #include "res://shaders/terrain_common.gdshaderinc"
 
@@ -21,5 +22,9 @@ void blit() {
 	float share;
 	float shore_kind;
 	evaluate(local_uv, variant, 0.0, packed_ids, surface, share, shore_kind);
-	COLOR0 = vec4(apply_shore(surface, share, shore_kind, world_pos), 1.0);
+	float mass = water_mass_at(world_pos);
+	if (mass > 0.0 && mass < 1.0) {
+		surface = lake_bank(surface, mass, world_pos, 0.0);
+	}
+	COLOR0 = vec4(surface, 1.0);
 }

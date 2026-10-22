@@ -49,6 +49,7 @@ const SuitSaves := preload("res://scripts/suit_saves.gd")
 const GroundDecor := preload("res://scripts/ground_decor.gd")
 const SquareAir := preload("res://scripts/square_air.gd")
 const River := preload("res://scripts/river.gd")
+const Splashes := preload("res://scripts/splashes.gd")
 const MiniMap := preload("res://scripts/minimap.gd")
 const Shadows := preload("res://scripts/shadows.gd")
 const DayNight := preload("res://scripts/day_night.gd")
@@ -95,10 +96,14 @@ var _camera: MapCamera
 var _ground: TerrainChunks
 var _status: Label
 var _catalog: TerrainCatalog
+## Svah břehu řek podle terénu (River.spawn, bank v surfaces.json).
+var _bank_look := {}
 var _crystal: Crystal
 var _road: Node2D
 ## Řeky a mosty všech čtverců, nad cestou a pod porostem.
 var _rivers: Node2D
+## Cákání vody od nohou (Splashes), nad vodou a pod postavami.
+var _splashes: Node2D
 ## Průchozí porost všech čtverců, mezi řekou a objekty.
 var _decor: Node2D
 var _decor_kit := {}
@@ -242,6 +247,7 @@ func start(host) -> void:
 	_host.add_child(_decor)
 	_host.move_child(_decor, _rivers.get_index() + 1)
 	_decor_kit = GroundDecor.load_kit(_catalog.names, _catalog.surfaces)
+	_bank_look = _catalog.bank_look()
 	_props = Node2D.new()
 	_props.name = "Props"
 	_props.y_sort_enabled = true
@@ -251,10 +257,17 @@ func start(host) -> void:
 	_shadows.name = "Shadows"
 	_host.add_child(_shadows)
 	_host.move_child(_shadows, _props.get_index())
+	_splashes = Splashes.new()
+	_splashes.name = "Splashes"
+	_splashes.board = self
+	_host.add_child(_splashes)
+	_host.move_child(_splashes, _props.get_index())
+	_shadows.setup(_camera)
 	_day = DayNight.new()
 	_day.name = "DayNight"
+	_day.full_moon_only = _flyover
 	_host.add_child(_day)
-	_day.setup(_camera, _shadows)
+	_day.setup(_camera, _shadows, _host._persons)
 	_chunks = PropChunks.new()
 	_chunks.name = "PropChunks"
 	_chunks.setup(_camera)
@@ -282,7 +295,7 @@ func tick(delta: float) -> void:
 		return
 	_day.advance(delta)
 	if _hud != null:
-		_hud.set_sky(_day.phase)
+		_hud.set_sky(_day.phase, _day.moon_index())
 	if _flyover:
 		_drift(delta)
 		_consider(_camera.position)
@@ -326,7 +339,19 @@ func is_dry(pos: Vector2) -> bool:
 	var sq := _ready_at(pos)
 	if sq == null:
 		return false
-	return sq.walker.dry(pos)
+	var ground: int = sq.walker.ground(pos)
+	if ground != Walker.EDGE_WATER:
+		return ground == Walker.LAND or ground == Walker.SHALLOW
+	# Voda u kraje čtverce je mělčina, když je souš hned za krajem u souseda.
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var center := (pos / tile).floor() * tile + Vector2(tile, tile) * 0.5
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var near := center + Vector2(dx, dy) * tile
+			var other := _ready_at(near)
+			if other != null and other != sq and other.walker.ground(near) == Walker.LAND:
+				return true
+	return false
 
 
 ## Násobek rychlosti od řeky v bodě světa: ve vodě řeky zpomalí, na mostě ne.
@@ -686,7 +711,7 @@ func _finish_step() -> void:
 			add_child(sq.forest)
 			sq.forest.spawn(_camera, _props, _chunks)
 		4:
-			sq.river.spawn(_rivers, sq.origin, _catalog.water_material)
+			sq.river.spawn(_rivers, sq.origin, _catalog.water_material, _bank_look, sq.painted)
 			sq.decor.spawn(_decor_kit, _decor, sq.origin)
 		_:
 			_finishing.remove_at(0)
@@ -1218,6 +1243,7 @@ func _load(data: Dictionary) -> void:
 	_time = float(data.get("time", 0.0))
 	_level_time = float(data.get("level_time", 0.0))
 	_day.phase = float(data.get("day", DayNight.START))
+	_day.days = int(data.get("days", 0))
 	_active = data.get("active", Vector2i.ZERO)
 	_locked = bool(data.get("locked", true))
 	_levels = data.get("levels", {Vector2i.ZERO: 1})
@@ -1531,6 +1557,7 @@ func _snapshot() -> Dictionary:
 		"time": _time,
 		"level_time": _level_time,
 		"day": _day.phase,
+		"days": _day.days,
 		"active": _active,
 		"locked": _locked,
 		"levels": _levels,

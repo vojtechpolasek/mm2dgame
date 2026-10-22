@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Zvuky a hudba hry, vše syntézou. Výstup jsou WAV do godot/audio, po složkách.
 
-steps/    kroky postavy podle povrchu (grass, dirt, desert, snow), čtyři varianty.
-          Jemný šum s barvou povrchu a měkkým náběhem, sníh křupe ostře.
+steps/    kroky postavy podle povrchu (STEP_SURFACES), čtyři varianty. Jemný šum s barvou
+          povrchu a měkkým náběhem: sníh křupe ostře, vřes šustí větvičkami, močál čvachtá,
+          suť cvaká kamínky, popel je prašný a tlumený. water je šplouchnutí při brodění
+          řekou nebo mělčinou (hraje se místo kroku, příšery ho mají hlouběji podle velikosti).
 ambient/  šumění vody: tlumený šum s pomalými vlnami a bublinkami, smyčka bez švu.
 basin/    dopad kamene do kotliny podle materiálu (jména z gen_crystal.MATERIALS). Levný
           tupě žuchne, s cenou přibývá výšky a zvonění, nejdražší cinkne.
@@ -194,6 +196,10 @@ def thump(rng: np.random.Generator, length: int, cutoff: float, decay: float) ->
     return lowpass(noise(rng, length), cutoff, 3) * envelope(length, 0.003, decay)
 
 
+## Povrchy s vlastním zvukem kroku (steps/<povrch>_1..4). Jména jako v surfaces.json, water je brod.
+STEP_SURFACES = ("grass", "dirt", "desert", "snow", "heath", "swamp", "scree", "ash", "water")
+
+
 def step(surface: str, seed: int) -> np.ndarray:
     """Jemný krok: měkký náběh, málo výšek a praskání, tišší než ostatní zvuky."""
     rng = np.random.default_rng(seed)
@@ -217,9 +223,76 @@ def step(surface: str, seed: int) -> np.ndarray:
         out += crackles(rng, length, 120, 1500, 7500, 0.14) * 1.1
         out += band(noise(rng, length), 900, 3000) * envelope(length, 0.008, 0.04) * 0.3
         out += thump(rng, length, 130, 0.035) * 0.45
-    out = lowpass(out, 9000 if surface == "snow" else 5000, 2)
+    elif surface == "heath":
+        # Vřes: drsné šustění nízkých keříků a praskání tenkých suchých větviček.
+        out += band(noise(rng, length), 1200, 4200) * envelope(length, 0.012, 0.05) * 0.45
+        out += crackles(rng, length, 22, 2200, 6000, 0.12) * 0.55
+        out += thump(rng, length, 150, 0.03) * 0.45
+    elif surface == "swamp":
+        return wade(rng, mud=1.0)
+    elif surface == "scree":
+        # Suť: křupnutí štěrku pod nohou. Hustá zrna šumu různých barev (kamínky o sebe),
+        # pár delších drsných zrn (větší kameny se posunou) a pod tím tvrdší úder.
+        out += thump(rng, length, 240, 0.03) * 0.75
+        out += crackles(rng, length, 90, 700, 4500, 0.11) * 0.9
+        for _ in range(rng.integers(5, 9)):
+            size = seconds(rng.uniform(0.004, 0.012))
+            center = rng.uniform(600, 2200)
+            grit = band(noise(rng, size), center * 0.6, center * 1.6) * np.hanning(size)
+            place(out, grit, rng.uniform(0.0, 0.1), rng.uniform(0.3, 0.7))
+        out += band(noise(rng, length), 500, 2500) * envelope(length, 0.003, 0.025) * 0.25
+    elif surface == "ash":
+        # Popel: měkké prašné našlápnutí, sem tam křupne uhlík. Tišší než poušť.
+        out += lowpass(noise(rng, length), 1600, 2) * envelope(length, 0.02, 0.06) * 0.35
+        out += crackles(rng, length, 5, 1500, 4000, 0.1) * 0.3
+        out += thump(rng, length, 120, 0.035) * 0.55
+    elif surface == "water":
+        return wade(rng, mud=0.0)
+    out = lowpass(out, 9000 if surface == "snow" else 6500 if surface == "scree" else 5000, 2)
     out = resample(out, rng.uniform(0.94, 1.06))
     return fade(normalize(out, 0.45), 0.004, 0.03)
+
+
+def wade(rng: np.random.Generator, mud: float) -> np.ndarray:
+    """Krok ve vodě (mud 0) nebo v bažině (mud 1), jen ze šumu, bez čistých tónů.
+
+    Noha rozhrne vodu: měkký nádech šumu, který se zvedne a opadne (voda se valí kolem nohy).
+    Pak voda dopadá zpátky: kapky, napřed husté, pak řidší. V bažině je všechno hustší
+    a tmavší, kapek je míň a navíc noha čvachtá: když se zvedá, bahno ji drží a pouští
+    v rychlém sledu drobných mokrých mlasknutí.
+    """
+    length = seconds(0.5)
+    out = np.zeros(length)
+    t = np.arange(length) / RATE
+    # Valení vody kolem nohy: náběh 30 ms, oblouk do 0.18 s, barva podle bahna.
+    push = np.clip(t / 0.03, 0.0, 1.0) * np.exp(-np.maximum(t - 0.03, 0.0) / (0.06 + 0.03 * mud))
+    swirl = 0.6 + 0.4 * np.clip(band(noise(rng, length), 8, 30, 1) * 10.0, -1.0, 1.0)
+    body = band(noise(rng, length), 250 - 80 * mud, 2200 - 900 * mud) * push * swirl
+    out += body * 0.9
+    out += band(noise(rng, length), 2500, 6500) * push * swirl * (0.35 - 0.2 * mud)
+    out += thump(rng, length, 160 + 60 * mud, 0.04) * (0.3 + 0.4 * mud)
+    # Kapky dopadají zpátky: krátká vysoká zrnka, hustota klesá v čase.
+    drops = int(rng.integers(14, 22) * (1.0 - 0.6 * mud))
+    for _ in range(drops):
+        at = 0.04 + rng.exponential(0.08)
+        if at > 0.45:
+            continue
+        size = seconds(rng.uniform(0.004, 0.012))
+        center = rng.uniform(1200, 4500) * (1.0 - 0.35 * mud)
+        drop = band(noise(rng, size), center * 0.7, center * 1.4) * np.hanning(size)
+        place(out, drop, at, rng.uniform(0.15, 0.45) * np.exp(-at * 4.0))
+    if mud > 0.0:
+        # Čvachtnutí: bahno drží nohu a pouští ji v sledu drobných mokrých mlasknutí.
+        start = rng.uniform(0.09, 0.13)
+        for i in range(int(rng.integers(6, 11))):
+            at = start + i * rng.uniform(0.008, 0.018)
+            size = seconds(rng.uniform(0.006, 0.016))
+            low = rng.uniform(350, 900)
+            smack = band(noise(rng, size), low, low * rng.uniform(2.5, 4.0)) * envelope(size, 0.0006, 0.004)
+            place(out, smack, at, rng.uniform(0.4, 0.9) * mud * (1.0 - i * 0.06))
+    out = lowpass(out, 7000 - 1500 * mud, 2)
+    out = resample(out, rng.uniform(0.94, 1.06))
+    return fade(normalize(trim(out), 0.45), 0.004, 0.03)
 
 
 # --- Voda ---
@@ -941,7 +1014,7 @@ def main() -> None:
             print(write(f"sfx/{name}", sfx(name)).relative_to(ROOT))
         return
     written: list[Path] = []
-    for surface in ("grass", "dirt", "desert", "snow"):
+    for surface in STEP_SURFACES:
         for variant in range(4):
             written.append(write(f"steps/{surface}_{variant + 1}", step(surface, 100 + variant * 17 + len(surface))))
     written.append(write("ambient/water", water()))

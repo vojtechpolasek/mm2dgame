@@ -232,39 +232,6 @@ void evaluate(vec2 uv, float variant, float lod, vec4 packed_ids, out vec3 color
 	}
 }
 
-vec3 apply_shore(vec3 color, float share, float shore_kind, vec2 world_pos) {
-	if (share <= 0.0 || share >= 1.0 || shore_kind <= 0.0) {
-		return color;
-	}
-	float coarse = value_noise(world_pos / 16.0);
-	float fine = value_noise(world_pos / 7.0 + vec2(3.0, 11.0));
-	float noise = coarse * 0.65 + fine * 0.35;
-	float detail = value_noise(world_pos / 12.8 + vec2(17.0, 47.0));
-	if (shore_kind < 1.5) {
-		color = mix(color, shallow_color, hump(share, shallow_from, shallow_to) * shallow_strength);
-		float solid = sand_solid + (detail - 0.5) * sand_solid_wobble;
-		float fade = sand_land_fade + (detail - 0.5) * sand_land_fray;
-		float land_edge = solid - max(fade, 0.04);
-		float fade_in = smoothstep(land_edge, solid, share);
-		float span_in = max(solid - land_edge, 0.001);
-		float linear = clamp((share - land_edge) / span_in, 0.0, 1.0);
-		fade_in = fade_in * 0.35 + linear * 0.65;
-		float water_edge = max(sand_water + (noise - 0.5) * sand_water_shift, solid + 0.1);
-		float fade_out = 1.0 - smoothstep(water_edge - 0.08, water_edge + 0.06, share);
-		float span = max(water_edge - land_edge, 0.001);
-		float wetness = clamp((share - land_edge) / span, 0.0, 1.0);
-		wetness = wetness * wetness * 0.55;
-		vec3 sand = mix(sand_color, sand_wet_color, wetness);
-		return mix(color, sand, fade_in * fade_out * sand_strength);
-	}
-	float shift = (noise - 0.5) * 0.06;
-	float start = ice_from + shift;
-	float end_share = ice_to + shift * 1.4;
-	float gate = 0.3 + 0.7 * noise;
-	return mix(color, ice_color, hump(share, start, end_share) * ice_strength * gate);
-}
-
-
 // --- Voda: jezero (terrain_water) i řeka (river) ---
 
 // Fáze tří vln jezera v bodě světa.
@@ -300,4 +267,209 @@ vec3 water_texture(vec2 world, float lod) {
 	vec2 tile = floor(world / tile_size);
 	float variant = floor(hash(tile + vec2(71.0, 13.0)) * variant_count);
 	return sample_layer(float(water_index), min(variant, variant_count - 1.0), world / tile_size - tile, lod);
+}
+
+
+// --- Břeh: svah dolů k hladině u řeky (river) i jezera (terrain_bake, terrain_water) ---
+
+// Svah podle terénu (TerrainCatalog.bank_look): pro každý terén (index jako v corner_map)
+// vrstva textury půdy a náplavy, podíl štěrku a bahna. gravel_layer je textura štěrku (suť).
+uniform float bank_soil[16];
+uniform float bank_bar[16];
+uniform float bank_gravel[16];
+uniform float bank_mud[16];
+uniform int gravel_layer = -1;
+const vec3 MUD = vec3(0.24, 0.19, 0.13);
+const vec3 EARTH = vec3(0.43, 0.33, 0.22);
+const vec3 STONE = vec3(0.5, 0.5, 0.48);
+// Stín břehu na svah a hladinu: hloubka koryta v metrech (posun stínu je sun_shadow na metr)
+// a síla vůči stínům objektů (shadow_opacity).
+const float BANK_SHADOW_DEPTH = 0.9;
+const float BANK_SHADOW = 0.9;
+// Hladina řeky i jezera je WATER_DEPTH m pod terénem. Při pohybu kamery se posouvá jako vrstva
+// v záporné výšce (tree_layer.gdshader, PARALLAX jako ObjectLayers.PARALLAX): ke středu
+// obrazovky, na vzdálené straně se odkryje víc svahu, bližší svah zakryje voda.
+const float WATER_DEPTH = 1.0;
+const float WATER_PARALLAX = 0.016;
+
+// O kolik dál od středu záběru (camera) leží bod hladiny, který je vidět v bodě at.
+vec2 water_parallax(vec2 at, vec2 camera, float zoom) {
+	return (at - camera) * WATER_DEPTH * WATER_PARALLAX * zoom;
+}
+
+// Textura vrstvy terénu v bodě at (px), každá dlaždice svou variantou.
+vec3 layer_texture(int layer, vec3 fallback, vec2 at, float lod) {
+	if (layer < 0) {
+		return fallback;
+	}
+	vec2 tile = floor(at / tile_size);
+	float variant = floor(hash(tile + vec2(23.0, 61.0)) * variant_count);
+	return sample_layer(float(layer), min(variant, variant_count - 1.0), at / tile_size - tile, lod);
+}
+
+// Dlaždice čtverce pod bodem at_local (px ve čtverci) a bod v ní 0 až 1.
+ivec2 bank_cell(vec2 at_local, out vec2 uv) {
+	vec2 tile_pos = at_local / tile_size;
+	ivec2 cell = clamp(ivec2(floor(tile_pos)), ivec2(0), ivec2(int(map_size) - 1));
+	uv = clamp(tile_pos - vec2(cell), 0.0, 1.0);
+	return cell;
+}
+
+// Podíl vody v bodě at_local z rohů dlaždice, lineárně (bez zaostření jako v evaluate).
+// 0.5 je zhruba čára vody jezera.
+float water_mass_at(vec2 at_local) {
+	vec2 uv;
+	ivec2 cell = bank_cell(at_local, uv);
+	vec4 ids = round(texelFetch(corner_map, cell, 0) * 255.0);
+	vec4 raw = vec4((1.0 - uv.x) * (1.0 - uv.y), uv.x * (1.0 - uv.y), (1.0 - uv.x) * uv.y, uv.x * uv.y);
+	return dot(raw, vec4(equal(ids, vec4(float(water_index)))));
+}
+
+// Půda svahu, náplava, podíl štěrku a bahna a samotná souš (rohy dlaždice bez vody, jejich
+// varianta) podle terénu v bodě at_local. at_tex je bod pro textury půdy.
+void bank_ground(vec2 at_local, vec2 at_tex, float lod, bool want_bar, out vec3 soil, out vec3 bar, out vec2 amounts, out vec3 land) {
+	vec2 uv;
+	ivec2 cell = bank_cell(at_local, uv);
+	vec4 packed = texelFetch(corner_map, cell, 0);
+	float variant = round(texelFetch(variant_map, cell, 0).r * 255.0);
+	float ids[4] = float[4](round(packed.r * 255.0), round(packed.g * 255.0), round(packed.b * 255.0), round(packed.a * 255.0));
+	float weights[4] = float[4]((1.0 - uv.x) * (1.0 - uv.y), uv.x * (1.0 - uv.y), (1.0 - uv.x) * uv.y, uv.x * uv.y);
+	soil = vec3(0.0);
+	bar = vec3(0.0);
+	amounts = vec2(0.0);
+	land = vec3(0.0);
+	float total = 0.0;
+	for (int i = 0; i < 4; i++) {
+		if (ids[i] != float(water_index)) {
+			total += weights[i];
+		}
+	}
+	if (total <= 0.0) {
+		// Samá voda (ústí řeky): půda prvního rohu.
+		int only = clamp(int(ids[0]), 0, 15);
+		soil = layer_texture(int(bank_soil[only]), EARTH, at_tex, lod);
+		bar = layer_texture(int(bank_bar[only]), sand_color, at_tex, lod);
+		amounts = vec2(bank_gravel[only], bank_mud[only]);
+		land = soil;
+		return;
+	}
+	for (int i = 0; i < 4; i++) {
+		if (weights[i] <= 0.0 || ids[i] == float(water_index)) {
+			continue;
+		}
+		// Stejný terén v dalších rozích se přičte k prvnímu, textura se čte jednou.
+		bool seen = false;
+		for (int k = 0; k < i; k++) {
+			if (ids[k] == ids[i] && weights[k] > 0.0) {
+				seen = true;
+			}
+		}
+		if (seen) {
+			continue;
+		}
+		float w = 0.0;
+		for (int k = i; k < 4; k++) {
+			if (ids[k] == ids[i]) {
+				w += weights[k];
+			}
+		}
+		w /= total;
+		int id = clamp(int(ids[i]), 0, 15);
+		soil += layer_texture(int(bank_soil[id]), EARTH, at_tex, lod) * w;
+		if (want_bar) {
+			bar += layer_texture(int(bank_bar[id]), sand_color, at_tex, lod) * w;
+		}
+		amounts += vec2(bank_gravel[id], bank_mud[id]) * w;
+		land += sample_layer(ids[i], variant, uv, lod) * w;
+	}
+}
+
+// Výška svahu 0 (hladina) až 1 (horní hrana) z podílu rel. Vymletý břeh (outer) strmě,
+// náplava (inner) pozvolna.
+float slope_height(float rel, float inner, float outer) {
+	return pow(clamp(rel, 0.0, 1.0), 0.6 + 0.9 * inner - 0.3 * outer);
+}
+
+// Horní hrana svahu: kolem 1, roztřepená.
+float bank_lip(vec2 at) {
+	return 1.0 + (value_noise(at / 10.0) - 0.5) * 0.4 + (value_noise(at / 3.0) - 0.5) * 0.12;
+}
+
+// Trsy terénu přes horní hranu (0 až 1).
+float bank_tufts(vec2 at, float jag, float rel) {
+	return smoothstep(0.64, 0.74, value_noise(at / 9.0 + 17.0) * 0.7 + jag * 0.3) * smoothstep(0.55, 0.85, rel);
+}
+
+// Barva svahu: nahoře terén (top), níž půda se štěrkem, bahnem a kameny, na náplavě (bar 0 až
+// 1) její materiál, dole vlhký a tmavý. side odliší úseky na dvou březích řeky.
+vec3 bank_slope(vec3 soil, vec3 bar_color, vec2 amounts, vec3 top, vec2 at, float lod, float rel, float height, float bar, float outer, float side) {
+	float grain = value_noise(at / 3.0);
+	float m = value_noise(at / 110.0 + side * 53.0) * 0.6 + value_noise(at / 40.0) * 0.4;
+	vec3 color = soil * 0.85 * (0.85 + 0.3 * grain);
+	vec3 gravel = layer_texture(gravel_layer, STONE, at, lod) * (0.8 + 0.3 * grain);
+	color = mix(color, gravel, smoothstep(0.5, 0.6, m) * amounts.x);
+	color = mix(color, MUD * (0.8 + 0.4 * grain), smoothstep(0.42, 0.32, m) * amounts.y);
+	float rocks = smoothstep(0.74, 0.8, value_noise(at / 9.0 + 5.0) * 0.5 + value_noise(at / 4.0 + 9.0) * 0.5) * smoothstep(0.6, 0.75, m) * amounts.x;
+	color = mix(color, STONE * (0.7 + 0.5 * value_noise(at / 2.0)), rocks);
+	color = mix(color, bar_color * 0.92, bar);
+	// Horní část svahu je terén sám, s roztřepeným přechodem.
+	float crest = smoothstep(0.55, 0.9, rel + (value_noise(at / 7.0 + 31.0) - 0.5) * 0.3);
+	color = mix(color, top, crest * (1.0 - bar));
+	color *= 0.55 + 0.5 * height - 0.18 * outer;
+	float wet = smoothstep(0.25, 0.0, rel) * (0.6 + 0.4 * value_noise(at / 18.0 + 3.0));
+	return mix(color, color * 0.6, wet);
+}
+
+// Jezero: podíl svahu v bodě at (px ve čtverci) s podílem vody f (water_mass_at). Čára vody
+// je kolem f 0.6, kde začínají vlny (terrain_water), horní hrana o šířku svahu dál od vody.
+// Obojí podle šumu kolísá.
+float lake_rel(vec2 at, float f) {
+	float jag = value_noise(at / 14.0) * 0.6 + value_noise(at / 40.0) * 0.4;
+	float low = value_noise(at / 140.0 + 7.0);
+	float mid = value_noise(at / 38.0 + 37.0);
+	float span = 0.6 * (0.45 + 0.9 * low + 0.35 * (mid - 0.5));
+	float water_line = 0.6 + (jag - 0.5) * 0.1;
+	float top = max(water_line - span, 0.04);
+	return (water_line - f) / (water_line - top);
+}
+
+// Výška břehu jezera v bodě at: 1 na souši, 0 na hladině.
+float lake_height(vec2 at) {
+	float f = water_mass_at(at);
+	if (f <= 0.0) {
+		return 1.0;
+	}
+	return slope_height(lake_rel(at, f), 0.0, 0.0);
+}
+
+// Stín břehu jezera v bodě at: kus směrem ke slunci (shift = posun stínu) je břeh výš.
+float lake_shadow(vec2 at, vec2 shift, float opacity) {
+	if (opacity <= 0.001) {
+		return 0.0;
+	}
+	float here = lake_height(at);
+	float back = lake_height(at - shift * BANK_SHADOW_DEPTH);
+	return clamp((back - here) * 1.6, 0.0, 1.0) * opacity * BANK_SHADOW;
+}
+
+// Břeh jezera v předpečení: surface je terén (evaluate), f podíl vody, at bod ve čtverci.
+vec3 lake_bank(vec3 surface, float f, vec2 at, float lod) {
+	float rel = lake_rel(at, f);
+	float jag = value_noise(at / 14.0) * 0.6 + value_noise(at / 40.0) * 0.4;
+	float land = max(smoothstep(bank_lip(at) - 0.12, bank_lip(at) + 0.05, rel), bank_tufts(at, jag, rel));
+	if (land >= 1.0) {
+		return surface;
+	}
+	vec3 soil;
+	vec3 bar_color;
+	vec2 amounts;
+	vec3 top;
+	bank_ground(at, at, lod, false, soil, bar_color, amounts, top);
+	vec3 color = bank_slope(soil, bar_color, amounts, top, at, lod, rel, slope_height(rel, 0.0, 0.0), 0.0, 0.0, 0.0);
+	if (rel < 0.0) {
+		// Pod hladinou svah pokračuje, ať je vidět, když hladina při pohybu kamery odhalí kus
+		// stěny (water_parallax). Hloub zmizí ve vodě. Vodu nad ním kreslí terrain_water.
+		color = mix(mix(color, shallow_color, 0.3 * shallow_strength), surface, smoothstep(0.4, 1.4, -rel));
+	}
+	return mix(color, surface, land);
 }

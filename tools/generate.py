@@ -25,11 +25,15 @@ SURFACES_PATH = ROOT / "godot" / "graphics" / "terrain" / "surfaces.json"
 # Padlé stromy (padly_strom mezi skálami) leží hlavně na trávě, v lese na hlíně a v močálu.
 # decor je průchozí porost z gen_decor.py, počet trsů na dlaždici. Shlukuje se podle druhu.
 # springs jsou prameniště řeky (gen_spring.py), ze kterých si pramen na tom terénu vybere.
+# bank je svah břehu řeky v tom terénu (river.gdshader): soil terén, jehož textura je ve svahu
+# pod horní hranou, bar terén náplavy na vnitřní straně zákruty, gravel a mud kolik je
+# ve svahu štěrkových a bahnitých úseků (0 až 1). Horní hrana svahu je terén sám.
 # Čtverec světa si vybere jen pár terénů. avoid jsou terény, se kterými se nevybere
 # společně (platí oběma směry), třeba "avoid": ["desert"] u sněhu. Teď ho nemá žádný terén.
 TERRAINS = {
     "grass": {
         "name": "grass",
+        "bank": {"soil": "dirt", "bar": "desert", "gravel": 0.6, "mud": 0.8},
         "springs": ["pramen_tun", "pramen_kamen"],
         "base": "4F9A3C",
         "hue": 5.0,
@@ -42,6 +46,7 @@ TERRAINS = {
     },
     "dirt": {
         "name": "dirt",
+        "bank": {"soil": "dirt", "bar": "desert", "gravel": 0.5, "mud": 1.0},
         "springs": ["pramen_mokrad", "pramen_tun"],
         "base": "7A5A3A",
         "hue": 3.0,
@@ -56,6 +61,7 @@ TERRAINS = {
     },
     "desert": {
         "name": "desert",
+        "bank": {"soil": "desert", "bar": "desert", "gravel": 0.3, "mud": 0.0},
         "springs": ["pramen_tun"],
         "base": "E2C48A",
         "hue": 2.0,
@@ -68,6 +74,7 @@ TERRAINS = {
     },
     "snow": {
         "name": "snow",
+        "bank": {"soil": "dirt", "bar": "scree", "gravel": 0.7, "mud": 0.4},
         "springs": ["pramen_kamen"],
         "base": "E8EEF2",
         "hue": 2.0,
@@ -83,6 +90,7 @@ TERRAINS = {
     # Kamenná suť: drobné i větší ostrohranné kameny, hodně skal, skoro žádné stromy.
     "scree": {
         "name": "scree",
+        "bank": {"soil": "scree", "bar": "scree", "gravel": 1.0, "mud": 0.2},
         "springs": ["pramen_kamen"],
         "base": "7E7A73",
         "hue": 2.0,
@@ -96,6 +104,7 @@ TERRAINS = {
     # Černý popel po požáru: závěje popela, uhlíky, jen ohořelé suché stromy a lávové pukliny.
     "ash": {
         "name": "ash",
+        "bank": {"soil": "dirt", "bar": "ash", "gravel": 0.4, "mud": 0.3},
         "springs": ["pramen_kamen"],
         "base": "3B3937",
         "hue": 1.5,
@@ -108,6 +117,7 @@ TERRAINS = {
     # Močál: bahno, louže a trsy ostřice, keře a pár stromů. Břeh nemá, bahno přejde rovnou do vody.
     "swamp": {
         "name": "swamp",
+        "bank": {"soil": "swamp", "bar": "swamp", "gravel": 0.1, "mud": 1.0},
         "springs": ["pramen_mokrad"],
         "base": "4E4A2F",
         "hue": 3.0,
@@ -125,6 +135,7 @@ TERRAINS = {
     # Vřesoviště: fialový vřes, borůvčí a olivová tráva. Keře, řídké stromy a balvany.
     "heath": {
         "name": "heath",
+        "bank": {"soil": "dirt", "bar": "desert", "gravel": 0.5, "mud": 0.8},
         "springs": ["pramen_mokrad", "pramen_kamen"],
         "base": "5E5040",
         "hue": 3.0,
@@ -451,6 +462,20 @@ def surface_info() -> dict:
             entry["wave"] = preset["wave"]
         if preset.get("shore"):
             entry["shore"] = preset["shore"]
+        bank = preset.get("bank")
+        if bank:
+            for key in ("soil", "bar"):
+                if bank.get(key) not in TERRAINS:
+                    raise SystemExit(f"{name}: bank.{key} není terén")
+            for key in ("gravel", "mud"):
+                if not 0 <= float(bank.get(key, 0)) <= 1:
+                    raise SystemExit(f"{name}: bank.{key} má být mezi 0 a 1")
+            entry["bank"] = {
+                "soil": bank["soil"],
+                "bar": bank["bar"],
+                "gravel": float(bank.get("gravel", 0)),
+                "mud": float(bank.get("mud", 0)),
+            }
         for key in ("fog", "snowfall"):
             if key in preset:
                 if not 0 < float(preset[key]) <= 1:

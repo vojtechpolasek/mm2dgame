@@ -3,6 +3,8 @@ extends RefCounted
 const ROOT := "res://graphics/terrain"
 const TILE_SIZE := 64
 const ATLAS_COLUMNS := 4
+## Nejvíc terénů v polích shaderu (shore_style, bank_*).
+const BANK_TERRAINS := 16
 ## Souš a břehy se jednou předpečou do textur chunků, voda se vlní nad nimi. Oba shadery
 ## sdílejí uniformy z terrain_common.gdshaderinc, katalog je nastavuje do obou materiálů.
 const _BAKE_SHADER := "res://shaders/terrain_bake.gdshader"
@@ -70,6 +72,34 @@ func load_assets() -> void:
 		names = PackedStringArray()
 		return
 	_build_material(terrains)
+
+
+## Parametry shaderu pro svah břehu řek a jezer podle terénu (bank v surfaces.json): pro
+## každý terén vrstva textury svahu a náplavy a podíl štěrku a bahna. Chybí-li, svah je hlína.
+func bank_look() -> Dictionary:
+	var soil := PackedFloat32Array()
+	var bar := PackedFloat32Array()
+	var gravel := PackedFloat32Array()
+	var mud := PackedFloat32Array()
+	for array in [soil, bar, gravel, mud]:
+		array.resize(BANK_TERRAINS)
+	var dirt := index_of("dirt")
+	for terrain_name in names:
+		var index := index_of(terrain_name)
+		if index < 0 or index >= BANK_TERRAINS:
+			continue
+		var bank: Dictionary = surfaces.get(terrain_name, {}).get("bank", {})
+		soil[index] = index_of(str(bank["soil"])) if bank.has("soil") else dirt
+		bar[index] = index_of(str(bank["bar"])) if bank.has("bar") else dirt
+		gravel[index] = float(bank.get("gravel", 0.5))
+		mud[index] = float(bank.get("mud", 0.5))
+	return {
+		"bank_soil": soil,
+		"bank_bar": bar,
+		"bank_gravel": gravel,
+		"bank_mud": mud,
+		"gravel_layer": index_of("scree"),
+	}
 
 
 func index_of(terrain_name: String) -> int:
@@ -159,6 +189,9 @@ func _build_material(terrains: Texture2DArray) -> void:
 	_set_param("water_index", liquid)
 	water_index = liquid
 	_apply_shore(shore)
+	var bank := bank_look()
+	for key: String in bank:
+		_set_param(key, bank[key])
 	if liquid >= 0:
 		_apply_wave(surfaces[names[liquid]].get("wave", {}))
 

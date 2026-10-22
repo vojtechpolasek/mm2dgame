@@ -15,6 +15,7 @@ const MapData := preload("res://scripts/map_data.gd")
 const Walker := preload("res://scripts/walker.gd")
 const Party := preload("res://scripts/party.gd")
 const Figure := preload("res://scripts/figure.gd")
+const Splashes := preload("res://scripts/splashes.gd")
 
 ## Co postava drží. -1 je prázdná ruka.
 signal held_changed(mat: int)
@@ -45,6 +46,9 @@ const JUMP_GROW := 0.15
 const CYCLE_METERS := 3.0
 ## Poloměr trupu. Do skály a do vody se počítá tělo, ne dosah kroku.
 const BODY := 16.0
+## Chodidlo od středu postavy v px: do strany a dopředu. Odtud cáká voda.
+const FOOT_SIDE := 6.0
+const FOOT_AHEAD := 6.0
 const ACCELERATION := 2200.0
 const STOP_SPEED := 3800.0
 ## Když postava skončí v překážce nebo ve vodě (dopad skoku, souběh dvou překážek), vysune se
@@ -68,8 +72,11 @@ const RETURN_ARC := 48.0
 ## Zvuk kroků podle povrchu. Nové povrchy si půjčují zvuk podobného.
 const STEP_SOUNDS := {
 	"grass": "grass", "dirt": "dirt", "desert": "desert", "snow": "snow",
-	"heath": "grass", "swamp": "dirt", "scree": "dirt", "ash": "desert",
+	"heath": "heath", "swamp": "swamp", "scree": "scree", "ash": "ash",
 }
+## Ve vodě (brod v řece, mělčina) se místo kroku ozve šplouchnutí, o kousek hlasitější.
+const WADE_SOUND := "steps/water"
+const WADE_DB := 2.0
 const STEP_VARIANTS := 4
 const STEP_DB := -6.0
 const THROW_ARC := 36.0
@@ -96,6 +103,8 @@ var _idle_check_left := 0.0
 var _escape_to := Vector2.ZERO
 var _travel := 0.0
 var _step_travel := 0.0
+## Která noha teď došlápla (cákání ve vodě).
+var _left_foot := false
 var _figure := Figure.new()
 var _active := false
 var _fitted := Vector2.ZERO
@@ -237,12 +246,20 @@ func _step_run(delta: float, direction: Vector2) -> void:
 		_footstep(step.length())
 
 
-## Krok podle povrchu pod postavou, dvakrát za cyklus chůze.
+## Krok podle povrchu pod postavou, dvakrát za cyklus chůze. Ve vodě od chodidla cákne
+## (Splashes), střídavě od levé a pravé nohy, a místo kroku šplouchne.
 func _footstep(moved: float) -> void:
 	_step_travel += moved
 	if _step_travel < _figure.cycle_px * 0.5:
 		return
 	_step_travel = fmod(_step_travel, _figure.cycle_px * 0.5)
+	_left_foot = not _left_foot
+	if Splashes.current != null and Splashes.current.wet(global_position):
+		var forward := Vector2.from_angle(rotation - PI * 0.5)
+		var side := forward.orthogonal() * (FOOT_SIDE if _left_foot else -FOOT_SIDE)
+		Splashes.current.splash(global_position + side + forward * FOOT_AHEAD, forward)
+		Sound.at_variant(WADE_SOUND, STEP_VARIANTS, global_position, STEP_DB + WADE_DB)
+		return
 	var ground := walker.surface(position)
 	if STEP_SOUNDS.has(ground):
 		Sound.at_variant("steps/" + str(STEP_SOUNDS[ground]), STEP_VARIANTS, global_position, STEP_DB)

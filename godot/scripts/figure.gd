@@ -100,8 +100,9 @@ func build(host: Node2D, walk: bool, cycle_m: float) -> bool:
 	_build_gear(host, info, walk, columns, root, by_key)
 	tint(info.get("colors", {}))
 	set_gear(GEAR_ON_START)
+	# Lidé čelovku nesou, světlo jí nestíní.
 	if Shadows.current != null:
-		Shadows.current.follow(_sprites + _gear_sprites, Array(_heights + _gear_heights), true)
+		Shadows.current.follow(_sprites + _gear_sprites, Array(_heights + _gear_heights), true, false)
 	var hold_info: Dictionary = info.get("hold", {})
 	_hold_texture = load("%s/%s" % [root, str(hold_info.get("file", ""))]) as Texture2D
 	if _hold_texture == null:

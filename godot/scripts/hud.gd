@@ -12,6 +12,7 @@ const THEME := preload("res://themes/menu.tres")
 const MENU_ICON := preload("res://graphics/menu/logo_mm.png")
 const MaterialTitle := preload("res://scripts/material_title.gd")
 const MiniMap := preload("res://scripts/minimap.gd")
+const DayNight := preload("res://scripts/day_night.gd")
 
 ## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře drží ARROW_BELOW pod
 ## panely v rozích, nejméně ARROW_TOP.
@@ -144,12 +145,13 @@ func set_progress(done: int) -> void:
 		_pop(_score)
 
 
+## Den a noc: phase jako DayNight.phase, 0 východ slunce, 0.5 východ měsíce. moon je pořadí
+## fáze měsíce v DayNight.MOON_PHASES (0 úplněk, 4 nov).
+func set_sky(phase: float, moon: int) -> void:
+	_sky.set_phase(phase, moon)
+
+
 ## Uběhlý čas hry.
-## Den a noc: phase jako DayNight.phase, 0 východ slunce, 0.5 východ měsíce.
-func set_sky(phase: float) -> void:
-	_sky.set_phase(phase)
-
-
 func set_time(seconds: float) -> void:
 	var whole := maxi(floori(seconds), 0)
 	if whole == _shown_seconds:
@@ -606,46 +608,56 @@ class ClockIcon:
 		draw_line(center, center + Vector2(radius * 0.5, 0), color, 1.5, true)
 
 
-## Náčrt obzoru: oblouk, po kterém jde ve dne slunce a v noci měsíc. Vychází vpravo,
-## nahoře je poledne (půlnoc), zapadá vlevo.
+## Náčrt obzoru: oblouk, po kterém jde ve dne slunce a v noci měsíc ve své fázi. Vychází
+## vpravo, nahoře je poledne (půlnoc), zapadá vlevo a pomalu klesne pod obzor, kde zmizí.
+## Kruh je stejný jako v DayNight, střed má o DayNight.HORIZON_DROP poloměru pod obzorem.
 class SkyDial:
 	extends Control
 
 	const LINE := Color(0.95, 0.93, 0.88, 0.55)
 	const PATH := Color(0.95, 0.93, 0.88, 0.22)
 	const GROUND := Color(0.95, 0.93, 0.88, 0.08)
-	const SUN := Color(0.98, 0.78, 0.3)
-	const MOON := Color(0.82, 0.88, 1.0)
-	const CRATER := Color(0.62, 0.7, 0.86)
+	## Slunce a fáze měsíce (tools/gen_sky.py): pruh buněk CELL px, slunce a pak měsíc v pořadí
+	## DayNight.MOON_PHASES. Kreslí se ve velikosti DRAWN.
+	const SKY := preload("res://graphics/hud/sky.png")
+	const CELL := 48.0
+	const DRAWN := 22.0
 
 	var _phase := 0.0
+	var _moon := 0
 
-	func set_phase(phase: float) -> void:
-		# Překreslí se, až se slunce posune aspoň o kus (asi o pixel oblouku).
-		if absf(phase - _phase) < 0.0015:
+	func _init() -> void:
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+
+	func set_phase(phase: float, moon: int) -> void:
+		# Překreslí se, až se slunce posune aspoň o kus (asi o pixel oblouku) nebo se změní fáze.
+		if absf(phase - _phase) < 0.0015 and moon == _moon:
 			return
 		_phase = phase
+		_moon = moon
 		queue_redraw()
 
 	func _draw() -> void:
 		var horizon := size.y - 6.0
-		var radius := minf(size.x * 0.5 - 8.0, horizon - 6.0)
-		var center := Vector2(size.x * 0.5, horizon)
+		var drop := DayNight.HORIZON_DROP
+		var radius := minf(size.x * 0.5 - 8.0, (horizon - 6.0) / (1.0 - drop))
+		var center := Vector2(size.x * 0.5, horizon + radius * drop)
 		draw_rect(Rect2(Vector2(2.0, horizon), Vector2(size.x - 4.0, size.y - horizon)), GROUND)
-		draw_arc(center, radius, PI, TAU, 40, PATH, 1.5, true)
+		var rise := asin(drop)
+		draw_arc(center, radius, PI + rise, TAU - rise, 40, PATH, 1.5, true)
 		draw_line(Vector2(2.0, horizon), Vector2(size.x - 2.0, horizon), LINE, 1.5, true)
-		var along := fposmod(_phase * 2.0, 1.0)
-		var angle := PI * along
-		var at := center + Vector2(cos(angle), -sin(angle)) * radius
-		if _phase < 0.5:
-			for ray in 8:
-				var dir := Vector2.from_angle(TAU * float(ray) / 8.0)
-				draw_line(at + dir * 7.0, at + dir * 9.5, SUN, 1.5, true)
-			draw_circle(at, 5.5, SUN)
-		else:
-			draw_circle(at, 5.5, MOON)
-			draw_circle(at + Vector2(-1.6, -1.2), 1.3, CRATER)
-			draw_circle(at + Vector2(1.8, 1.4), 1.0, CRATER)
+		var sun := DayNight.angle_of(_phase)
+		_draw_body(center + Vector2(cos(sun), -sin(sun)) * radius, 0, horizon)
+		_draw_body(center + Vector2(cos(sun + PI), -sin(sun + PI)) * radius, 1 + _moon, horizon)
+
+	## Slunce nebo měsíc (buňka cell) se středem at, jen část nad obzorem.
+	func _draw_body(at: Vector2, cell: int, horizon: float) -> void:
+		var top := at.y - DRAWN * 0.5
+		var shown := minf(DRAWN, horizon - top)
+		if shown <= 0.0:
+			return
+		var region := Rect2(CELL * float(cell), 0.0, CELL, CELL * shown / DRAWN)
+		draw_texture_rect_region(SKY, Rect2(Vector2(at.x - DRAWN * 0.5, top), Vector2(DRAWN, shown)), region)
 
 
 ## Kroužek, do kterého se kreslí nesený kámen. Obrys má barvu trika hráče, prázdný je tlumenější.

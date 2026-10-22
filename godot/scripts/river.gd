@@ -22,7 +22,9 @@ extends RefCounted
 ## čtverců FLOW_BASE, takže voda i břeh navazují.
 ##
 ## Kreslí je jedna síť (pásy trojúhelníků podél ramen) se shaderem river.gdshader, dvakrát:
-## nejdřív písčité břehy všech ramen, pak voda všech ramen. Voda tak v soutoku překryje
+## nejdřív břehy (svah dolů k hladině) všech ramen, pak voda všech ramen. Pás sítě je o svah
+## (BANK_PAD * BANK_REACH) širší než rameno a nese zakřivení osy: na vnitřní straně zákruty
+## je náplava, na vnější vymletý břeh. Voda tak v soutoku překryje
 ## břeh druhého ramene. Most přes cestu je sprite. Shader dostane masku vody čtverce
 ## (water_mask): nad jezerem řeka nekreslí písčitý břeh a voda řeky se kousek za břehem
 ## jezera ztratí v jeho mělčině. Ústí tak navazuje přímo na břeh a k jezeru se rozšíří
@@ -136,6 +138,18 @@ const MOUTH_TILES := 2.0
 const END_FADE := 48.0
 ## Voda je vnitřní část šířky, zbytek je břeh. Zpomaluje jen voda.
 const WATER_SHARE := 0.78
+## Svah břehu za šířkou ramene v px: BANK_MIN + šířka * BANK_SHARE, nejvýš BANK_PAD. Shader
+## ho po proudu mění, na náplavě až BANK_REACH krát. Stejná čísla má river.gdshader.
+const BANK_PAD := 40.0
+const BANK_MIN := 10.0
+const BANK_SHARE := 0.4
+const BANK_REACH := 1.6
+## Zakřivení osy, které je v barvě vrcholu naplno (náplava), v 1/px. Měří se přes
+## BEND_SPAN bodů na každou stranu.
+const BEND_FULL := 0.011
+const BEND_SPAN := 3
+## Pás na vnitřní straně zákruty sahá nejvýš na takový podíl jejího poloměru.
+const FOLD_ROOM := 0.85
 ## Délka mostu navíc k šířce řeky, v pixelech. Šikmý most se prodlouží, nejvýš jako most
 ## pod úhlem asin(BRIDGE_SKEW).
 const BRIDGE_OVERHANG := 72.0
@@ -277,7 +291,7 @@ func near_bridge(pos: Vector2, margin: float) -> bool:
 	return false
 
 
-## Je bod blíž než margin px k řece i s břehem, nebo k prameništi? Pro sázení stromů,
+## Je bod blíž než margin px k řece i se svahem břehu, nebo k prameništi? Pro sázení stromů,
 ## porostu, domů, skladů a dolů.
 func near(pos: Vector2, margin: float) -> bool:
 	var local := pos - _origin
@@ -285,7 +299,12 @@ func near(pos: Vector2, margin: float) -> bool:
 		var reach := spring.z + margin
 		if local.distance_squared_to(Vector2(spring.x, spring.y)) < reach * reach:
 			return true
-	return _reach_at(local, margin, 1.0)
+	return _reach_at(local, margin, 1.0, true)
+
+
+## Obvyklá šířka svahu břehu za ramenem šířky width v px.
+static func bank_width(width: float) -> float:
+	return minf(BANK_PAD, BANK_MIN + width * BANK_SHARE)
 
 
 ## Přechody cesty přes řeku. road jsou body osy cesty (ve čtverci, před relocate). Za každý
@@ -332,7 +351,8 @@ func _segment_at(local: Vector2) -> int:
 	return found
 
 
-func _reach_at(local: Vector2, margin: float, share: float) -> bool:
+## Leží local blíž než share šířky ramene a margin od osy? with_bank přidá svah břehu.
+func _reach_at(local: Vector2, margin: float, share: float, with_bank := false) -> bool:
 	if not exists():
 		return false
 	var tile := float(TerrainCatalog.TILE_SIZE)
@@ -349,7 +369,10 @@ func _reach_at(local: Vector2, margin: float, share: float) -> bool:
 		var b := line_points[at + 1]
 		var ab := b - a
 		var t := clampf((local - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
-		var half := lerpf(line_widths[at], line_widths[at + 1], t) * 0.5 * share + margin
+		var width := lerpf(line_widths[at], line_widths[at + 1], t)
+		var half := width * 0.5 * share + margin
+		if with_bank:
+			half += bank_width(width)
 		if local.distance_squared_to(a + ab * t) < half * half:
 			return true
 	return false
@@ -1030,7 +1053,7 @@ func _index() -> void:
 		var line_points: PackedVector2Array = lines[line_index]["points"]
 		var line_widths: PackedFloat32Array = lines[line_index]["widths"]
 		for i in line_points.size() - 1:
-			var half := maxf(line_widths[i], line_widths[i + 1]) * 0.5 + tile
+			var half := maxf(line_widths[i], line_widths[i + 1]) * 0.5 + BANK_PAD + tile
 			var low := line_points[i].min(line_points[i + 1]) - Vector2(half, half)
 			var high := line_points[i].max(line_points[i + 1]) + Vector2(half, half)
 			for cy in range(floori(low.y / tile), floori(high.y / tile) + 1):
@@ -1070,7 +1093,9 @@ func place_bridges(town: Town) -> void:
 
 ## Síť řeky a mosty pod host. origin je levý horní roh čtverce ve světě. look je materiál
 ## vody jezer z katalogu terénu, řeka si z něj vezme barvy, texturu vody a vlny.
-func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null) -> void:
+## bank: svah břehu podle terénu (TerrainCatalog.bank_look). painted: rohy a varianty dlaždic čtverce
+## (MapGenerator.corner_data), z nich shader pozná terén pod břehem.
+func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null, bank := {}, painted := {}) -> void:
 	if not exists():
 		return
 	var shader := load(SHADER) as Shader
@@ -1082,6 +1107,13 @@ func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null) -> void:
 				shared[uniform["name"]] = value
 	var mesh := _mesh()
 	var mask := ImageTexture.create_from_image(_water_mask) if _water_mask != null else null
+	var ground := {}
+	if painted.has("corners") and painted.has("variants"):
+		ground["ground_on"] = 1.0
+		ground["map_size"] = float(_size)
+		ground["corner_map"] = ImageTexture.create_from_image(Image.create_from_data(_size, _size, false, Image.FORMAT_RGBA8, painted["corners"]))
+		ground["variant_map"] = ImageTexture.create_from_image(Image.create_from_data(_size, _size, false, Image.FORMAT_R8, painted["variants"]))
+	ground.merge(bank)
 	# Nejdřív břehy všech ramen, potom voda všech ramen.
 	for part in 2:
 		var node := MeshInstance2D.new()
@@ -1092,6 +1124,8 @@ func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null) -> void:
 		for key: String in shared:
 			material.set_shader_parameter(key, shared[key])
 		material.set_shader_parameter("part", part)
+		for key: String in ground:
+			material.set_shader_parameter(key, ground[key])
 		if mask != null:
 			material.set_shader_parameter("water_mask", mask)
 			material.set_shader_parameter("mask_size", float(_water_mask.get_width()))
@@ -1120,13 +1154,19 @@ func despawn() -> void:
 	_nodes.clear()
 
 
-## Pásy trojúhelníků všech ramen, řeky poslední. UV.x je proud v px (flow ramene plus
-## vzdálenost od jeho začátku), UV.y napříč 0 až 1. Barva vrcholu nese průhlednost konců
-## (r: rameno se objeví u pramene, řeka se ztratí v ústí) a šířku v px (g, děleno WIDTH_MAX).
+## Pásy trojúhelníků všech ramen, řeky poslední, o svah širší než rameno. UV.x je proud v px
+## (flow ramene plus vzdálenost od jeho začátku), UV.y vzdálenost od osy napříč v px (záporná
+## na levé straně, + orthogonal směru). Barva vrcholu nese průhlednost konců (r: rameno se
+## objeví u pramene, řeka se ztratí v ústí), šířku ramene v px (g, děleno WIDTH_MAX)
+## a zakřivení (b: 0.5 rovně, 1 ohyb naplno ke středu na levé straně, 0 na pravé).
+## CUSTOM0.xy je směr napříč, kterým UV.y roste (pro stín břehu ve shaderu), z a w kam pás
+## sahá vlevo a vpravo v px (u zúžené vnitřní strany zákruty se břeh vejde dovnitř).
+## Na vnitřní straně ostré zákruty je pás užší než poloměr zákruty, ať se síť nepřehne.
 func _mesh() -> ArrayMesh:
 	var vertices := PackedVector2Array()
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
+	var customs := PackedFloat32Array()
 	# Řeky poslední: jejich voda v soutoku překryje konec přítoku.
 	var order: Array[int] = []
 	for main in [false, true]:
@@ -1146,12 +1186,25 @@ func _mesh() -> ArrayMesh:
 		var right := PackedVector2Array()
 		var dist := PackedFloat32Array()
 		var fade := PackedFloat32Array()
+		var bends := _curvature(line_points, BEND_SPAN, 2)
+		var tight := _curvature(line_points, 1, 0)
+		var half_left := PackedFloat32Array()
+		var half_right := PackedFloat32Array()
+		var normals := PackedVector2Array()
 		for i in line_points.size():
 			var prev := line_points[maxi(i - 1, 0)]
 			var next := line_points[mini(i + 1, line_points.size() - 1)]
 			var normal := (next - prev).normalized().orthogonal()
-			left.append(line_points[i] + normal * line_widths[i] * 0.5)
-			right.append(line_points[i] - normal * line_widths[i] * 0.5)
+			normals.append(normal)
+			var half := line_widths[i] * 0.5 + BANK_PAD * BANK_REACH
+			var bend := maxf(absf(tight[i]), absf(bends[i]))
+			var room := maxf(FOLD_ROOM / maxf(bend, 0.0001), line_widths[i] * 0.5 + 4.0)
+			# Kladné zakřivení: střed zákruty je vlevo (+ normal).
+			var inside_left := tight[i] + bends[i] > 0.0
+			half_left.append(minf(half, room) if inside_left else half)
+			half_right.append(half if inside_left else minf(half, room))
+			left.append(line_points[i] + normal * half_left[i])
+			right.append(line_points[i] - normal * half_right[i])
 			if i > 0:
 				along += line_points[i].distance_to(line_points[i - 1])
 			dist.append(along)
@@ -1164,20 +1217,56 @@ func _mesh() -> ArrayMesh:
 		for i in line_points.size() - 1:
 			var quad := [left[i], right[i], right[i + 1], left[i], right[i + 1], left[i + 1]]
 			var quad_uv := [
-				Vector2(flow + dist[i], 0.0), Vector2(flow + dist[i], 1.0), Vector2(flow + dist[i + 1], 1.0),
-				Vector2(flow + dist[i], 0.0), Vector2(flow + dist[i + 1], 1.0), Vector2(flow + dist[i + 1], 0.0),
+				Vector2(flow + dist[i], -half_left[i]), Vector2(flow + dist[i], half_right[i]),
+				Vector2(flow + dist[i + 1], half_right[i + 1]), Vector2(flow + dist[i], -half_left[i]),
+				Vector2(flow + dist[i + 1], half_right[i + 1]), Vector2(flow + dist[i + 1], -half_left[i + 1]),
 			]
 			var ends := [i, i, i + 1, i, i + 1, i + 1]
 			for k in 6:
 				vertices.append(quad[k])
 				uvs.append(quad_uv[k])
 				var at: int = ends[k]
-				colors.append(Color(fade[at], line_widths[at] / WIDTH_MAX, 0.0, 1.0))
+				var bend := 0.5 + 0.5 * clampf(bends[at] / BEND_FULL, -1.0, 1.0)
+				colors.append(Color(fade[at], line_widths[at] / WIDTH_MAX, bend, 1.0))
+				customs.append_array([-normals[at].x, -normals[at].y, half_left[at], half_right[at]])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_CUSTOM0] = customs
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	return mesh
+
+
+## Zakřivení osy v každém bodě v 1/px, kladné, když je střed zákruty vlevo (+ orthogonal
+## směru). Měří se odchylkou bodu od tětivy mezi sousedy span bodů daleko a vyhladí se
+## průměrem přes smooth bodů na každou stranu.
+static func _curvature(line_points: PackedVector2Array, span: int, smooth: int) -> PackedFloat32Array:
+	var count := line_points.size()
+	var raw := PackedFloat32Array()
+	raw.resize(count)
+	for i in count:
+		var a := line_points[maxi(i - span, 0)]
+		var b := line_points[mini(i + span, count - 1)]
+		var chord := b - a
+		var half := chord.length() * 0.5
+		if half < 1.0:
+			continue
+		var normal := chord.normalized().orthogonal()
+		# Bod vybočuje od tětivy na stranu -normal, střed zakřivení je pak na straně +normal.
+		var bulge := (line_points[i] - (a + b) * 0.5).dot(normal)
+		raw[i] = -2.0 * bulge / (half * half + bulge * bulge)
+	if smooth <= 0:
+		return raw
+	var out := PackedFloat32Array()
+	out.resize(count)
+	for i in count:
+		var sum := 0.0
+		var weight := 0.0
+		for k in range(maxi(i - smooth, 0), mini(i + smooth, count - 1) + 1):
+			sum += raw[k]
+			weight += 1.0
+		out[i] = sum / weight
+	return out

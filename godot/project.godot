@@ -77,3 +77,7 @@ sun_shadow={
 "type": "vec2",
 "value": Vector2(0, 0)
 }
+shadow_opacity={
+"type": "float",
+"value": 0.0
+}

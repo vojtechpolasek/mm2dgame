@@ -13,6 +13,7 @@ const Walker := preload("res://scripts/walker.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
 const NavGrid := preload("res://scripts/nav_grid.gd")
+const Splashes := preload("res://scripts/splashes.gd")
 
 ## Dosah chňapnutí v metrech navíc k tělům. Postava přitisknutá k překážce jinak nejde dosáhnout.
 const BITE := 0.6
@@ -149,6 +150,8 @@ var _jump_dur := 0.0
 var _jump_retry_left := 0.0
 var _block_check_left := 0.0
 var _step_travel := 0.0
+## Která noha teď došlápla (cákání ve vodě).
+var _left_foot := false
 ## Zařvala už v téhle honičce? Zařve, až je honící příšera poprvé na obrazovce.
 var _roared := false
 ## Patří honička k hudbě? Zapne se se zařváním, vypne, když příšera přestane honit nebo odejde z obrazovky.
@@ -672,12 +675,21 @@ func _animate(delta: float, step: Vector2) -> void:
 
 
 ## Krok podle druhu: chodící dvakrát za cyklus animace, létající jedno mávnutí za cyklus.
+## Chodící ve vodě cákne od nohy (Splashes), střídavě vlevo a vpravo, a ke kroku šplouchne,
+## větší příšera hlouběji a hlasitěji. Létající ne.
 func _footstep(moved: float) -> void:
 	_step_travel += moved
 	var stride := _cycle_px if _flying else _cycle_px * 0.5
 	if _step_travel < stride:
 		return
 	_step_travel = fmod(_step_travel, stride)
+	if not _flying and not _jumping and Splashes.current != null and Splashes.current.wet(global_position):
+		_left_foot = not _left_foot
+		var forward := Vector2.from_angle(rotation - PI * 0.5)
+		var side := forward.orthogonal() * _body * (0.4 if _left_foot else -0.4)
+		var size := clampf(_body / Person.BODY, 0.7, 2.0)
+		Splashes.current.splash(global_position + side + forward * _body * 0.3, forward, size)
+		Sound.at("%s_%d" % [Person.WADE_SOUND, randi_range(1, 4)], global_position, Person.STEP_DB + 3.0 * (size - 1.0), clampf(1.0 / size, 0.6, 1.3) * randf_range(0.94, 1.06))
 	Sound.at_variant("monsters/%s_step" % kind_name, STEP_VARIANTS, global_position, float(STEP_DB.get(kind_name, -6.0)))
 
 

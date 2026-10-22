@@ -190,6 +190,10 @@ func _start(player: AudioStreamPlayer, stream: AudioStream) -> void:
 
 # --- Prostředí ---
 
+## Hlasitost šumění vody těsně u vody v dB (-6 dB je polovina).
+const WATER_DB := -6.0
+
+
 ## Šumění vody. near je 0 až 1, jak blízko je voda.
 func set_water(near: float) -> void:
 	if near <= 0.0:
@@ -199,7 +203,7 @@ func set_water(near: float) -> void:
 		_ambient.stream = _stream("ambient/water", true)
 		_ambient.volume_db = SILENT
 		_ambient.play()
-	_ambient_target = lerpf(-30.0, 0.0, clampf(near, 0.0, 1.0))
+	_ambient_target = lerpf(-30.0 + WATER_DB, WATER_DB, clampf(near, 0.0, 1.0))
 
 
 func stop_ambient() -> void:
