@@ -837,25 +837,28 @@ def uid_for(res_path: str) -> str:
 def write_import(png: Path) -> None:
     res = "res://" + png.relative_to(ROOT / "godot").as_posix()
     digest = hashlib.md5(res.encode()).hexdigest()
-    imported = f"res://.godot/imported/{png.name}-{digest}.ctex"
+    stem = f"res://.godot/imported/{png.name}-{digest}"
+    # VRAM komprese jako u ostatních objektů: na slabém GPU (Raspberry Pi) bere čtvrtinu paměti.
     text = f"""[remap]
 
 importer="texture"
 type="CompressedTexture2D"
 uid="{uid_for(res)}"
-path="{imported}"
+path.s3tc="{stem}.s3tc.ctex"
+path.etc2="{stem}.etc2.ctex"
 metadata={{
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }}
 
 [deps]
 
 source_file="{res}"
-dest_files=["{imported}"]
+dest_files=["{stem}.s3tc.ctex", "{stem}.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

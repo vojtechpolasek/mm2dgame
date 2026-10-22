@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bpprycm05gpt2"
-path="res://.godot/imported/layer_2.png-4b909d46524c9c03f27577266f89d052.ctex"
+path.s3tc="res://.godot/imported/layer_2.png-4b909d46524c9c03f27577266f89d052.s3tc.ctex"
+path.etc2="res://.godot/imported/layer_2.png-4b909d46524c9c03f27577266f89d052.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://graphics/objects/rocks/pramen_tun/layer_2.png"
-dest_files=["res://.godot/imported/layer_2.png-4b909d46524c9c03f27577266f89d052.ctex"]
+dest_files=["res://.godot/imported/layer_2.png-4b909d46524c9c03f27577266f89d052.s3tc.ctex", "res://.godot/imported/layer_2.png-4b909d46524c9c03f27577266f89d052.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

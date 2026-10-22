@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d1i4xqsrb213l"
-path="res://.godot/imported/layer_3.png-9e928fb68e8262a37884a1cb2a263474.ctex"
+path.s3tc="res://.godot/imported/layer_3.png-9e928fb68e8262a37884a1cb2a263474.s3tc.ctex"
+path.etc2="res://.godot/imported/layer_3.png-9e928fb68e8262a37884a1cb2a263474.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://graphics/objects/rocks/skala_mech/layer_3.png"
-dest_files=["res://.godot/imported/layer_3.png-9e928fb68e8262a37884a1cb2a263474.ctex"]
+dest_files=["res://.godot/imported/layer_3.png-9e928fb68e8262a37884a1cb2a263474.s3tc.ctex", "res://.godot/imported/layer_3.png-9e928fb68e8262a37884a1cb2a263474.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

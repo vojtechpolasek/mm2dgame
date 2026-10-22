@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dls2emfldbrhu"
-path="res://.godot/imported/stump.png-10b2e2bd288d584ab65b4c9524d95764.ctex"
+path.s3tc="res://.godot/imported/stump.png-10b2e2bd288d584ab65b4c9524d95764.s3tc.ctex"
+path.etc2="res://.godot/imported/stump.png-10b2e2bd288d584ab65b4c9524d95764.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://graphics/objects/trees/borovice_snih/stump.png"
-dest_files=["res://.godot/imported/stump.png-10b2e2bd288d584ab65b4c9524d95764.ctex"]
+dest_files=["res://.godot/imported/stump.png-10b2e2bd288d584ab65b4c9524d95764.s3tc.ctex", "res://.godot/imported/stump.png-10b2e2bd288d584ab65b4c9524d95764.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

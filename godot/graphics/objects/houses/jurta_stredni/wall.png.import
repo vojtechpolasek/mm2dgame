@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://xwk55ybogv4h"
-path="res://.godot/imported/wall.png-e5760908b73b16b0a7e56b63a5ed8ded.ctex"
+path.s3tc="res://.godot/imported/wall.png-e5760908b73b16b0a7e56b63a5ed8ded.s3tc.ctex"
+path.etc2="res://.godot/imported/wall.png-e5760908b73b16b0a7e56b63a5ed8ded.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://graphics/objects/houses/jurta_stredni/wall.png"
-dest_files=["res://.godot/imported/wall.png-e5760908b73b16b0a7e56b63a5ed8ded.ctex"]
+dest_files=["res://.godot/imported/wall.png-e5760908b73b16b0a7e56b63a5ed8ded.s3tc.ctex", "res://.godot/imported/wall.png-e5760908b73b16b0a7e56b63a5ed8ded.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

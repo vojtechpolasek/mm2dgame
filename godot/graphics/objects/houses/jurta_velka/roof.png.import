@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bduabtkm8voio"
-path="res://.godot/imported/roof.png-66f9ec18989d0e850024ef096dc0e08a.ctex"
+path.s3tc="res://.godot/imported/roof.png-66f9ec18989d0e850024ef096dc0e08a.s3tc.ctex"
+path.etc2="res://.godot/imported/roof.png-66f9ec18989d0e850024ef096dc0e08a.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://graphics/objects/houses/jurta_velka/roof.png"
-dest_files=["res://.godot/imported/roof.png-66f9ec18989d0e850024ef096dc0e08a.ctex"]
+dest_files=["res://.godot/imported/roof.png-66f9ec18989d0e850024ef096dc0e08a.s3tc.ctex", "res://.godot/imported/roof.png-66f9ec18989d0e850024ef096dc0e08a.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

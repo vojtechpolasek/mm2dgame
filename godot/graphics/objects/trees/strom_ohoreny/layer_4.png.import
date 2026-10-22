@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://5a24djsiw3nj"
-path="res://.godot/imported/layer_4.png-9b36384c08c37cb6d172c56c753fad99.ctex"
+path.s3tc="res://.godot/imported/layer_4.png-9b36384c08c37cb6d172c56c753fad99.s3tc.ctex"
+path.etc2="res://.godot/imported/layer_4.png-9b36384c08c37cb6d172c56c753fad99.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://graphics/objects/trees/strom_ohoreny/layer_4.png"
-dest_files=["res://.godot/imported/layer_4.png-9b36384c08c37cb6d172c56c753fad99.ctex"]
+dest_files=["res://.godot/imported/layer_4.png-9b36384c08c37cb6d172c56c753fad99.s3tc.ctex", "res://.godot/imported/layer_4.png-9b36384c08c37cb6d172c56c753fad99.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
