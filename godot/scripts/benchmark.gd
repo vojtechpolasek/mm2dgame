@@ -13,12 +13,14 @@ extends Node
 ##    (každý běh na stejném místě) a postavu vede po NavGrid stejnými akcemi jako hráč. Končí
 ##    v cíli nebo po svém limitu.
 ## 2. Noc: stání a brodění se zapnutými čelovkami.
-## 3. Složky: postava stojí u vody a postupně se vypínají části scény (stíny, terén, řeka,
-##    porost, objekty, tvorové, HUD, mlha, noční závoj) a mění rozlišení. Rozdíl proti „vse“
-##    je cena té části.
+## 3. Složky: postava stojí u vody a postupně se vypínají části scény (stíny, jen stíny
+##    objektů bez stínů břehů, terén, řeka, porost, objekty, tvorové, HUD, mlha, noční závoj)
+##    a mění rozlišení. Rozdíl proti „vse“ je cena té části.
 ## Výsledek je JSON vedle spustitelného souboru ve složce benchmark (v editoru
 ## user://benchmark), cesta se vypíše na konec. Pak se hra ukončí.
 ## Vsync je při měření vypnutý, doba snímku je skutečná práce procesoru a grafiky.
+
+const Shadows := preload("res://scripts/shadows.gd")
 
 ## Semínko světa benchmarku. Úvodní čtverec má les, řeku i vesnici.
 const DEFAULT_SEED := 2
@@ -240,11 +242,12 @@ func _build_plan() -> void:
 	if _spots.has("brod"):
 		_add("noc_brodeni", "noc", 5.0, {"night": true, "goal": _spots["brod"], "from": view})
 	_add("vse", "slozky_den", STILL, {"teleport": view})
-	for part in ["bez_stinu", "bez_terenu", "bez_reky", "bez_porostu", "bez_objektu", "bez_tvoru", "bez_hud", "bez_mlhy"]:
+	for part in ["bez_stinu", "bez_stinu_objektu", "bez_terenu", "bez_reky", "bez_porostu", "bez_objektu", "bez_tvoru", "bez_hud", "bez_mlhy"]:
 		_add(part, "slozky_den", STILL, {"off": part})
 	_add("noc_vse", "slozky_noc", STILL, {"night": true})
 	_add("noc_bez_zavoje", "slozky_noc", STILL, {"night": true, "off": "bez_zavoje"})
 	_add("noc_bez_stinu", "slozky_noc", STILL, {"night": true, "off": "bez_stinu"})
+	_add("noc_bez_stinu_objektu", "slozky_noc", STILL, {"night": true, "off": "bez_stinu_objektu"})
 	_add("plne_rozliseni", "rozliseni", STILL, {"reduced": false})
 	_add("usporne_rozliseni", "rozliseni", STILL, {"reduced": true})
 
@@ -364,6 +367,13 @@ func _apply_off(part: String) -> void:
 			item.visible = part != "bez_zavoje"
 	(_world.get_node("Hint") as CanvasLayer).visible = part != "bez_hud"
 	Graphics.set_shadows(bool(_settings["shadows"]) and part != "bez_stinu", false)
+	# Jen stíny objektů (obrázek stínů), stíny břehů ve vodě zůstanou. set_shadows výše
+	# obnoví obrázek, když se fáze mění.
+	var shadows: Node2D = Shadows.current
+	if shadows != null:
+		shadows.visible = part != "bez_stinu_objektu"
+		if part == "bez_stinu_objektu":
+			(shadows.get("_shadow_view") as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED
 	for sq in (_board.get("_squares") as Dictionary).values():
 		for group in [sq.monsters.members, sq.villagers.members]:
 			for member: Node in group:

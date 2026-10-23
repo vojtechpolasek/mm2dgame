@@ -3,8 +3,9 @@ extends Node2D
 ## Stíny objektů na zemi od slunce a měsíce a překážky pro světlo čelovek. Leží nad terénem,
 ## řekou a porostem a pod objekty.
 ##
-## Kreslí se do dvou obrázků v poloviční velikosti obrazovky (SubViewport s kamerou za hlavní
-## kamerou), stíny jsou měkké a rozdíl není vidět:
+## Kreslí se do obrázků zmenšených proti obrazovce (SubViewport s kamerou za hlavní kamerou):
+## stíny na čtvrtinu (SHADOW_SCALE), překážky a stíny čelovek na polovinu (SCALE). Stíny jsou
+## měkké, rozdíl skoro není vidět, a menší obrázek je na slabé grafice mnohem levnější:
 ## - stíny: každá vrstva objektu nad zemí jako černá silueta (shadow_layer.gdshader), posunutá
 ##   podle výšky vrstvy a globálního sun_shadow (DayNight). Obrázek se roztáhne přes svět
 ##   s krytím strength, překryté stíny tak neztmavnou dvakrát.
@@ -50,8 +51,10 @@ const LAMP_HEIGHT := 1.5
 ## Výška v obrázku překážek je podíl HEIGHT_RANGE (kanál R má rozsah 0 až 1). Stejné číslo
 ## mají occluder_layer.gdshader a night_veil.gdshader.
 const HEIGHT_RANGE := 16.0
-## Obrázky stínů a překážek mají takový podíl velikosti obrazovky.
+## Obrázky překážek a stínů čelovek mají takový podíl velikosti obrazovky.
 const SCALE := 0.5
+## Obrázek stínů od slunce a měsíce má takový podíl velikosti obrazovky.
+const SHADOW_SCALE := 0.25
 ## Poloměr kolečka kmene v obrázku (trunk), sprite se zmenší na poloměr kmene.
 const DISC_RADIUS := 16
 
@@ -177,23 +180,27 @@ func _view_size() -> Vector2:
 	return _camera.get_viewport_rect().size / maxf(_camera.zoom.x, 0.001)
 
 
-## Obrázky drží záběr hlavní kamery v poloviční velikosti.
+## Obrázky drží záběr hlavní kamery, zmenšený o SHADOW_SCALE (stíny) a SCALE (ostatní).
 func _fit() -> void:
 	if _camera == null:
 		return
 	var screen := _camera.get_viewport_rect().size
-	var pixels := Vector2i(maxi(int(screen.x * SCALE), 1), maxi(int(screen.y * SCALE), 1))
 	var center := _camera.get_screen_center_position()
-	for pair: Array in [[_shadow_view, _shadow_camera], [_occluder_view, _occluder_camera], [_lamp_view, _lamp_camera]]:
-		var view: SubViewport = pair[0]
-		var camera: Camera2D = pair[1]
+	var shadow_pixels := Vector2i.ONE
+	for row: Array in [[_shadow_view, _shadow_camera, SHADOW_SCALE], [_occluder_view, _occluder_camera, SCALE], [_lamp_view, _lamp_camera, SCALE]]:
+		var view: SubViewport = row[0]
+		var camera: Camera2D = row[1]
+		var share: float = row[2]
+		var pixels := Vector2i(maxi(int(screen.x * share), 1), maxi(int(screen.y * share), 1))
+		if view == _shadow_view:
+			shadow_pixels = pixels
 		if view.size != pixels:
 			view.size = pixels
 		camera.position = center
-		camera.zoom = _camera.zoom * SCALE
+		camera.zoom = _camera.zoom * share
 		camera.force_update_scroll()
 	_shown.position = center
-	_shown.scale = Vector2.ONE * _view_size().x / float(pixels.x)
+	_shown.scale = Vector2.ONE * _view_size().x / float(shadow_pixels.x)
 	_lamp_rect.position = center - _view_size() * 0.5
 	_lamp_rect.size = _view_size()
 

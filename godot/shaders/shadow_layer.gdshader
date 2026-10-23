@@ -12,9 +12,10 @@ render_mode unshaded;
 uniform float height_m = 1.0;
 uniform float sweep_m = 0.0;
 global uniform vec2 sun_shadow;
-// Krok vzorků tahu v px obrázku a nejvíc vzorků.
-const float SWEEP_STEP = 8.0;
-const int SWEEP_MAX = 32;
+// Krok vzorků tahu v px obrázku a nejvíc vzorků. Obrázek stínů je ve čtvrtinovém rozlišení,
+// hustší vzorky by v něm nebyly vidět.
+const float SWEEP_STEP = 16.0;
+const int SWEEP_MAX = 12;
 
 varying vec2 center_uv;
 varying vec2 half_uv;
