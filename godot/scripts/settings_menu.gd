@@ -14,7 +14,7 @@ func _ready() -> void:
 	Sound.play_menu_music()
 	music.pressed.connect(func() -> void: Sound.set_music_on(not Sound.music_on()))
 	sounds.pressed.connect(func() -> void: Sound.set_sounds_on(not Sound.sounds_on()))
-	resolution.pressed.connect(func() -> void: Graphics.set_reduced(not Graphics.reduced()))
+	resolution.pressed.connect(func() -> void: Graphics.set_world_scale(Graphics.next_world_scale(Graphics.world_scale())))
 	sparkle.pressed.connect(func() -> void: Graphics.set_sparkle(not Graphics.sparkle_on()))
 	shadows.pressed.connect(func() -> void: Graphics.set_shadows(not Graphics.shadows_on()))
 	$Center/Panel/Column/Back.pressed.connect(_back)
@@ -27,7 +27,7 @@ func _ready() -> void:
 func _label() -> void:
 	music.text = "Hudba: %s" % ("zapnutá" if Sound.music_on() else "vypnutá")
 	sounds.text = "Zvuky: %s" % ("zapnuté" if Sound.sounds_on() else "vypnuté")
-	resolution.text = "Rozlišení: %s" % ("úsporné (720p)" if Graphics.reduced() else "plné")
+	resolution.text = "Rozlišení: %d %%" % roundi(Graphics.world_scale() * 100.0)
 	sparkle.text = "Třpyt kamenů: %s" % ("zapnutý" if Graphics.sparkle_on() else "vypnutý")
 	shadows.text = "Stíny: %s" % ("zapnuté" if Graphics.shadows_on() else "vypnuté")
 

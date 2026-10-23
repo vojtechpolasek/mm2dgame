@@ -16,7 +16,8 @@ extends Node
 ##    čelovek (kužel pak svítí celý).
 ## 3. Složky: postava stojí u vody a postupně se vypínají části scény (stíny, jen stíny
 ##    objektů bez stínů břehů, terén, voda jezer, řeka, porost, objekty, tvorové, HUD, jen
-##    minimapa, mlha, noční závoj) a mění rozlišení. Rozdíl proti „vse“ je cena té části.
+##    minimapa, mlha, noční závoj) a mění rozlišení světa (Graphics.SCALES, ve dne i v noci).
+##    Rozdíl proti „vse“ je cena té části.
 ## Výsledek je JSON vedle spustitelného souboru ve složce benchmark (v editoru
 ## user://benchmark), cesta se vypíše na konec. Pak se hra ukončí.
 ## Vsync je při měření vypnutý, doba snímku je skutečná práce procesoru a grafiky.
@@ -115,7 +116,7 @@ func _ready() -> void:
 	print("Benchmark: semínko %d, %s" % [world_seed(), RenderingServer.get_video_adapter_name()])
 	# I globální náhoda (zvuky, pořadí vesničanů) je pevná.
 	seed(hash([world_seed(), "global"]))
-	_settings = {"reduced": Graphics.reduced(), "shadows": Graphics.shadows_on(), "sparkle": Graphics.sparkle_on()}
+	_settings = {"scale": Graphics.world_scale(), "shadows": Graphics.shadows_on(), "sparkle": Graphics.sparkle_on()}
 	# Bez id se hra neukládá, uložené hry hráče zůstanou, jak byly.
 	GameSession.free_roam = false
 	GameSession.suit_id = ""
@@ -251,8 +252,10 @@ func _build_plan() -> void:
 	_add("noc_bez_stinu", "slozky_noc", STILL, {"night": true, "off": "bez_stinu"})
 	_add("noc_bez_stinu_objektu", "slozky_noc", STILL, {"night": true, "off": "bez_stinu_objektu"})
 	_add("noc_bez_stinu_celovek", "slozky_noc", STILL, {"night": true, "off": "bez_stinu_celovek"})
-	_add("plne_rozliseni", "rozliseni", STILL, {"reduced": false})
-	_add("usporne_rozliseni", "rozliseni", STILL, {"reduced": true})
+	for scale in Graphics.SCALES:
+		_add("rozliseni_%d" % roundi(scale * 100.0), "rozliseni", STILL, {"scale": scale})
+	for scale in Graphics.SCALES:
+		_add("noc_rozliseni_%d" % roundi(scale * 100.0), "rozliseni_noc", STILL, {"night": true, "scale": scale})
 
 
 func _add(phase_name: String, group: String, time: float, extra: Dictionary) -> void:
@@ -269,7 +272,7 @@ func _next() -> void:
 		return
 	var phase := _plan[_index]
 	_apply_off(str(phase.get("off", "")))
-	Graphics.set_reduced(bool(phase.get("reduced", _settings["reduced"])), false)
+	Graphics.set_world_scale(float(phase.get("scale", _settings["scale"])), false)
 	if phase.has("goal") and phase.has("from"):
 		phase["teleport"] = _before(phase["from"], phase["goal"])
 	if phase.has("teleport"):
@@ -481,7 +484,7 @@ func _costs() -> Array:
 
 func _finish() -> void:
 	_apply_off("")
-	Graphics.set_reduced(bool(_settings["reduced"]), false)
+	Graphics.set_world_scale(float(_settings["scale"]), false)
 	DisplayServer.window_set_vsync_mode(_vsync)
 	var costs := _costs()
 	print("Cena částí (ms snímku):")

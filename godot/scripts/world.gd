@@ -29,6 +29,8 @@ var _fps_shown := -1.0
 func _ready() -> void:
 	# Kamera na skupinu hráčů až po tom, co se postavy v tomhle snímku pohnuly.
 	process_priority = 10
+	# Při nižším rozlišení světa se svět kreslí zmenšeně, HUD zůstane ostrý.
+	Graphics.attach_world(self)
 	Sound.settings_changed.connect(_on_sound_settings)
 	await get_tree().process_frame
 	_board = WorldBoard.new()
@@ -76,6 +78,7 @@ func _close_pause() -> void:
 
 func _exit_tree() -> void:
 	get_tree().paused = false
+	Graphics.attach_world(null)
 	Sound.stop_ambient()
 	if _board != null:
 		_board.shutdown()
