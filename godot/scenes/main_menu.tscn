@@ -48,10 +48,15 @@ stretch_mode = 5
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2
 
+[node name="Hunt" type="Button" parent="Center/Panel/Column"]
+custom_minimum_size = Vector2(360, 56)
+layout_mode = 2
+text = "Chytej příšery"
+
 [node name="Play" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(360, 56)
 layout_mode = 2
-text = "Hrát"
+text = "Sbírání kamenů"
 
 [node name="FreeRoam" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(360, 56)

@@ -41,6 +41,8 @@ var members: Array[Monster] = []
 var carriers: Array = []
 var _navs := {}
 var _catalog := {}
+## Společné materiály vrstev podle druhu shaderu (_shared_material).
+var _materials := {}
 
 
 ## Příprava, která nesahá na scénu a smí běžet ve vlákně s generováním mapy: načte katalog,
@@ -81,77 +83,152 @@ func spawn(
 ) -> void:
 	if crystal == null or materials.is_empty():
 		return
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	for mat in materials:
+		var info := info_of(crystal, mat)
+		if info.is_empty():
+			continue
+		var flying := bool(info.get("flying", false))
+		var body := float(info.get("body_meters", 0.4)) * tile
+		var nav: NavGrid = null if flying else nav_of(info, walker, rocks, forest)
+		var area := crystal.monster_range(mat) * tile
+		var home := _mine_of(rocks, mat, walker.home())
+		if home == Vector2.INF or area.y <= 0.0:
+			home = Vector2.INF
+			area = Vector2.ZERO
+		var at := _area_point(walker, nav, body, flying, home, area, rng) if area.y > 0.0 else Vector2.INF
+		if at == Vector2.INF:
+			at = _spawn_point(walker, nav, body, flying, rng)
+		var monster := make(mat, crystal, walker, nav, persons, camera, host, rng, at, home, area, crystal.monster_speed(mat))
+		if monster != null:
+			members.append(monster)
+
+
+## Druh příšery materiálu mat z monsters.json. Prázdný, když v katalogu chybí.
+func info_of(crystal: Crystal, mat: int) -> Dictionary:
 	if _catalog.is_empty():
 		_catalog = _read_catalog()
-	if _catalog.is_empty():
+	var species: Dictionary = _catalog.get("species", {})
+	var kind := crystal.monster_of(mat)
+	if not species.has(kind):
+		push_warning("Materiál %d chce příšeru %s, v katalogu chybí." % [mat, kind])
+		return {}
+	return species[kind]
+
+
+## Načte textury a materiál příšery materiálu mat dopředu, ať je make nenačítá uprostřed hry.
+func preload_looks(crystal: Crystal, mat: int) -> void:
+	var info := info_of(crystal, mat)
+	if info.is_empty():
 		return
-	var catalog := _catalog
-	var shader := load(SHADER) as Shader
+	_layer_textures(CATALOG.get_base_dir(), info)
+	var stone := str(info.get("shader", "")) == "stone"
+	if stone:
+		_glint_textures(CATALOG.get_base_dir(), info)
+	_shared_material(stone)
+
+
+## Vrstvy příšery materiálu mat jako prosté sprity s jejím shaderem a texturami, k jednomu
+## vykreslení při startu (shader se přeloží dopředu). Bez druhu prázdné.
+func sample_layers(crystal: Crystal, mat: int) -> Array[Sprite2D]:
+	var out: Array[Sprite2D] = []
+	var info := info_of(crystal, mat)
+	if info.is_empty():
+		return out
+	var shared := _shared_material(str(info.get("shader", "")) == "stone")
+	for texture in _layer_textures(CATALOG.get_base_dir(), info):
+		var sprite := Sprite2D.new()
+		sprite.texture = texture
+		sprite.hframes = maxi(int(info.get("atlas_columns", info.get("frames", 8))), 1)
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		sprite.material = shared
+		out.append(sprite)
+	return out
+
+
+## Mřížka cest pro druh info. Létající žádnou nepotřebuje, vrátí null.
+func nav_of(info: Dictionary, walker: Walker, rocks: Rocks, forest: Forest) -> NavGrid:
+	if bool(info.get("flying", false)):
+		return null
+	var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE)
+	return _nav_for(body, float(info.get("jump_meters", 0.0)), walker, rocks, forest)
+
+
+## Jedna příšera materiálu mat na místě at, toulá se v mezikruží area (px) kolem home.
+## speed násobí rychlost honičky druhu. hunt: místo honičky utíká před postavami (Hunt).
+## Bez druhu v katalogu nebo bez textur null.
+func make(
+	mat: int,
+	crystal: Crystal,
+	walker: Walker,
+	nav: NavGrid,
+	persons: Array[Person],
+	camera: MapCamera,
+	host: Node2D,
+	rng: RandomNumberGenerator,
+	at: Vector2,
+	home: Vector2,
+	area: Vector2,
+	speed: float,
+	hunt := false,
+) -> Monster:
+	var info := info_of(crystal, mat)
+	if info.is_empty():
+		return null
+	var textures := _layer_textures(CATALOG.get_base_dir(), info)
+	if textures.is_empty():
+		return null
+	var eye: Dictionary = info.get("colors", {})
+	var colors := {
+		"body": crystal.color_of(mat),
+		"accent": crystal.monster_accent(mat),
+		"eye": Color.html(str(eye.get("eye", "FFFFFF"))),
+	}
+	var layer_material := _shared_material(str(info.get("shader", "")) == "stone")
+	if layer_material == null:
+		return null
+	if str(info.get("shader", "")) == "stone":
+		colors["glint"] = crystal.glint_of(mat)
+		colors["sparkle"] = crystal.sparkle_of(mat)
+		colors["glint_maps"] = _glint_textures(CATALOG.get_base_dir(), info)
+	var flying := bool(info.get("flying", false))
+	var kind := crystal.monster_of(mat)
+	var monster := Monster.new()
+	monster.name = "Monster_%s_%d" % [kind, mat]
+	monster.material_index = mat
+	monster.hunt = hunt
+	# Zvuky druhu, druh v katalogu je může půjčit od jiného ("sound").
+	monster.kind_name = str(info.get("sound", kind))
+	host.add_child(monster)
+	if home != Vector2.INF and area.y > 0.0:
+		monster.home = home
+		monster.home_range = area
+	monster.setup(info, textures, layer_material, colors, speed, float(_catalog.get("shadow_alpha", 0.35)), walker, nav, persons, camera, rng, at)
+	monster.carriers = carriers
+	if not flying and walker.crowd != null:
+		monster.crowd_id = walker.crowd.join(monster)
+	return monster
+
+
+## Společný materiál vrstev, z něj si každá vrstva udělá kopii. stone: kamenné příšery
+## s odlesky (druhy s "shader": "stone").
+func _shared_material(stone: bool) -> ShaderMaterial:
+	var key := "stone" if stone else "plain"
+	if _materials.has(key):
+		return _materials[key]
+	var shader := load(STONE_SHADER if stone else SHADER) as Shader
 	if shader == null:
 		push_error("Chybí shader příšer.")
-		return
+		return null
+	var shade: Array = _catalog.get("shade", [0.35, 1.15])
+	var accent_shade: Array = _catalog.get("accent_shade", [0.6, 1.1])
 	var shared := ShaderMaterial.new()
 	shared.shader = shader
 	shared.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
-	var shade: Array = catalog.get("shade", [0.35, 1.15])
-	var accent_shade: Array = catalog.get("accent_shade", [0.6, 1.1])
 	shared.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
 	shared.set_shader_parameter("accent_shade", Vector2(float(accent_shade[0]), float(accent_shade[1])))
-	var shadow_alpha := float(catalog.get("shadow_alpha", 0.35))
-	var stone_shared: ShaderMaterial = null
-	var species: Dictionary = catalog.get("species", {})
-	var root := CATALOG.get_base_dir()
-	for mat in materials:
-		var kind := crystal.monster_of(mat)
-		if not species.has(kind):
-			push_warning("Materiál %d chce příšeru %s, v katalogu chybí." % [mat, kind])
-			continue
-		var info: Dictionary = species[kind]
-		var textures := _layer_textures(root, info)
-		if textures.is_empty():
-			continue
-		var eye: Dictionary = info.get("colors", {})
-		var colors := {
-			"body": crystal.color_of(mat),
-			"accent": crystal.monster_accent(mat),
-			"eye": Color.html(str(eye.get("eye", "FFFFFF"))),
-		}
-		var layer_material := shared
-		if str(info.get("shader", "")) == "stone":
-			if stone_shared == null:
-				stone_shared = ShaderMaterial.new()
-				stone_shared.shader = load(STONE_SHADER) as Shader
-				stone_shared.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
-				stone_shared.set_shader_parameter("shade", Vector2(float(shade[0]), float(shade[1])))
-				stone_shared.set_shader_parameter("accent_shade", Vector2(float(accent_shade[0]), float(accent_shade[1])))
-			layer_material = stone_shared
-			colors["glint"] = crystal.glint_of(mat)
-			colors["sparkle"] = crystal.sparkle_of(mat)
-			colors["glint_maps"] = _glint_textures(root, info)
-		var speed := crystal.monster_speed(mat)
-		var flying := bool(info.get("flying", false))
-		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE)
-		var monster := Monster.new()
-		monster.name = "Monster_%s_%d" % [kind, mat]
-		monster.material_index = mat
-		# Zvuky druhu, druh v katalogu je může půjčit od jiného ("sound").
-		monster.kind_name = str(info.get("sound", kind))
-		host.add_child(monster)
-		var jump := float(info.get("jump_meters", 0.0))
-		var nav: NavGrid = null if flying else _nav_for(body, jump, walker, rocks, forest)
-		var area := crystal.monster_range(mat) * float(TerrainCatalog.TILE_SIZE)
-		var home := _mine_of(rocks, mat, walker.home())
-		if home != Vector2.INF and area.y > 0.0:
-			monster.home = home
-			monster.home_range = area
-		var at := _area_point(walker, nav, body, flying, home, area, rng) if monster.home_range.y > 0.0 else Vector2.INF
-		if at == Vector2.INF:
-			at = _spawn_point(walker, nav, body, flying, rng)
-		monster.setup(info, textures, layer_material, colors, speed, shadow_alpha, walker, nav, persons, camera, rng, at)
-		monster.carriers = carriers
-		members.append(monster)
-		if not flying and walker.crowd != null:
-			monster.crowd_id = walker.crowd.join(monster)
+	_materials[key] = shared
+	return shared
 
 
 ## Stav k uložení: materiál a místo každé příšery.

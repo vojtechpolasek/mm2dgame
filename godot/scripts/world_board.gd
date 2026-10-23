@@ -17,6 +17,8 @@ extends Node
 ## a příšer. Není level, čas, šipka ani ohrada, nic se neukládá. Čtverec dál než PARK_AT od
 ## čtverců hráčů se uvolní ze scény a zůstane jen jeho mapa (_parked). Po návratu se z ní
 ## postaví stejně, jako když se načítá uložená hra.
+## Chytej příšery (GameSession.hunt): volný pohyb, ve kterém se rodí příšery k chytání.
+## Kde a jaké příšery se objeví, čas a body řídí Hunt. Čtverce pro něj nic nepřipravují.
 ## Průlet v menu (start_flyover): stejná krajina, bez postavy. Kamera jede stálou rychlostí
 ## šikmo nahoru doprava a podle ní se otevírají další čtverce. Nic se neukládá.
 ## Den a noc (DayNight): slunce a měsíc obíhají, objekty vrhají stíny (Shadows) a v noci
@@ -54,6 +56,7 @@ const MiniMap := preload("res://scripts/minimap.gd")
 const Shadows := preload("res://scripts/shadows.gd")
 const DayNight := preload("res://scripts/day_night.gd")
 const Benchmark := preload("res://scripts/benchmark.gd")
+const Hunt := preload("res://scripts/hunt.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
@@ -171,6 +174,8 @@ var _free := false
 var _flyover := false
 ## Uvolněné čtverce volného pohybu: souřadnice -> mapa (_record).
 var _parked := {}
+## Chytej příšery, jinak null.
+var _hunt: Hunt
 
 
 class Square:
@@ -239,6 +244,11 @@ func start(host) -> void:
 	if not _crystal.load_catalog():
 		push_error("Chybí materiály krystalu.")
 	_free = _flyover or GameSession.free_roam
+	if GameSession.hunt and not _flyover:
+		_hunt = Hunt.new()
+		_hunt.name = "Hunt"
+		add_child(_hunt)
+		_hunt.load_catalog(_crystal)
 	Benchmark.seed_rng(_world_rng, 0)
 	_camera.position = Vector2(_span(), _span()) * 0.5
 	_camera.roam()
@@ -319,6 +329,9 @@ func tick(delta: float) -> void:
 	_follow()
 	_actors()
 	if _free:
+		if _hunt != null:
+			_hunt.tick(delta, _day.phase)
+			_hud.set_countdown(_hunt.time_left, Hunt.SECONDS)
 		_sound(delta)
 		_park_far()
 		return
@@ -680,6 +693,9 @@ func _furnish(sq: Square, map: MapData) -> void:
 	sq.walker = Walker.new(sq.rocks, sq.forest, sq.town, map)
 	sq.walker.river = sq.river
 	sq.monsters.prepare(sq.rocks.pond_materials(), _crystal, sq.walker, sq.rocks, sq.forest)
+	if _hunt != null:
+		for body in _hunt.bodies:
+			sq.rocks.prepare_bounds(body)
 	sq.villagers.prepare(sq.walker, sq.rocks, sq.forest)
 	sq.rocks.prepare_bounds(Person.BODY)
 	# Textury tady ve vlákně, na hlavním by načtení zaseklo hru.
@@ -839,6 +855,11 @@ func _open_play(sq: Square) -> void:
 	_wake(sq)
 	_party.frame()
 	_show_task()
+	if _hunt != null:
+		_hunt.crowd = _crowd
+		_hunt.start(self, _camera, _host._persons, _props, _day.phase, sq.map.surfaces)
+		_hunt.scored.connect(_hud.set_hunt_score)
+		_hunt.finished.connect(_finish_hunt)
 
 
 ## Menu: žádná postava a žádné hlášení. Sousedé ve směru jízdy se začnou tvořit hned,
@@ -890,7 +911,10 @@ func _ring_persons() -> void:
 func _setup_hud(_sq: Square) -> void:
 	if _free:
 		_hud.setup(_crystal, GameSession.players)
-		_hud.free_roam()
+		if _hunt != null:
+			_hud.hunt(Hunt.SECONDS)
+		else:
+			_hud.free_roam()
 	else:
 		var game: SuitGame = _games.get(_active)
 		var target := game.target() if game != null else 1
@@ -903,6 +927,7 @@ func _setup_hud(_sq: Square) -> void:
 	_hud.pause_requested.connect(_host._open_pause)
 	_hud.pause_closed.connect(_host._close_pause)
 	_hud.main_menu_pressed.connect(_host._to_main_menu)
+	_hud.again_pressed.connect(_host._play_again)
 
 
 ## Dýchací přístroj, ukradený kámen zmizí. Co postava udělá, se hlásí vesničanům čtverce,
@@ -1091,7 +1116,10 @@ func _show_task() -> void:
 
 
 ## Hraje hudba při honičce? Dokud kdokoli nese kámen: hráč nebo vesničan na probuzeném čtverci.
+## V Chytej příšery, dokud na obrazovce některá příšera utíká.
 func _chase_music() -> bool:
+	if _hunt != null:
+		return _hunt.any_fleeing()
 	if Monsters.anyone_carrying(_host._persons, []):
 		return true
 	for key in _squares:
@@ -1179,6 +1207,16 @@ func _park(sq: Square) -> void:
 		if node.get_parent() != null:
 			node.get_parent().remove_child(node)
 		node.queue_free()
+
+
+## Je pod bodem hotový čtverec? Létající příšera při úprku nad jiný nevyletí.
+func has_ground(pos: Vector2) -> bool:
+	return _ready_at(pos) != null
+
+
+func hunt_notice(text: String, seconds: float) -> void:
+	if _hud != null:
+		_hud.show_notice(text, seconds)
 
 
 func _ready_at(pos: Vector2) -> Square:
@@ -1505,6 +1543,39 @@ func _finish_game() -> void:
 	if rank > 0:
 		note += " · %d. místo ve výkonech" % rank
 	_hud.show_result("Konec hry", note)
+
+
+## Chytej příšery: čas vypršel. Hra stojí. Vejde-li se výkon do tabulky, nabídne se jméno
+## (předvyplněné posledním pro tolik hráčů), pak se zapíše a ukáže tabulka.
+func _finish_hunt(points: int, caught: int) -> void:
+	_finished = true
+	Sound.duck_music()
+	Sound.stop_ambient()
+	Sound.ui("win")
+	get_tree().paused = true
+	var players := GameSession.players.size()
+	var note := "%d bodů · chyceno %s" % [points, Hunt.creatures_text(caught)]
+	if not Hunt.qualifies(players, points):
+		_hud.show_records("Čas vypršel", note + "\nDo tabulky %s se výkon nevešel." % _players_of(players),
+			Hunt.records(players), -1)
+		return
+	_hud.name_entered.connect(_save_hunt.bind(points, caught, note), CONNECT_ONE_SHOT)
+	_hud.ask_name("Čas vypršel", note, Hunt.last_name(players))
+
+
+func _save_hunt(name: String, points: int, caught: int, note: String) -> void:
+	var players := GameSession.players.size()
+	var rank := Hunt.record(players, points, caught, name)
+	if rank == 1:
+		note += "\nNový rekord %s!" % _players_of(players)
+	elif rank > 0:
+		note += "\n%d. místo %s" % [rank, _players_of(players)]
+	_hud.show_records("Čas vypršel", note, Hunt.records(players), rank - 1)
+
+
+## „pro 1 hráče“, „pro 3 hráče“.
+static func _players_of(count: int) -> String:
+	return "pro %d hráče" % count if count <= 4 else "pro %d hráčů" % count
 
 
 ## Kolikátá je tahle hra ve výkonech pro stejný počet hráčů. 0 když tam není.

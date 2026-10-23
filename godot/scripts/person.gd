@@ -34,8 +34,7 @@ signal used_store(bay: int, left: int, took: int)
 const RUN_METERS := 4.5
 ## Na vyšlapaném středu cesty běží postava o tolik rychleji. Příšer se to netýká.
 const ROAD_BOOST := 1.2
-## Skok je o něco pomalejší než běh a přehraje jen první polovinu snímků.
-const JUMP_METERS := RUN_METERS * 0.9
+## Skok je stejně rychlý jako běh po terénu pod postavou a přehraje jen první polovinu snímků.
 const JUMP_TIME := 0.7
 ## Přes tohle se ve skoku přenese. Balvan má 1,1 m, keř 1,2 m. Skály od 6 m a stromy ne.
 const JUMP_CLEAR := 1.5
@@ -197,13 +196,13 @@ func _begin_jump(direction: Vector2) -> void:
 	Sound.at("sfx/jump", global_position, -4.0)
 
 
-## První polovina snímků, jeden krok, pomalejší než běh. Nízké skály a keře se přeskočí.
+## První polovina snímků, jeden krok, rychlostí běhu. Nízké skály a keře se přeskočí.
 func _step_jump(delta: float) -> void:
 	_jump_time += delta
 	var phase := clampf(_jump_time / JUMP_TIME, 0.0, 1.0)
 	var half := maxi(_figure.frames / 2, 1)
 	_figure.set_frame(mini(int(phase * float(half)), half - 1))
-	var speed := JUMP_METERS * float(TerrainCatalog.TILE_SIZE)
+	var speed := _run_speed()
 	var next := _leashed(walker.allowed(position, position + _jump_dir * speed * delta, BODY, JUMP_CLEAR, crowd_id))
 	position = next
 	scale = Vector2.ONE * (1.0 + JUMP_GROW * sin(phase * PI))
@@ -217,11 +216,16 @@ func _step_jump(delta: float) -> void:
 		Sound.at("sfx/land", global_position, -3.0)
 
 
-func _step_run(delta: float, direction: Vector2) -> void:
-	var max_speed := RUN_METERS * float(TerrainCatalog.TILE_SIZE)
+## Rychlost běhu v pixelech za sekundu na terénu pod postavou: cesta zrychlí, močál a řeka zpomalí.
+func _run_speed() -> float:
+	var speed := RUN_METERS * float(TerrainCatalog.TILE_SIZE)
 	if _town != null and _town.on_road(position):
-		max_speed *= ROAD_BOOST
-	max_speed *= walker.pace(position)
+		speed *= ROAD_BOOST
+	return speed * walker.pace(position)
+
+
+func _step_run(delta: float, direction: Vector2) -> void:
+	var max_speed := _run_speed()
 	if direction != Vector2.ZERO:
 		_velocity += direction * ACCELERATION * delta
 		if _velocity.length() > max_speed:

@@ -13,6 +13,7 @@ const MENU_ICON := preload("res://graphics/menu/logo_mm.png")
 const MaterialTitle := preload("res://scripts/material_title.gd")
 const MiniMap := preload("res://scripts/minimap.gd")
 const DayNight := preload("res://scripts/day_night.gd")
+const SuitSaves := preload("res://scripts/suit_saves.gd")
 
 ## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře drží ARROW_BELOW pod
 ## panely v rozích, nejméně ARROW_TOP.
@@ -36,6 +37,10 @@ const GEM_SCALE := 1.0
 const TEXT := Color(0.95, 0.93, 0.88)
 const DIM := Color(0.95, 0.93, 0.88, 0.55)
 const ACCENT := Color(0.86, 0.66, 0.3)
+## Tabulka výkonů v okně konce ukáže tolik řádků, další se posouvají.
+const RECORDS_VISIBLE := 8
+## Šířky sloupců tabulky výkonů: pořadí, jméno, body, chyceno, datum.
+const RECORD_COLUMNS: Array[float] = [36.0, 220.0, 56.0, 76.0, 190.0]
 ## Výrazně blikající šipka je červená.
 const ALARM_COLOR := Color(0.94, 0.4, 0.32)
 
@@ -46,6 +51,10 @@ signal pause_requested
 signal pause_closed
 ## Pauza chce zpátky na hlavní menu.
 signal main_menu_pressed
+## Okno konce Chytej příšery: hrát znovu se stejnými hráči.
+signal again_pressed
+## Okno konce Chytej příšery: jméno k zápisu výkonu, oříznuté a nikdy prázdné.
+signal name_entered(name: String)
 
 var _crystal: Crystal
 var _held_rows: GridContainer
@@ -75,10 +84,13 @@ var _blink_age := 0.0
 var _result: Control
 var _result_title: MaterialTitle
 var _result_note: Label
+## Mezi řádkem note a tlačítky: pole se jménem nebo tabulka výkonů.
+var _result_body: VBoxContainer
 var _result_buttons: VBoxContainer
 ## Panely v horních rozích a nahoře uprostřed. Volný pohyb je skryje.
 var _corners: Array[Control] = []
 var _menu_button: Button
+var _held_panel: PanelContainer
 ## Pravý horní roh: panel postupu a vedle něj tlačítko menu, pod nimi nesené kameny.
 var _right_column: VBoxContainer
 var _right: HBoxContainer
@@ -195,17 +207,141 @@ func free_roam() -> void:
 	_arrow.visible = false
 
 
-## Okno konce hry: nadpis title, pod ním řádek note a návrat do menu.
-func show_result(title: String, note: String) -> void:
+## Chytej příšery: bez nesených kamenů a šipky. Vpravo nahoře zbývající čas ze seconds
+## a body, pruh ukazuje zbývající čas.
+func hunt(seconds: float) -> void:
+	_held_panel.visible = false
+	_arrow.visible = false
+	_level.text = "Chytej příšery"
+	_unit.text = "bodů"
+	_score.text = "0"
+	_bar.max_value = seconds
+	set_countdown(seconds, seconds)
+
+
+## Zbývající čas Chytej příšery. Celé sekundy se zaokrouhlují nahoru, 0:00 je až konec.
+func set_countdown(left: float, total: float) -> void:
+	_bar.max_value = total
+	_bar.value = left
+	set_time(ceilf(left))
+
+
+## Body Chytej příšery. caught je počet chycených, ukazují se body.
+func set_hunt_score(points: int, _caught: int) -> void:
+	_score.text = str(points)
+	_pop(_score)
+
+
+## Okno konce hry: nadpis title, pod ním řádek note a návrat do menu. again přidá
+## tlačítko Hrát znovu (again_pressed).
+func show_result(title: String, note: String, again := false) -> void:
+	_open_result(title, note)
+	if again:
+		_result_button("Hrát znovu", again_pressed).grab_focus()
+		_result_button("Návrat do menu", menu_pressed)
+	else:
+		_result_button("Návrat do menu", menu_pressed).grab_focus()
+
+
+## Okno konce Chytej příšery, než se výkon zapíše: pole s předvyplněným jménem name
+## a tlačítko Uložit (name_entered).
+func ask_name(title: String, note: String, name: String) -> void:
+	_open_result(title, note)
+	var edit := LineEdit.new()
+	edit.custom_minimum_size = Vector2(320, 52)
+	edit.max_length = 32
+	edit.placeholder_text = "Jméno"
+	edit.text = name
+	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_result_body.add_child(edit)
+	var save := Button.new()
+	save.text = "Uložit"
+	save.custom_minimum_size = Vector2(320, 52)
+	_result_buttons.add_child(save)
+	var submit := func(_text: String) -> void:
+		if save.disabled:
+			return
+		save.disabled = true
+		var entered := edit.text.strip_edges()
+		name_entered.emit(entered if not entered.is_empty() else "Hráči")
+	edit.text_submitted.connect(submit)
+	save.pressed.connect(submit.bind(""))
+	edit.grab_focus()
+	edit.caret_column = edit.text.length()
+
+
+## Okno konce Chytej příšery po zápisu: tabulka výkonů rows (Hunt.records), řádek mark
+## (od 0, -1 žádný) je zvýrazněný a posune se do výhledu. Pod ní Hrát znovu a menu.
+func show_records(title: String, note: String, rows: Array[Dictionary], mark: int) -> void:
+	show_result(title, note, true)
+	if rows.is_empty():
+		return
+	# Záhlaví leží nad posuvnou částí, sloupce obou mřížek drží stejné šířky.
+	var head := _records_grid()
+	_result_body.add_child(head)
+	for caption in ["", "Jméno", "Body", "Chyceno", "Datum"]:
+		head.add_child(_record_cell(caption, DIM, head.get_child_count()))
+	var grid := _records_grid()
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(0, mini(rows.size(), RECORDS_VISIBLE) * 27)
+	scroll.add_child(grid)
+	_result_body.add_child(scroll)
+	var marked: Control
+	for i in rows.size():
+		var row := rows[i]
+		var color := ACCENT if i == mark else TEXT
+		var name := str(row["name"])
+		var cells := ["%d." % (i + 1), name if not name.is_empty() else "Bez jména", str(row["points"]),
+			str(row["caught"]), SuitSaves.date_text(int(row["date"]))]
+		for column in cells.size():
+			var dim := column == 0 or column == 4
+			var cell := _record_cell(cells[column], color if i == mark or not dim else DIM, column)
+			grid.add_child(cell)
+			if i == mark and column == 0:
+				marked = cell
+	if marked != null:
+		# Až se tabulka rozměří, ať je zapsaný výkon vidět i dole v delší tabulce.
+		_reveal(scroll, marked)
+
+
+func _reveal(scroll: ScrollContainer, marked: Control) -> void:
+	await get_tree().process_frame
+	if is_instance_valid(scroll) and is_instance_valid(marked):
+		scroll.ensure_control_visible(marked)
+
+
+func _open_result(title: String, note: String) -> void:
 	for child in _result_buttons.get_children():
+		child.queue_free()
+	for child in _result_body.get_children():
 		child.queue_free()
 	_result_title.title = title
 	_result_note.text = note
-	_result_button("Návrat do menu", menu_pressed).grab_focus()
 	_menu_button.visible = false
 	_arrow.visible = false
 	hide_notice()
 	_result.visible = true
+
+
+func _records_grid() -> GridContainer:
+	var grid := GridContainer.new()
+	grid.columns = RECORD_COLUMNS.size()
+	grid.add_theme_constant_override("h_separation", 18)
+	grid.add_theme_constant_override("v_separation", 4)
+	return grid
+
+
+## Buňka tabulky výkonů ve sloupci column. Dlouhé jméno se zkrátí třemi tečkami.
+func _record_cell(text: String, color: Color, column: int) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 17)
+	label.add_theme_color_override("font_color", color)
+	label.custom_minimum_size.x = RECORD_COLUMNS[column]
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	return label
 
 
 # --- Stavba ---
@@ -215,6 +351,7 @@ func _build_held() -> void:
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_right_column.add_child(panel)
 	_corners.append(panel)
+	_held_panel = panel
 	_held_rows = GridContainer.new()
 	_held_rows.add_theme_constant_override("h_separation", 14)
 	_held_rows.add_theme_constant_override("v_separation", 2)
@@ -504,6 +641,9 @@ func _build_result() -> void:
 	_result_note = _label(18, DIM)
 	_result_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_result_note)
+	_result_body = VBoxContainer.new()
+	_result_body.add_theme_constant_override("separation", 12)
+	column.add_child(_result_body)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 8)
 	column.add_child(gap)

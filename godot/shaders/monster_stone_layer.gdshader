@@ -29,6 +29,8 @@ uniform float phase = 0.0;
 global uniform float sparkle_on;
 // Stínová vrstva létající příšery: černá s tímto krytím. 0 je běžná vrstva.
 uniform float shadow_alpha = 0.0;
+// Chycená příšera (Chytej příšery) pozvolna zprůhlední.
+uniform float opacity = 1.0;
 
 // Míry mapy odlesků, stejné jako v tools/gen_glints.py.
 const float GLINT_REACH = 8.0;
@@ -104,6 +106,6 @@ void fragment() {
 				flash = pow(wave, 14.0) * glint_star(glint_aim(from_seed, duv_dx, duv_dy, TEXTURE_PIXEL_SIZE)) * sparkle;
 			}
 		}
-		COLOR = vec4(lit + glint_color * flash, mask.a);
+		COLOR = vec4(lit + glint_color * flash, mask.a * opacity);
 	}
 }

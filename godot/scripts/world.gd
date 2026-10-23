@@ -56,6 +56,12 @@ func _to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn" if GameSession.free_roam else "res://scenes/suit_menu.tscn")
 
 
+## Další hra se stejnými hráči (Chytej příšery). Svět je pokaždé nový.
+func _play_again() -> void:
+	_close_pause()
+	get_tree().reload_current_scene()
+
+
 func _to_main_menu() -> void:
 	_close_pause()
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")

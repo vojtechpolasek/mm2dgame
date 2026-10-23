@@ -22,6 +22,8 @@ uniform vec3 accent_color : source_color = vec3(0.8);
 uniform vec3 eye_color : source_color = vec3(1.0, 0.3, 0.2);
 // Stínová vrstva létající příšery: černá s tímto krytím. 0 je běžná vrstva.
 uniform float shadow_alpha = 0.0;
+// Chycená příšera (Chytej příšery) pozvolna zprůhlední.
+uniform float opacity = 1.0;
 
 void vertex() {
 	if (height_m > 0.0) {
@@ -46,6 +48,6 @@ void fragment() {
 	} else {
 		vec3 body = body_color * mix(shade.x, shade.y, mask.r);
 		vec3 skin = mix(body, accent_color * mix(accent_shade.x, accent_shade.y, mask.r), mask.g);
-		COLOR = vec4(mix(skin, eye_color, mask.b), mask.a);
+		COLOR = vec4(mix(skin, eye_color, mask.b), mask.a * opacity);
 	}
 }

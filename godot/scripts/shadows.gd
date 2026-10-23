@@ -253,14 +253,15 @@ func _process(_delta: float) -> void:
 	var i := 0
 	while i < _follow.size():
 		var entry: Array = _follow[i]
-		var source := entry[0] as Sprite2D
 		var into: Array = entry[1]
-		if not is_instance_valid(source) or not source.is_inside_tree():
+		# Uvolněný objekt se nesmí ani přetypovat.
+		if not is_instance_valid(entry[0]) or not (entry[0] as Sprite2D).is_inside_tree():
 			for holder: Node2D in into:
 				if is_instance_valid(holder):
 					holder.queue_free()
 			_follow.remove_at(i)
 			continue
+		var source := entry[0] as Sprite2D
 		var shown := source.is_visible_in_tree()
 		var at := source.get_global_transform()
 		for holder: Node2D in into:

@@ -119,6 +119,7 @@ func _ready() -> void:
 	_settings = {"scale": Graphics.world_scale(), "shadows": Graphics.shadows_on(), "sparkle": Graphics.sparkle_on()}
 	# Bez id se hra neukládá, uložené hry hráče zůstanou, jak byly.
 	GameSession.free_roam = false
+	GameSession.hunt = false
 	GameSession.suit_id = ""
 	GameSession.suit_resume = {}
 	GameSession.suit_outfits = []

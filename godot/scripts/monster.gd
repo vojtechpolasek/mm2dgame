@@ -5,6 +5,8 @@ extends Node2D
 ## Chodící obchází překážky stejně jako postava a nechodí přes jiné tvory. Létající letí nad vším
 ## a z mapy nevyletí. Druh s jump_meters přeskočí překážky a tvory do té výšky jako postava.
 ## Atlas je nakreslený směrem na sever, ostatní směry otáčí tenhle uzel.
+## V Chytej příšery (hunt) nehoní nikoho: toulá se kolem svého místa, a když se postava
+## přiblíží na FLEE_NEAR metrů, utíká před ní kamkoli, i do jiných čtverců.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -72,6 +74,23 @@ const JUMP_RETRY := 0.2
 ## Hlasitost kroků podle druhu v dB. Chodící dupne dvakrát za cyklus, létající mávne jednou.
 const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "koule": -8.0}
 const STEP_VARIANTS := 3
+## Úprk (hunt): začne, když je postava blíž než FLEE_NEAR metrů, skončí dál než FLEE_FAR.
+## Po FLEE_EVERY sekundách volí směr: od nejbližší postavy, cíl je od ní dvakrát dál než
+## příšera, tedy za příšerou ve stejné vzdálenosti, nejméně FLEE_MIN a ověřený nejdál
+## FLEE_LOOK metrů. Když tam něco stojí, zkusí směry pootočené o FLEE_TURNS.
+const FLEE_NEAR := 4.8
+const FLEE_FAR := 8.0
+## Nejbližší postava se hledá jen po tolika sekundách, ne každý snímek.
+const FLEE_CHECK := 0.15
+const FLEE_EVERY := 0.33
+const FLEE_MIN := 3.0
+const FLEE_LOOK := 4.0
+const FLEE_TURNS: Array[float] = [0.0, 0.52, -0.52, 1.05, -1.05, 1.57, -1.57, 2.09, -2.09]
+## Toulání v hunt zkusí nejvýš tolik směrů.
+const WAY_TRIES := 4
+## Za úprku řve po ROAR_MIN až ROAR_MAX sekundách, jen když je vidět.
+const ROAR_MIN := 1.0
+const ROAR_MAX := 3.0
 ## Vysunutí z překážky jako u postavy, v metrech a pixelech.
 const ESCAPE_METERS := 4.0
 const ESCAPE_REACH := 10.0
@@ -94,6 +113,9 @@ var crowd_id := -1
 ## home_range nula. Nastaví správce příšer před setup.
 var home := Vector2.INF
 var home_range := Vector2.ZERO
+## Chytej příšery: utíká před postavami místo honičky a toulá se bez mřížky cest po celém
+## světě (chodec s world_board). Nastaví správce příšer před setup.
+var hunt := false
 
 var _walker: Walker
 var _nav: NavGrid
@@ -154,6 +176,13 @@ var _step_travel := 0.0
 var _left_foot := false
 ## Zařvala už v téhle honičce? Zařve, až je honící příšera poprvé na obrazovce.
 var _roared := false
+## Úprk (hunt): utíká, směr, za kolik sekund volí další a za kolik zase zařve.
+var _fleeing := false
+var _flee_dir := Vector2.ZERO
+var _flee_left := 0.0
+var _roar_left := 0.0
+var _near: Person
+var _near_left := 0.0
 ## Patří honička k hudbě? Zapne se se zařváním, vypne, když příšera přestane honit nebo odejde z obrazovky.
 
 
@@ -253,6 +282,10 @@ func _process(delta: float) -> void:
 	_calm_left = maxf(_calm_left - delta, 0.0)
 	_jump_retry_left = maxf(_jump_retry_left - delta, 0.0)
 	_block_check_left -= delta
+	# Chytej příšery: nikdo nic nenese, kořist se nehledá.
+	if hunt:
+		_hunt(delta)
+		return
 	_prey = _carrier() if _calm_left <= 0.0 else null
 	if _prey == null:
 		_roared = false
@@ -306,6 +339,142 @@ func _chase(delta: float) -> void:
 			# U kořisti se jen dotahuje, tam pomalý postup zaseknutí není.
 			_track_chase(delta, position.distance_to(_prey.position) <= _touch * 2.0)
 	_bite()
+
+
+## Chytej příšery: toulání, a když je postava blízko, úprk.
+func _hunt(delta: float) -> void:
+	if _jumping:
+		_step_jump(delta)
+		return
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	_near_left -= delta
+	if _near_left <= 0.0 or (_near != null and not is_instance_valid(_near)):
+		_near_left = FLEE_CHECK
+		_near = null
+		var best := INF
+		for person in _persons:
+			if not is_instance_valid(person):
+				continue
+			var dist := position.distance_squared_to(person.position)
+			if dist < best:
+				best = dist
+				_near = person
+		var near_dist := sqrt(best)
+		if not _fleeing and near_dist < FLEE_NEAR * tile:
+			_fleeing = true
+			_resting = false
+			_flee_left = 0.0
+			_roar_left = 0.0
+			_watch_reset(CHASE_WATCH)
+		elif _fleeing and near_dist > FLEE_FAR * tile:
+			_fleeing = false
+			_pick_target()
+	var before := position
+	if _fleeing and _near != null:
+		_flee(delta, _near.position)
+	else:
+		_wander(delta)
+	_animate(delta, position - before)
+
+
+func _flee(delta: float, from: Vector2) -> void:
+	_roar_left -= delta
+	if _roar_left <= 0.0:
+		_roar_left = _rng.randf_range(ROAR_MIN, ROAR_MAX)
+		if _on_screen():
+			Sound.at("monsters/%s_roar" % kind_name, global_position, 2.0)
+	_flee_left -= delta
+	if _flee_left <= 0.0:
+		_flee_left = FLEE_EVERY
+		_flee_dir = _flee_way(from)
+	_move(_flee_dir * _chase_px * _pace() * delta)
+
+
+## Směr úprku od postavy na from. Rovně pryč, nebo první pootočený směr, kde nic nestojí.
+## Když nikde, dosavadní směr: příšera klouže podél překážky a dá se chytit.
+func _flee_way(from: Vector2) -> Vector2:
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var away := position - from
+	var dist := away.length()
+	var dir := away / dist if dist > 0.01 else Vector2.from_angle(_rng.randf() * TAU)
+	var reach := clampf(dist, FLEE_MIN * tile, FLEE_LOOK * tile)
+	for turn in FLEE_TURNS:
+		var way := dir.rotated(turn)
+		if _way_open(way, reach):
+			return way
+	return _flee_dir if _flee_dir != Vector2.ZERO else dir
+
+
+## Dá se jít směrem way na reach pixelů? Po metrech: na zemi a mimo překážky (skokan jen
+## mimo vyšší, než přeskočí). Létající jen nad hotovými čtverci.
+func _way_open(way: Vector2, reach: float) -> bool:
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var steps := maxi(ceili(reach / tile), 1)
+	var clear := _jump_clear if _jump_clear > 0.0 else -1.0
+	for i in range(1, steps + 1):
+		var spot := position + way * reach * float(i) / float(steps)
+		if _flying:
+			if _walker.world_board != null and not _walker.world_board.has_ground(spot):
+				return false
+			continue
+		if not _walker.stands(spot, _body):
+			return false
+		if _walker.place(spot, _body, clear, crowd_id).distance_squared_to(spot) > 0.25:
+			return false
+	return true
+
+
+## Utíká právě (hunt)?
+func is_fleeing() -> bool:
+	return _fleeing
+
+
+## Dosah dotyku postavy v pixelech: těla obou a BITE.
+func touch() -> float:
+	return _touch
+
+
+## Chytej příšery: schová se do zásoby. Nic nedělá, dokud ji reuse znovu nevyvolá.
+func park() -> void:
+	_active = false
+	visible = false
+	process_mode = Node.PROCESS_MODE_DISABLED
+
+
+## Chytej příšery: příšera ze zásoby vyjde na at, jako by se tam právě objevila.
+func reuse(at: Vector2) -> void:
+	position = at
+	rotation = _rng.randf() * TAU
+	scale = Vector2.ONE
+	_set_opacity(1.0)
+	_fleeing = false
+	_flee_dir = Vector2.ZERO
+	_flee_left = 0.0
+	_roar_left = 0.0
+	_near = null
+	_near_left = 0.0
+	_jumping = false
+	_jump_retry_left = 0.0
+	_escaping = false
+	_block_check_left = 0.0
+	visible = true
+	process_mode = Node.PROCESS_MODE_INHERIT
+	_active = true
+	_pick_target()
+
+
+## Chytej příšery: chycená zůstane stát a za seconds sekund zprůhlední. Pak zavolá done.
+func fade(seconds: float, done: Callable) -> void:
+	_active = false
+	_fleeing = false
+	var tween := create_tween()
+	tween.tween_method(_set_opacity, 1.0, 0.0, seconds)
+	tween.tween_callback(done)
+
+
+func _set_opacity(opacity: float) -> void:
+	for sprite in _sprites:
+		(sprite.material as ShaderMaterial).set_shader_parameter("opacity", opacity)
 
 
 ## Nejbližší postava nebo vesničan, kdo nese materiál příšery. Když nikdo, null.
@@ -454,7 +623,11 @@ func _pace() -> float:
 
 func _move(offset: Vector2) -> float:
 	var before := position
-	if _flying:
+	if _flying and hunt:
+		# Chodec světa mapu nemá, létající jen nevyletí nad čtverec, který ještě není hotový.
+		if _walker.world_board.has_ground(position + offset):
+			position += offset
+	elif _flying:
 		var margin := Walker.EDGE_M * float(TerrainCatalog.TILE_SIZE)
 		position = _walker.fit(position + offset, margin)
 	elif _escaping or _blocked_now():
@@ -495,7 +668,7 @@ func _try_jump(dir: Vector2) -> bool:
 		if _walker.place(spot, _body, _jump_clear, crowd_id).distance_squared_to(spot) > 0.25:
 			return false
 		if along >= _body and not _walker.blocked(spot, _body, crowd_id):
-			var speed := (_chase_px if _prey != null else _wander_px) * JUMP_BOOST
+			var speed := (_chase_px if _prey != null or _fleeing else _wander_px) * JUMP_BOOST
 			var landing := along
 			while landing + step <= speed * JUMP_TIME and _landing_free(position + dir * (landing + step)):
 				landing += step
@@ -535,7 +708,7 @@ func _step_jump(delta: float) -> void:
 		# Po dopadu je příšera jinde, cesta se přepočítá odsud.
 		_replan_left = 0.0
 		_sight_left = 0.0
-		_watch_reset(CHASE_WATCH if _prey != null else WANDER_WATCH)
+		_watch_reset(CHASE_WATCH if _prey != null or _fleeing else WANDER_WATCH)
 
 
 ## Příšera skončila v překážce nebo ve vodě. Vysune se na nejbližší volné místo.
@@ -559,6 +732,9 @@ func _escape() -> void:
 ## Další cíl toulání. Chodící bere jen cíl, ke kterému z mřížky vede cesta, a jde po ní.
 func _pick_target() -> void:
 	_resting = false
+	if hunt:
+		_pick_way()
+		return
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	# Mapa čtverce ve světě nezačíná v (0, 0), ale v space_origin.
 	var low := _walker.space_origin
@@ -598,6 +774,20 @@ func _pick_target() -> void:
 		_target = spot
 		_start_trip(trip)
 		return
+	_rest()
+
+
+## Chytej příšery: cíl toulání rovně náhodným směrem, kam se dá dojít (_way_open). Když
+## žádný z WAY_TRIES směrů nejde, odpočívá.
+func _pick_way() -> void:
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	for attempt in WAY_TRIES:
+		var way := Vector2.from_angle(_rng.randf() * TAU)
+		var reach := _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
+		if _way_open(way, reach):
+			_target = position + way * reach
+			_start_trip(PackedVector2Array())
+			return
 	_rest()
 
 

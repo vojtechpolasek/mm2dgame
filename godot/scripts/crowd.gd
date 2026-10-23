@@ -12,14 +12,31 @@ var _members: Array[Node2D] = []
 ## dvojici nevolají metody tvora.
 var _bodies := PackedFloat32Array()
 var _heights := PackedFloat32Array()
+## Čísla tvorů, kteří odešli (leave). Další join je použije znovu, ať pole neroste.
+var _spare := PackedInt32Array()
 
 
 ## Přidá tvora a vrátí jeho číslo. Číslem se tvor při pohybu vynechá sám ze sebe.
 func join(member: Node2D) -> int:
+	if not _spare.is_empty():
+		var id := _spare[_spare.size() - 1]
+		_spare.resize(_spare.size() - 1)
+		_members[id] = member
+		_bodies[id] = float(member.crowd_body())
+		_heights[id] = float(member.crowd_height())
+		return id
 	_members.append(member)
 	_bodies.append(float(member.crowd_body()))
 	_heights.append(float(member.crowd_height()))
 	return _members.size() - 1
+
+
+## Tvor odešel nadobro. Jeho číslo dostane příští join.
+func leave(id: int) -> void:
+	if id < 0 or id >= _members.size() or _members[id] == null:
+		return
+	_members[id] = null
+	_spare.append(id)
 
 
 ## Posune bod ven z ostatních tvorů. who je číslo tvora, který se hýbe. clearance je výška

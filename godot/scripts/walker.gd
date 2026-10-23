@@ -56,10 +56,13 @@ var crowd: Crowd
 var fence := Rect2()
 
 
-func _init(rocks: Rocks, forest: Forest, town_at: Town, map: MapData) -> void:
+## Bez mapy vznikne prázdný chodec, ten jen pro use_surfaces.
+func _init(rocks: Rocks = null, forest: Forest = null, town_at: Town = null, map: MapData = null) -> void:
 	_rocks = rocks
 	_forest = forest
 	town = town_at
+	if map == null:
+		return
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	_tiles = map.size
 	_map_size = Vector2(tile, tile) * float(map.size)
@@ -91,6 +94,14 @@ func _mark_shallows() -> void:
 				_walkable[y * _tiles + x] = SHALLOW
 			elif x == 0 or y == 0 or x == last or y == last:
 				_walkable[y * _tiles + x] = EDGE_WATER
+
+
+## Prázdný chodec (bez mapy) chodí po celém světě: world_board musí být nastavený. Rychlost
+## chůze na povrchu bere z katalogu povrchů surfaces (MapData.surfaces). Mapu nemá, contains,
+## fit a ground pro něj neplatí.
+func use_surfaces(surfaces: Dictionary) -> void:
+	for surface_name: String in surfaces:
+		_pace[surface_name] = float((surfaces[surface_name] as Dictionary).get("speed", 1.0))
 
 
 ## Označí v mřížce buňky (dlaždice), na kterých se nedá stát: voda mimo mělčinu.

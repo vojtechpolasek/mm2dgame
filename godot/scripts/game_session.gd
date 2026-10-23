@@ -40,6 +40,9 @@ const MAX_PLAYERS := 6
 ## Volný pohyb: svět bez továren, vesnic, dolů a příšer, bez času a cíle. Chodí se kamkoli
 ## a svět se dotváří. Nic se neukládá, každý start je nový svět.
 var free_roam := false
+## Chytej příšery: volný pohyb (free_roam je zapnutý taky), ve kterém se po světě rodí příšery.
+## Hráči je za HUNT_SECONDS chytají dotykem a sbírají body. Ukládají se jen výkony (Hunt).
+var hunt := false
 
 ## Identifikátor a jméno hry (kdo hraje) a uložený stav, ze kterého hra
 ## pokračuje. Prázdný stav je nová hra. Viz SuitSaves.

@@ -1,0 +1,17 @@
+{
+  "creatures": [
+    {"material": "piskovec", "title": "Had pískovcový", "weight": 10, "points": 10, "flee": 3.10, "time": "day", "terrains": ["grass", "dirt", "desert", "snow", "scree", "ash", "swamp", "heath"]},
+    {"material": "sira", "title": "Had sírový", "weight": 10, "points": 20, "flee": 3.25, "time": "day", "terrains": ["grass", "dirt", "desert", "snow", "scree", "ash", "swamp", "heath"]},
+    {"material": "lavovy", "title": "Pavouk lávový", "weight": 10, "points": 25, "flee": 3.35, "time": "night", "terrains": ["grass", "dirt", "desert", "snow", "scree", "ash", "swamp", "heath"]},
+    {"material": "grafit", "title": "Pavouk grafitový", "weight": 10, "points": 35, "flee": 3.50, "time": "night", "terrains": ["grass", "dirt", "desert", "snow", "scree", "ash", "swamp", "heath"]},
+    {"material": "magnetit", "title": "Koule magnetitová", "weight": 10, "points": 35, "flee": 3.60, "time": "any", "terrains": ["grass", "dirt", "desert", "snow", "scree", "ash", "heath"]},
+    {"material": "kremen", "title": "Koule křemenná", "weight": 10, "points": 45, "flee": 3.70, "time": "night", "terrains": ["grass", "dirt", "desert", "snow", "scree", "ash", "heath"]},
+    {"material": "stribro", "title": "Vlk stříbrný", "weight": 10, "points": 50, "flee": 3.79, "time": "day", "terrains": ["grass", "swamp", "dirt", "heath"]},
+    {"material": "jantar", "title": "Vlk jantarový", "weight": 10, "points": 65, "flee": 4.09, "time": "night", "terrains": ["grass", "swamp", "dirt", "heath"]},
+    {"material": "smaragd", "title": "Rex smaragdový", "weight": 10, "points": 70, "flee": 4.17, "time": "day", "terrains": ["desert", "scree", "ash"]},
+    {"material": "zlato", "title": "Rex zlatý", "weight": 10, "points": 80, "flee": 4.30, "time": "night", "terrains": ["desert", "scree", "ash"]},
+    {"material": "rubin", "title": "Pták rubínový", "weight": 6, "points": 150, "flee": 4.10, "time": "any", "terrains": ["water"]},
+    {"material": "safir", "title": "Pták safírový", "weight": 3, "points": 300, "flee": 4.30, "time": "day", "terrains": ["water"]},
+    {"material": "diamant", "title": "Pták diamantový", "weight": 1, "points": 600, "flee": 4.35, "time": "night", "terrains": ["water"]}
+  ]
+}
