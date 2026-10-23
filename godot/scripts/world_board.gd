@@ -53,6 +53,7 @@ const Splashes := preload("res://scripts/splashes.gd")
 const MiniMap := preload("res://scripts/minimap.gd")
 const Shadows := preload("res://scripts/shadows.gd")
 const DayNight := preload("res://scripts/day_night.gd")
+const Benchmark := preload("res://scripts/benchmark.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
@@ -231,7 +232,7 @@ func start(host) -> void:
 	if not _crystal.load_catalog():
 		push_error("Chybí materiály krystalu.")
 	_free = _flyover or GameSession.free_roam
-	_world_rng.randomize()
+	Benchmark.seed_rng(_world_rng, 0)
 	_camera.position = Vector2(_span(), _span()) * 0.5
 	_camera.roam()
 	_road = Node2D.new()
@@ -579,7 +580,8 @@ func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
 
 
 func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> void:
-	var banned := START_BANNED if sq.coord == Vector2i.ZERO else PackedStringArray()
+	# Benchmark chce vodu hned u startu, jeho čtverec ji proto smí mít.
+	var banned := START_BANNED if sq.coord == Vector2i.ZERO and not Benchmark.requested() else PackedStringArray()
 	var pool := MapGenerator.pick_terrains(_catalog.names, _catalog.surfaces, sq.rng, TERRAINS_PER_SQUARE, ring, banned)
 	var map := MapGenerator.grow(_side, _catalog.names, sq.rng, _catalog.max_distance, _catalog.max_share, ring, pool)
 	map.surfaces = _catalog.surfaces
@@ -816,7 +818,7 @@ func _open_play(sq: Square) -> void:
 		person.held_changed.connect(_hud.set_held.bind(person.player_index))
 		_dress(person)
 	var music := RandomNumberGenerator.new()
-	music.randomize()
+	Benchmark.seed_rng(music, 1)
 	Sound.play_level_music(music)
 	_status.visible = false
 	_host._map_ready = true
@@ -944,9 +946,9 @@ func _wake(sq: Square) -> void:
 		return
 	sq.walker.crowd = _crowd
 	var rng := RandomNumberGenerator.new()
-	rng.randomize()
+	Benchmark.seed_rng(rng, hash(sq.coord))
 	sq.monsters.spawn(sq.rocks.pond_materials(), _crystal, sq.walker, sq.rocks, sq.forest, _host._persons, _camera, _props, rng)
-	rng.randomize()
+	Benchmark.seed_rng(rng, hash(sq.coord) + 1)
 	sq.villagers.spawn(sq.town, sq.rocks, _crystal, sq.walker, _host._persons, _camera, _props, sq.monsters, rng, _saved_villagers(sq))
 	if not sq.villagers.members.is_empty() and sq.villagers.get_parent() == null:
 		add_child(sq.villagers)

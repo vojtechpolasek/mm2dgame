@@ -16,6 +16,7 @@ const Walker := preload("res://scripts/walker.gd")
 const Party := preload("res://scripts/party.gd")
 const Figure := preload("res://scripts/figure.gd")
 const Splashes := preload("res://scripts/splashes.gd")
+const Benchmark := preload("res://scripts/benchmark.gd")
 
 ## Co postava drží. -1 je prázdná ruka.
 signal held_changed(mat: int)
@@ -150,7 +151,7 @@ func setup(rocks: Rocks, forest: Forest, town: Town, camera: MapCamera, map: Map
 	_town = town
 	_camera = camera
 	_crystal = crystal
-	_rng.randomize()
+	Benchmark.seed_rng(_rng, 10 + player)
 	walker = Walker.new(rocks, forest, town, map)
 	if not _build():
 		return

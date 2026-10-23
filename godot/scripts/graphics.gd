@@ -10,6 +10,7 @@ extends Node
 ##
 ## Třpyt vypne odlesky kamenů, příšer a dolů přes globální uniformu sparkle_on.
 ## Stíny vypnou stíny od slunce, měsíce i čelovek (Shadows). Den, noc a světlo čelovek zůstanou.
+## Bez persist se změna neuloží (benchmark přepíná jen na dobu měření).
 
 signal changed
 
@@ -44,22 +45,25 @@ func shadows_on() -> bool:
 	return _shadows
 
 
-func set_shadows(on: bool) -> void:
+func set_shadows(on: bool, persist := true) -> void:
 	_shadows = on
 	_apply()
-	_save()
+	if persist:
+		_save()
 
 
-func set_reduced(on: bool) -> void:
+func set_reduced(on: bool, persist := true) -> void:
 	_reduced = on
 	_apply()
-	_save()
+	if persist:
+		_save()
 
 
-func set_sparkle(on: bool) -> void:
+func set_sparkle(on: bool, persist := true) -> void:
 	_sparkle = on
 	_apply()
-	_save()
+	if persist:
+		_save()
 
 
 func _apply() -> void:

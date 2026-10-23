@@ -5,6 +5,8 @@ extends Node2D
 ## dopředu, kam postava jde. Kreslí se nad vodou a pod postavami, bez textur: kroužky
 ## a kapky jsou jen kreslené kruhy, ať je to levné i se šesti hráči.
 
+const Benchmark := preload("res://scripts/benchmark.gd")
+
 ## Kroužek: počáteční a koncový poloměr v px, délka života v s, tloušťka čáry.
 const RING_FROM := 4.0
 const RING_TO := 26.0
@@ -48,7 +50,7 @@ func _exit_tree() -> void:
 
 
 func _ready() -> void:
-	_rng.randomize()
+	Benchmark.seed_rng(_rng, 2)
 
 
 ## Je bod ve vodě, kterou se brodí (řeka nebo mělčina, ne most), v kterémkoli čtverci?
