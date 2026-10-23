@@ -1,5 +1,6 @@
 shader_type canvas_item;
-render_mode unshaded;
+// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
+render_mode blend_mix;
 
 // Mlha nad močálem a padající sníh nad sněhem (square_air.gd). Kreslí se jen kusy čtverce,
 // kde mlha nebo sníh jsou. TEXTURE je maska terénu, dlaždice na texel: R kde je mlha, G kde

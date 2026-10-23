@@ -1,5 +1,6 @@
 shader_type canvas_item;
-render_mode unshaded;
+// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
+render_mode blend_mix;
 
 // Animovaná voda. Kreslí se jen přes dlaždice, které mají v rohu vodu, nad předpečenou texturou
 // chunku (TEXTURE). Souš pod hladinou se při vlnění bere z té samé textury, posunutá po vlně.

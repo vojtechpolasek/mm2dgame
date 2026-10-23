@@ -18,8 +18,7 @@ extends Node2D
 ## a pod obzorem zmizí. Měsíc vrhá slabší stín.
 ##
 ## Světlo se kreslí závojem nad objekty i mlhou a pod HUD (night_veil.gdshader), svět se jím
-## vynásobí. Svět obarvený jedem (set_canvas_tint, CanvasModulate) závoj obarvení vyrovná, ať
-## se v noci nenásobí dvakrát. Den je bílý. Když slunce klesne pod DUSK.y (stíny už jsou dlouhé), světlo slábne
+## vynásobí. Obarvení světa jedem (CanvasModulate) se závoje netýká. Den je bílý. Když slunce klesne pod DUSK.y (stíny už jsou dlouhé), světlo slábne
 ## a teplá, až je slunce celé pod obzorem (DUSK.x), je noc tmavá do modra. Ráno obráceně.
 ## Měsíc stejně přidává světlo noci podle své výšky. Za soumraku se hráčům rozsvítí
 ## čelovky: kužel před postavou a slabá záře kolem ní, objekty do výšky čelovky jí stíní.
@@ -169,11 +168,6 @@ func _apply() -> void:
 	# Bílý závoj bez čelovek nic nemění, ve dne se nekreslí.
 	_veil.visible = lamp > 0.001 or not ambient.is_equal_approx(DAY)
 
-
-## Svět je obarvený (jed, CanvasModulate). Závoj obarvení vyrovná.
-func set_canvas_tint(color: Color) -> void:
-	if _veil_material != null:
-		_veil_material.set_shader_parameter("canvas_tint", Vector3(color.r, color.g, color.b))
 
 
 ## Čelovky na hlavách postav: poloha a směr, kam postava hledí.

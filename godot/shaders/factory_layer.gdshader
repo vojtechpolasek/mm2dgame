@@ -1,5 +1,6 @@
 shader_type canvas_item;
-render_mode unshaded;
+// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
+render_mode blend_mix;
 
 // Spodek a mezikruží továrny. Posun výšky je stejný jako v house_layer.gdshader,
 // mezikruží se navíc otáčí, proto se posun přepočítá do souřadnic uzlu.

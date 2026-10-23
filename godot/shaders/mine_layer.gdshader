@@ -1,5 +1,6 @@
 shader_type canvas_item;
-render_mode unshaded;
+// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
+render_mode blend_mix;
 
 // Vrstva dolu z gen_mine.py. Textura nese masky, ne barvy:
 // R světlost (skutečná je R * VALUE_SCALE), G maska kamene materiálu,

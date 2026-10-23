@@ -1,5 +1,6 @@
 shader_type canvas_item;
-render_mode unshaded;
+// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
+render_mode blend_mix;
 
 // Vrstva lávové pukliny z gen_crack.py. Textura nese skutečné barvy.
 // Záporná výška je pod zemí a posouvá se opačně než skály, puklina tak vypadá hluboká.

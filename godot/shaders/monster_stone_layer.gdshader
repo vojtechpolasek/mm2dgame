@@ -1,5 +1,6 @@
 shader_type canvas_item;
-render_mode unshaded;
+// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
+render_mode blend_mix;
 
 // Vrstva kamenné příšery (v monsters.json shader "stone"). Posun výšky je stejný jako
 // v monster_layer.gdshader, odlesky jako v crystal.gdshader. Každá vrstva má svůj materiál.

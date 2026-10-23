@@ -1194,7 +1194,7 @@ func _square(coord: Vector2i) -> Square:
 	return _squares.get(coord) as Square
 
 
-## Jed čtverce pod středem kamery obarví svět, noční závoj obarvení vyrovná (DayNight).
+## Jed čtverce pod středem kamery obarví svět.
 func _follow_tint(delta: float) -> void:
 	var sq := _square(_coord(_camera.get_screen_center_position()))
 	var target: float = sq.air.poison() if sq != null and sq.air != null else 0.0
@@ -1202,7 +1202,6 @@ func _follow_tint(delta: float) -> void:
 	_tint_time += delta
 	var color := SquareAir.tint(_tint_amount, _tint_time)
 	_tint.color = color
-	_day.set_canvas_tint(color)
 
 
 func _coord(pos: Vector2) -> Vector2i:

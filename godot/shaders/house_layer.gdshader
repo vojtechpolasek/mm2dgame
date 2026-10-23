@@ -1,5 +1,6 @@
 shader_type canvas_item;
-render_mode unshaded;
+// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
+render_mode blend_mix;
 
 // Stejný posun výšky jako tree_layer.gdshader, bez zvětšení. Střecha má zůstat
 // stejně velká jako ve středu záběru, jinak by přerostla stěnu. Stěna má výšku 0.
