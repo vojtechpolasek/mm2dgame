@@ -14,8 +14,8 @@ extends Node
 ##    v cíli nebo po svém limitu.
 ## 2. Noc: stání a brodění se zapnutými čelovkami.
 ## 3. Složky: postava stojí u vody a postupně se vypínají části scény (stíny, jen stíny
-##    objektů bez stínů břehů, terén, řeka, porost, objekty, tvorové, HUD, mlha, noční závoj)
-##    a mění rozlišení. Rozdíl proti „vse“ je cena té části.
+##    objektů bez stínů břehů, terén, voda jezer, řeka, porost, objekty, tvorové, HUD, mlha,
+##    noční závoj) a mění rozlišení. Rozdíl proti „vse“ je cena té části.
 ## Výsledek je JSON vedle spustitelného souboru ve složce benchmark (v editoru
 ## user://benchmark), cesta se vypíše na konec. Pak se hra ukončí.
 ## Vsync je při měření vypnutý, doba snímku je skutečná práce procesoru a grafiky.
@@ -242,7 +242,7 @@ func _build_plan() -> void:
 	if _spots.has("brod"):
 		_add("noc_brodeni", "noc", 5.0, {"night": true, "goal": _spots["brod"], "from": view})
 	_add("vse", "slozky_den", STILL, {"teleport": view})
-	for part in ["bez_stinu", "bez_stinu_objektu", "bez_terenu", "bez_reky", "bez_porostu", "bez_objektu", "bez_tvoru", "bez_hud", "bez_mlhy"]:
+	for part in ["bez_stinu", "bez_stinu_objektu", "bez_terenu", "bez_vody", "bez_reky", "bez_porostu", "bez_objektu", "bez_tvoru", "bez_hud", "bez_mlhy"]:
 		_add(part, "slozky_den", STILL, {"off": part})
 	_add("noc_vse", "slozky_noc", STILL, {"night": true})
 	_add("noc_bez_zavoje", "slozky_noc", STILL, {"night": true, "off": "bez_zavoje"})
@@ -355,6 +355,12 @@ func _apply_off(part: String) -> void:
 		var key := str(child.name)
 		if key.begins_with("Ground"):
 			item.visible = part != "bez_terenu"
+			# Vlnící se voda jezer: MeshInstance2D pod spritem každého chunku, jen když má mesh.
+			for sprite in child.get_children():
+				if sprite is Sprite2D and sprite.get_child_count() > 0:
+					var water := sprite.get_child(0) as MeshInstance2D
+					if water != null:
+						water.visible = water.mesh != null and part != "bez_vody"
 		elif key == "Rivers":
 			item.visible = part != "bez_reky"
 		elif key == "Decor":

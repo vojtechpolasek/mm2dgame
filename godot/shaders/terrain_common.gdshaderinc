@@ -44,6 +44,12 @@ uniform float mask_start = 0.7;
 // Na jezeře plují pomalu s vlnou, na řece s proudem.
 uniform float glint_scale = 36.0;
 uniform float glint_strength = 0.4;
+// Předpočítaný šum odlesků a pěny (tools/gen_water_noise.py), opakovatelné textury. Odlesky
+// mají GLINT_CELLS buněk šumu na stranu, pěna texel na pixel světa a FOAM_SIDE px na stranu.
+uniform sampler2D glint_noise : filter_linear, repeat_enable;
+uniform sampler2D foam_noise : filter_nearest, repeat_enable;
+const float GLINT_CELLS = 32.0;
+const float FOAM_SIDE = 400.0;
 
 
 // Hash bez sinu (Dave Hoskins). sin velkého čísla ztrácí přesnost na velkých mapách.
@@ -257,8 +263,12 @@ vec3 wave_band(float height) {
 // Odlesky 0 až 1. p je bod v px, osa x je směr, kterým jsou skvrny protažené.
 float water_glints(vec2 p) {
 	vec2 at = p / vec2(glint_scale, glint_scale * 0.4);
-	float ripple = value_noise(at) * 0.6 + value_noise(at * vec2(2.3, 1.7) + 11.0) * 0.4;
-	return smoothstep(0.62, 0.85, ripple);
+	return smoothstep(0.62, 0.85, texture(glint_noise, at / GLINT_CELLS).r);
+}
+
+// Krajka pěny 0 až 1 v bodě foam_pos (celé pixely).
+float foam_lace(vec2 foam_pos) {
+	return smoothstep(0.22, 0.78, texture(foam_noise, (foam_pos + 0.5) / FOAM_SIDE).r);
 }
 
 // Textura vody z atlasu terénů v bodě světa: každá dlaždice světa má svou variantu.
@@ -440,16 +450,6 @@ float lake_height(vec2 at) {
 		return 1.0;
 	}
 	return slope_height(lake_rel(at, f), 0.0, 0.0);
-}
-
-// Stín břehu jezera v bodě at: kus směrem ke slunci (shift = posun stínu) je břeh výš.
-float lake_shadow(vec2 at, vec2 shift, float opacity) {
-	if (opacity <= 0.001) {
-		return 0.0;
-	}
-	float here = lake_height(at);
-	float back = lake_height(at - shift * BANK_SHADOW_DEPTH);
-	return clamp((back - here) * 1.6, 0.0, 1.0) * opacity * BANK_SHADOW;
 }
 
 // Břeh jezera v předpečení: surface je terén (evaluate), f podíl vody, at bod ve čtverci.

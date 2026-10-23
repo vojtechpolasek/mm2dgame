@@ -1,8 +1,12 @@
 shader_type texture_blit;
+render_mode blend_disabled;
 
 // Předpečení chunku terénu: souš, přechody a břehy jednou do textury. Pixel textury je pixel
 // světa. Vodu nad tím rozvlní terrain_water.gdshader. Kolem jezera je svah dolů k hladině
 // podle terénu (lake_bank), stejný jako u řeky. Stín břehu přidá terrain_water.
+// Do alfy jde výška břehu jezera (lake_height, 1 souš, 0 hladina). terrain_water z ní počítá
+// stín břehu, šum břehu tak nepočítá v každém snímku znovu. Chunk se kreslí s alfou 1
+// (terrain_chunk.gdshader).
 
 #include "res://shaders/terrain_common.gdshaderinc"
 
@@ -26,5 +30,5 @@ void blit() {
 	if (mass > 0.0 && mass < 1.0) {
 		surface = lake_bank(surface, mass, world_pos, 0.0);
 	}
-	COLOR0 = vec4(surface, 1.0);
+	COLOR0 = vec4(surface, lake_height(world_pos));
 }

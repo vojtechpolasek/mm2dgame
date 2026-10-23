@@ -10,6 +10,8 @@ extends Node2D
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
+## Chunk se kreslí neprůhledně, alfa textury nese výšku břehu (terrain_bake.gdshader).
+const CHUNK_SHADER := preload("res://shaders/terrain_chunk.gdshader")
 
 ## Strana chunku v dlaždicích. Textura chunku má TILES * TILE_SIZE pixelů na stranu.
 const TILES := 8
@@ -57,6 +59,8 @@ class Spare:
 
 ## Majitel sdíleného zásobníku. Sprity uvolněného čtverce se přestěhují k němu.
 var _spare_owner: Node2D
+## Materiál všech chunků, jeden kvůli dávkování kreslení.
+static var _chunk_material: ShaderMaterial
 
 
 ## Bere a vrací sprity do zásobníku jiných chunků. Volá se před setup.
@@ -199,6 +203,10 @@ func _new_sprite() -> Sprite2D:
 	sprite.texture = texture
 	sprite.centered = false
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if _chunk_material == null:
+		_chunk_material = ShaderMaterial.new()
+		_chunk_material.shader = CHUNK_SHADER
+	sprite.material = _chunk_material
 	sprite.visible = false
 	var water := MeshInstance2D.new()
 	water.texture = texture

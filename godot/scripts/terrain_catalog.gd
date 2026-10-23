@@ -9,6 +9,10 @@ const BANK_TERRAINS := 16
 ## sdílejí uniformy z terrain_common.gdshaderinc, katalog je nastavuje do obou materiálů.
 const _BAKE_SHADER := "res://shaders/terrain_bake.gdshader"
 const _WATER_SHADER := "res://shaders/terrain_water.gdshader"
+## Předpočítaný šum odlesků a pěny vody (tools/gen_water_noise.py). Řeka si ho vezme z materiálu
+## vody jako ostatní vzhled vody.
+const _GLINT_NOISE := "res://graphics/terrain/water/glints.png"
+const _FOAM_NOISE := "res://graphics/terrain/water/foam.png"
 const _SHORE_COLORS := {
 	"sand": "sand_color",
 	"sand_wet": "sand_wet_color",
@@ -167,6 +171,8 @@ func _build_material(terrains: Texture2DArray) -> void:
 	bake_material.shader = load(_BAKE_SHADER)
 	water_material = ShaderMaterial.new()
 	water_material.shader = load(_WATER_SHADER)
+	water_material.set_shader_parameter("glint_noise", load(_GLINT_NOISE))
+	water_material.set_shader_parameter("foam_noise", load(_FOAM_NOISE))
 	_set_param("terrains", terrains)
 	_set_param("tile_size", float(TILE_SIZE))
 	_set_param("atlas_columns", float(ATLAS_COLUMNS))

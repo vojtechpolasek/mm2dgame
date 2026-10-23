@@ -212,7 +212,7 @@ void fragment() {
 		// Pěna u břehu jako na jezeře, krajky jedou s proudem.
 		float shore = smoothstep(water_part - 0.2, water_part - 0.05, edge);
 		vec2 foam_pos = floor(vec2((along - TIME * flow) * 0.5, signed_across));
-		float lace = smoothstep(0.22, 0.78, value_noise(foam_pos * 0.11) * 0.6 + value_noise(foam_pos * 0.35) * 0.4);
+		float lace = foam_lace(foam_pos);
 		vec3 foam_color = mix(highlight_color, vec3(0.92, 0.97, 0.98), 0.62);
 		water = mix(water, foam_color, clamp(shore * mix(0.2, 0.8, lace), 0.0, 0.28));
 		// Hladina u svahu tmavší, svah nad ní stíní.
