@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d1jngcdjtefqq"
-path.s3tc="res://.godot/imported/mask.png-a450c955a9104794bf27169bb4f27ab0.s3tc.ctex"
-path.etc2="res://.godot/imported/mask.png-a450c955a9104794bf27169bb4f27ab0.etc2.ctex"
+path="res://.godot/imported/mask.png-a450c955a9104794bf27169bb4f27ab0.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://graphics/objects/rocks/puklina/mask.png"
-dest_files=["res://.godot/imported/mask.png-a450c955a9104794bf27169bb4f27ab0.s3tc.ctex", "res://.godot/imported/mask.png-a450c955a9104794bf27169bb4f27ab0.etc2.ctex"]
+dest_files=["res://.godot/imported/mask.png-a450c955a9104794bf27169bb4f27ab0.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

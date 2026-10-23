@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c5pueckwifvcw"
-path.s3tc="res://.godot/imported/base_suits.png-b71e2b8bd7b84e1ec2d5fe7c325869e2.s3tc.ctex"
-path.etc2="res://.godot/imported/base_suits.png-b71e2b8bd7b84e1ec2d5fe7c325869e2.etc2.ctex"
+path="res://.godot/imported/base_suits.png-b71e2b8bd7b84e1ec2d5fe7c325869e2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://graphics/objects/factory/base_suits.png"
-dest_files=["res://.godot/imported/base_suits.png-b71e2b8bd7b84e1ec2d5fe7c325869e2.s3tc.ctex", "res://.godot/imported/base_suits.png-b71e2b8bd7b84e1ec2d5fe7c325869e2.etc2.ctex"]
+dest_files=["res://.godot/imported/base_suits.png-b71e2b8bd7b84e1ec2d5fe7c325869e2.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

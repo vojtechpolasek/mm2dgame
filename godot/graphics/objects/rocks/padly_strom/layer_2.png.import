@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://de0e4cqc6j415"
-path.s3tc="res://.godot/imported/layer_2.png-94a278f78c389daaf45eb373678efda5.s3tc.ctex"
-path.etc2="res://.godot/imported/layer_2.png-94a278f78c389daaf45eb373678efda5.etc2.ctex"
+path="res://.godot/imported/layer_2.png-94a278f78c389daaf45eb373678efda5.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://graphics/objects/rocks/padly_strom/layer_2.png"
-dest_files=["res://.godot/imported/layer_2.png-94a278f78c389daaf45eb373678efda5.s3tc.ctex", "res://.godot/imported/layer_2.png-94a278f78c389daaf45eb373678efda5.etc2.ctex"]
+dest_files=["res://.godot/imported/layer_2.png-94a278f78c389daaf45eb373678efda5.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=4
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

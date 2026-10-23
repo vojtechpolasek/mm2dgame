@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://by4tl1rsvtdn8"
-path.s3tc="res://.godot/imported/stump.png-396b2bb4c93f5beebc9c61ed7ad1ad57.s3tc.ctex"
-path.etc2="res://.godot/imported/stump.png-396b2bb4c93f5beebc9c61ed7ad1ad57.etc2.ctex"
+path="res://.godot/imported/stump.png-396b2bb4c93f5beebc9c61ed7ad1ad57.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://graphics/objects/trees/strom2/stump.png"
-dest_files=["res://.godot/imported/stump.png-396b2bb4c93f5beebc9c61ed7ad1ad57.s3tc.ctex", "res://.godot/imported/stump.png-396b2bb4c93f5beebc9c61ed7ad1ad57.etc2.ctex"]
+dest_files=["res://.godot/imported/stump.png-396b2bb4c93f5beebc9c61ed7ad1ad57.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=4
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

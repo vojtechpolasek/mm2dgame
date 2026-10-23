@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://vn7ivdae5r42"
-path.s3tc="res://.godot/imported/wall.png-b92e80d6393eba8baeb68677f88dcac7.s3tc.ctex"
-path.etc2="res://.godot/imported/wall.png-b92e80d6393eba8baeb68677f88dcac7.etc2.ctex"
+path="res://.godot/imported/wall.png-b92e80d6393eba8baeb68677f88dcac7.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://graphics/objects/houses/tram_velky/wall.png"
-dest_files=["res://.godot/imported/wall.png-b92e80d6393eba8baeb68677f88dcac7.s3tc.ctex", "res://.godot/imported/wall.png-b92e80d6393eba8baeb68677f88dcac7.etc2.ctex"]
+dest_files=["res://.godot/imported/wall.png-b92e80d6393eba8baeb68677f88dcac7.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

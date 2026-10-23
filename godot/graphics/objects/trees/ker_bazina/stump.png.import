@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://3m2w62uc0kyt"
-path.s3tc="res://.godot/imported/stump.png-239478f9b7402088c4312fb831a7cf55.s3tc.ctex"
-path.etc2="res://.godot/imported/stump.png-239478f9b7402088c4312fb831a7cf55.etc2.ctex"
+path="res://.godot/imported/stump.png-239478f9b7402088c4312fb831a7cf55.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://graphics/objects/trees/ker_bazina/stump.png"
-dest_files=["res://.godot/imported/stump.png-239478f9b7402088c4312fb831a7cf55.s3tc.ctex", "res://.godot/imported/stump.png-239478f9b7402088c4312fb831a7cf55.etc2.ctex"]
+dest_files=["res://.godot/imported/stump.png-239478f9b7402088c4312fb831a7cf55.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=4
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

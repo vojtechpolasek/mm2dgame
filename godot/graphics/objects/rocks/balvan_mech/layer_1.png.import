@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://lo3m6fm044o"
-path.s3tc="res://.godot/imported/layer_1.png-8175c1e1b8a9c1d1955da28d7bfa7afe.s3tc.ctex"
-path.etc2="res://.godot/imported/layer_1.png-8175c1e1b8a9c1d1955da28d7bfa7afe.etc2.ctex"
+path="res://.godot/imported/layer_1.png-8175c1e1b8a9c1d1955da28d7bfa7afe.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://graphics/objects/rocks/balvan_mech/layer_1.png"
-dest_files=["res://.godot/imported/layer_1.png-8175c1e1b8a9c1d1955da28d7bfa7afe.s3tc.ctex", "res://.godot/imported/layer_1.png-8175c1e1b8a9c1d1955da28d7bfa7afe.etc2.ctex"]
+dest_files=["res://.godot/imported/layer_1.png-8175c1e1b8a9c1d1955da28d7bfa7afe.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=4
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
