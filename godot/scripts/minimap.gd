@@ -6,6 +6,9 @@ extends Control
 ## Obrázek čtverce (chart, pixel na dlaždici) se počítá ve vlákně tvorby čtverce, okno
 ## ho jen ukáže přes masku objevených dlaždic. Továrny, sklady a hráči jsou značky navrch.
 ## Obrázek zůstane, i když se čtverec uvolní, objevené místo z mapy nezmizí.
+## Okno ořízne obrázky čtverců na zaoblený obdélník samo v jejich shaderu. Ořez přes
+## clip_children by se kreslil přes zvláštní obrázek a na slabé grafice stál milisekundy.
+## Značky se kreslí jen celé uvnitř okna.
 
 const MapData := preload("res://scripts/map_data.gd")
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
@@ -28,12 +31,26 @@ const TREE_MAX := 0.5
 const FACTORY_MARK := Color(0.95, 0.75, 0.3)
 const STORE_MARK := Color(0.86, 0.66, 0.3)
 const OUTLINE := Color(0.08, 0.06, 0.05)
+## Obrázek čtverce přes masku objevených dlaždic, oříznutý na zaoblené okno. place je poloha
+## obrázku ve vrstvě čtverců (x, y) a pixely okna na jednotku vrstvy (z), window velikost okna
+## a radius zaoblení v pixelech okna.
 const MASK_SHADER := """
 shader_type canvas_item;
 uniform sampler2D mask : filter_nearest;
+uniform vec3 place;
+uniform vec2 window;
+uniform float radius;
+varying vec2 local;
+void vertex() {
+	local = (VERTEX + place.xy) * place.z;
+}
 void fragment() {
 	COLOR = texture(TEXTURE, UV);
 	COLOR.a *= texture(mask, UV).r;
+	vec2 half_size = window * 0.5;
+	vec2 q = abs(local - half_size) - (half_size - radius);
+	float outside = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+	COLOR.a *= clamp(0.5 - outside, 0.0, 1.0);
 }
 """
 
@@ -62,8 +79,6 @@ var _back: StyleBoxFlat
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Obsah se ořízne podle zaobleného podkladu.
-	clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	_back = StyleBoxFlat.new()
 	_back.bg_color = UNSEEN
 	_back.set_corner_radius_all(CORNER)
@@ -153,6 +168,10 @@ func _process(delta: float) -> void:
 		if node.visible:
 			node.position = at
 			node.size = square
+			var shade := node.material as ShaderMaterial
+			shade.set_shader_parameter("place", Vector3(at.x, at.y, _tile_px))
+			shade.set_shader_parameter("window", size)
+			shade.set_shader_parameter("radius", float(CORNER))
 	_overlay.queue_redraw()
 
 
@@ -210,15 +229,16 @@ func _draw_overlay() -> void:
 			if not _is_seen(coord, pos):
 				continue
 			var at := _to_map(pos)
-			if mark[1]:
-				_square_mark(at, 4.0, FACTORY_MARK)
-			else:
-				_square_mark(at, 2.5, STORE_MARK)
+			var half := 4.0 if mark[1] else 2.5
+			if _inside(at, half + 1.0):
+				_square_mark(at, half, FACTORY_MARK if mark[1] else STORE_MARK)
 	for i in _persons.size():
 		var person: Node2D = _persons[i]
 		if not is_instance_valid(person):
 			continue
 		var at := _to_map(person.position)
+		if not _inside(at, 3.2):
+			continue
 		_overlay.draw_circle(at, 3.2, OUTLINE)
 		_overlay.draw_circle(at, 2.2, _colors[i] if i < _colors.size() else Color.WHITE)
 
@@ -226,6 +246,15 @@ func _draw_overlay() -> void:
 func _square_mark(at: Vector2, half: float, color: Color) -> void:
 	_overlay.draw_rect(Rect2(at - Vector2.ONE * (half + 1.0), Vector2.ONE * (half + 1.0) * 2.0), OUTLINE)
 	_overlay.draw_rect(Rect2(at - Vector2.ONE * half, Vector2.ONE * half * 2.0), color)
+
+
+## Vejde se značka s poloměrem reach kolem at celá do zaobleného okna? Vzdálenost od okraje
+## počítá stejně jako MASK_SHADER.
+func _inside(at: Vector2, reach: float) -> bool:
+	var half_size := size * 0.5
+	var q := (at - half_size).abs() - (half_size - Vector2.ONE * CORNER)
+	var outside := q.max(Vector2.ZERO).length() + minf(maxf(q.x, q.y), 0.0) - CORNER
+	return outside <= -reach
 
 
 func _to_map(world: Vector2) -> Vector2:
