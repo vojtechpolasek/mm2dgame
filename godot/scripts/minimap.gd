@@ -9,6 +9,8 @@ extends Control
 ## Okno ořízne obrázky čtverců na zaoblený obdélník samo v jejich shaderu. Ořez přes
 ## clip_children by se kreslil přes zvláštní obrázek a na slabé grafice stál milisekundy.
 ## Značky se kreslí jen celé uvnitř okna.
+## Maska objevených dlaždic má dvě textury a střídají se: nová maska se nahraje do té, kterou
+## grafika zrovna nekreslí. Nahrát do kreslené textury by na slabé grafice čekalo, až dokreslí.
 
 const MapData := preload("res://scripts/map_data.gd")
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
@@ -63,7 +65,8 @@ var _seen := {}
 var _side := 128
 var _tile := float(TerrainCatalog.TILE_SIZE)
 var _shader: Shader
-## Ukázané čtverce: souřadnice -> {node, origin, mask (Image), texture (ImageTexture), dirty}.
+## Ukázané čtverce: souřadnice -> {node, origin, mask (Image), textures (dvě ImageTexture),
+## shown (index ukázané), dirty}.
 var _views := {}
 ## Značky čtverců: souřadnice -> Array dvojic [poloha ve světě, továrna (true) / sklad].
 var _marks := {}
@@ -75,6 +78,8 @@ var _center := Vector2.ZERO
 ## Pixely rozhraní na dlaždici: jeden pixel obrazovky podle zvětšení rozhraní.
 var _tile_px := 1.0
 var _back: StyleBoxFlat
+## Řádek objevených dlaždic (255) na porovnání, jestli je kus řádku už celý objevený.
+var _seen_row := PackedByteArray()
 
 
 func _ready() -> void:
@@ -101,6 +106,8 @@ func setup(camera: Camera2D, persons: Array, seen: Dictionary, side: int) -> voi
 	_persons = persons
 	_seen = seen
 	_side = side
+	_seen_row.resize(side)
+	_seen_row.fill(255)
 	_colors.clear()
 	for person: Node in persons:
 		var player: Dictionary = GameSession.player_colors(int(person.get("player_index")))
@@ -117,10 +124,10 @@ func add_square(coord: Vector2i, origin: Vector2, chart: Image, marks: Array) ->
 		bytes.resize(_side * _side)
 		_seen[coord] = bytes
 	var mask := Image.create_from_data(_side, _side, false, Image.FORMAT_L8, bytes)
-	var mask_texture := ImageTexture.create_from_image(mask)
+	var textures := [ImageTexture.create_from_image(mask), ImageTexture.create_from_image(mask)]
 	var material := ShaderMaterial.new()
 	material.shader = _shader
-	material.set_shader_parameter("mask", mask_texture)
+	material.set_shader_parameter("mask", textures[0])
 	var node := TextureRect.new()
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	node.texture = ImageTexture.create_from_image(chart)
@@ -129,7 +136,7 @@ func add_square(coord: Vector2i, origin: Vector2, chart: Image, marks: Array) ->
 	node.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	node.stretch_mode = TextureRect.STRETCH_SCALE
 	_canvas.add_child(node)
-	_views[coord] = {"node": node, "origin": origin, "mask": mask, "texture": mask_texture, "dirty": false}
+	_views[coord] = {"node": node, "origin": origin, "mask": mask, "textures": textures, "shown": 0, "dirty": false}
 	_marks[coord] = marks
 	# Co bylo v záběru dřív, než čtverec vznikl, se dopočítá při příštím pohybu.
 	_last_rect = Rect2i()
@@ -176,7 +183,9 @@ func _process(delta: float) -> void:
 
 
 ## Dlaždice v rect (souřadnice dlaždic světa) jsou objevené, kromě rohů: střed dlaždice
-## musí ležet v area (záběr v dlaždicích) zaobleném o bend.
+## musí ležet v area (záběr v dlaždicích) zaobleném o bend. Na řádku je to souvislý úsek,
+## spočítá se rovnou. Úsek už celý objevený se pozná porovnáním s _seen_row a přeskočí,
+## dlaždice po jedné se procházejí jen v řádcích, kde se něco objevilo.
 func _reveal(rect: Rect2i, area: Rect2, bend: float) -> void:
 	var core := area.grow(-bend)
 	for coord: Vector2i in _views:
@@ -191,15 +200,17 @@ func _reveal(rect: Rect2i, area: Rect2, bend: float) -> void:
 			var row := y * _side
 			var cy := float(first.y + y) + 0.5
 			var dy := maxf(maxf(core.position.y - cy, cy - core.end.y), 0.0)
-			for x in range(part.position.x - first.x, part.end.x - first.x):
-				if bytes[row + x] != 0:
-					continue
-				var cx := float(first.x + x) + 0.5
-				var dx := maxf(maxf(core.position.x - cx, cx - core.end.x), 0.0)
-				if dx * dx + dy * dy > bend * bend:
-					continue
+			if dy > bend:
+				continue
+			# Střed dlaždice cx = first.x + x + 0.5 smí být od jádra nejvýš reach.
+			var reach := sqrt(bend * bend - dy * dy)
+			var from := maxi(part.position.x, ceili(core.position.x - reach - 0.5)) - first.x
+			var to := mini(part.end.x, floori(core.end.x + reach - 0.5) + 1) - first.x
+			if to <= from or bytes.slice(row + from, row + to) == _seen_row.slice(0, to - from):
+				continue
+			for x in range(from, to):
 				bytes[row + x] = 255
-				changed = true
+			changed = true
 		if changed:
 			_seen[coord] = bytes
 			view_info["dirty"] = true
@@ -213,7 +224,11 @@ func _flush() -> void:
 		view_info["dirty"] = false
 		var mask: Image = view_info["mask"]
 		mask.set_data(_side, _side, false, Image.FORMAT_L8, _seen[coord])
-		(view_info["texture"] as ImageTexture).update(mask)
+		var next := 1 - int(view_info["shown"])
+		var texture: ImageTexture = view_info["textures"][next]
+		texture.update(mask)
+		((view_info["node"] as CanvasItem).material as ShaderMaterial).set_shader_parameter("mask", texture)
+		view_info["shown"] = next
 
 
 func _draw() -> void:

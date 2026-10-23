@@ -302,6 +302,12 @@ const float BANK_SHADOW = 0.9;
 const float WATER_DEPTH = 1.0;
 const float WATER_PARALLAX = 0.016;
 
+// Hluboká voda: od tohoto podílu vody předpeče terrain_bake rovnou texturu vody (dno pod ní
+// vidět není) a terrain_water ji od DEEP_READ jen přečte. Mezera mezi nimi drží filtr
+// textury dál od dna u kraje.
+const float DEEP_BAKE = 0.9;
+const float DEEP_READ = 0.95;
+
 // O kolik dál od středu záběru (camera) leží bod hladiny, který je vidět v bodě at.
 vec2 water_parallax(vec2 at, vec2 camera, float zoom) {
 	return (at - camera) * WATER_DEPTH * WATER_PARALLAX * zoom;

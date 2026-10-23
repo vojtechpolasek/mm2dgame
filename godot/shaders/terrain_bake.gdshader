@@ -4,14 +4,17 @@ render_mode blend_disabled;
 // Předpečení chunku terénu: souš, přechody a břehy jednou do textury. Pixel textury je pixel
 // světa. Vodu nad tím rozvlní terrain_water.gdshader. Kolem jezera je svah dolů k hladině
 // podle terénu (lake_bank), stejný jako u řeky. Stín břehu přidá terrain_water.
-// Do alfy jde výška břehu jezera (lake_height, 1 souš, 0 hladina). terrain_water z ní počítá
+// Hluboká voda (od DEEP_BAKE) dostane rovnou texturu vody, jak ji kreslí terrain_water, ať ji
+// voda v každém snímku nepočítá. Do alfy jde výška břehu jezera (lake_height, 1 souš, 0 hladina). terrain_water z ní počítá
 // stín břehu, šum břehu tak nepočítá v každém snímku znovu. Chunk se kreslí s alfou 1
 // (terrain_chunk.gdshader).
 
 #include "res://shaders/terrain_common.gdshaderinc"
 
-// Levý horní roh chunku ve světě a velikost jeho textury v pixelech.
+// Levý horní roh chunku ve čtverci a velikost jeho textury v pixelech.
 uniform vec2 chunk_origin = vec2(0.0);
+// Levý horní roh čtverce ve světě. Textura vody má varianty podle dlaždic světa.
+uniform vec2 map_origin = vec2(0.0);
 uniform float chunk_px = 512.0;
 
 void blit() {
@@ -29,6 +32,9 @@ void blit() {
 	float mass = water_mass_at(world_pos);
 	if (mass > 0.0 && mass < 1.0) {
 		surface = lake_bank(surface, mass, world_pos, 0.0);
+	}
+	if (share >= DEEP_BAKE) {
+		surface = water_texture(map_origin + world_pos, 0.0);
 	}
 	COLOR0 = vec4(surface, lake_height(world_pos));
 }

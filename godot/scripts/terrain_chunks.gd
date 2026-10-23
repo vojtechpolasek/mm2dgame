@@ -25,6 +25,10 @@ const BAKE_NOW := 3
 ## Chunk dál než tolik pixelů za okrajem obrazovky se vrátí do zásobníku. Mezera proti AHEAD
 ## brání tomu, aby se chunk na hraně pekl a vracel dokola.
 const KEEP := 384.0
+## Mipmapy upečeného chunku se dělají až o tolik snímků později. Hned po pečení by se čekalo,
+## až grafika pečení dokončí (na slabé grafice desítky ms). Chunk se ukáže hned, jeho
+## základní úroveň je hotová.
+const MIP_DELAY := 2
 
 var _camera: MapCamera
 var _water: ShaderMaterial
@@ -47,6 +51,8 @@ var _queue: Array[Vector2i] = []
 var _baked_this_frame := 0
 var _bake_frame := -1
 var _shown := false
+## Upečené chunky čekající na mipmapy: [textura, snímek, od kterého se smí udělat].
+var _mips: Array = []
 
 
 ## Zásobník volných spritů. cap je velikost, nad kterou se volné sprity uvolní, ať po oddálení
@@ -110,6 +116,9 @@ func setup(
 
 func _process(_delta: float) -> void:
 	_new_frame()
+	var frame := Engine.get_process_frames()
+	while not _mips.is_empty() and int(_mips[0][1]) <= frame:
+		(_mips.pop_front()[0] as DrawableTexture2D).generate_mipmaps()
 	while not _queue.is_empty() and _baked_this_frame < BAKE_PER_FRAME:
 		var key: Vector2i = _queue.pop_front()
 		if _live.has(key) and not (_live[key] as Sprite2D).visible:
@@ -222,8 +231,9 @@ func _new_sprite() -> Sprite2D:
 ## tohoto čtverce.
 func _create(key: Vector2i) -> void:
 	var sprite: Sprite2D = null
+	# Nejdéle volný sprite: jeho textura už se nekreslí a přepečení nečeká na grafiku.
 	while sprite == null and not _spare.sprites.is_empty():
-		sprite = _spare.sprites.pop_back()
+		sprite = _spare.sprites.pop_front()
 		if not is_instance_valid(sprite):
 			sprite = null
 	if sprite == null:
@@ -274,7 +284,7 @@ func _bake(key: Vector2i) -> void:
 	baker.set_shader_parameter("chunk_origin", Vector2(key) * _chunk_px)
 	var texture := sprite.texture as DrawableTexture2D
 	texture.blit_rect(Rect2i(0, 0, _chunk_px, _chunk_px), null, Color.WHITE, 0, baker)
-	texture.generate_mipmaps()
+	_mips.append([texture, Engine.get_process_frames() + MIP_DELAY])
 	sprite.visible = true
 	_baked_this_frame += 1
 

@@ -3,7 +3,8 @@ extends Node2D
 ## Vzduch nad jedním čtvercem světa: mlha nad močálem, padající sníh nad sněhem a jemně
 ## růžový jedovatý nádech nad čtvercem levelu, dokud továrna level nesplní.
 ##
-## Jed je jen průhledný obdélník přes čtverec bez shaderu, pomalu pulzuje. Mlhu a sníh kreslí
+## Jed nekreslí sám: WorldBoard podle síly jedu (poison) čtverce pod kamerou obarví celý svět
+## (CanvasModulate, tint), bez průchodu přes obrazovku navíc. Mlhu a sníh kreslí
 ## shader air.gdshader, a to jen kusy po CHUNK dlaždicích, kde nějaké jsou: jinde neběží nic.
 ## Textura kusů je maska terénu, dlaždice na pixel: R mlha, G sníh (klíče fog a snowfall
 ## v surfaces.json). Šum mlhy a vločky jsou předpočítané textury (_noise, _flakes), shader
@@ -19,10 +20,10 @@ const Z := 8
 const CLEAR_TIME := 4.0
 ## Strana kusu mlhy a sněhu v dlaždicích.
 const CHUNK := 8
-## Jed: barva, krytí a o kolik krytí kolísá, za kolik sekund.
-const POISON_COLOR := Color(1.0, 0.58, 0.78)
-const POISON_ALPHA := 0.1
-const POISON_PULSE := 0.025
+## Obarvení světa plným jedem (násobí se jím, růžový nádech), o kolik síla jedu kolísá a za
+## kolik sekund.
+const POISON_TINT := Color(1.0, 0.924, 0.96)
+const POISON_PULSE := 0.25
 const POISON_PERIOD := 6.0
 ## Předpočítané textury: strana šumu mlhy a vloček v pixelech, počet vloček.
 const NOISE_SIDE := 256
@@ -33,8 +34,6 @@ const FLAKE_COUNT := 16
 static var _material: ShaderMaterial
 
 var _poison := 0.0
-var _poison_rect: ColorRect
-var _pulse: Tween
 
 
 ## Maska terénu a seznam kusů s mlhou nebo sněhem, smí běžet ve vlákně. Okraje oblastí se
@@ -114,10 +113,6 @@ func setup(air: Dictionary, size: int, origin: Vector2, poisoned: bool) -> void:
 			sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 			sprite.material = _shared_material()
 			add_child(sprite)
-	_poison_rect = ColorRect.new()
-	_poison_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_poison_rect.size = Vector2.ONE * size * tile
-	add_child(_poison_rect)
 	_set_poison(1.0 if poisoned else 0.0)
 
 
@@ -129,18 +124,19 @@ func clear_poison() -> void:
 	tween.tween_method(_set_poison, _poison, 0.0, CLEAR_TIME)
 
 
+## Síla jedu nad čtvercem, 1 plný jed, 0 čistý vzduch (po splnění levelu vybledne).
+func poison() -> float:
+	return _poison
+
+
+## Obarvení světa jedem o síle amount v čase time (s): pomalu pulzuje.
+static func tint(amount: float, time: float) -> Color:
+	var pulse := 1.0 - POISON_PULSE * (0.5 + 0.5 * sin(time * TAU / POISON_PERIOD))
+	return Color.WHITE.lerp(POISON_TINT, clampf(amount, 0.0, 1.0) * pulse)
+
+
 func _set_poison(value: float) -> void:
 	_poison = value
-	_poison_rect.color = Color(POISON_COLOR, POISON_ALPHA * value)
-	_poison_rect.visible = value > 0.0
-	# Pulz kolísá krytím celého obdélníku (modulate), barva nese sílu jedu.
-	if value > 0.0 and _pulse == null:
-		_pulse = create_tween().set_loops().set_trans(Tween.TRANS_SINE)
-		_pulse.tween_property(_poison_rect, "modulate:a", 1.0 - POISON_PULSE / POISON_ALPHA, POISON_PERIOD * 0.5)
-		_pulse.tween_property(_poison_rect, "modulate:a", 1.0, POISON_PERIOD * 0.5)
-	elif value <= 0.0 and _pulse != null:
-		_pulse.kill()
-		_pulse = null
 
 
 static func _shared_material() -> ShaderMaterial:

@@ -18,6 +18,7 @@ uniform sampler2D lamp_light : filter_linear, repeat_disable, hint_default_black
 uniform float lamp_shadows = 1.0;
 
 // Dosah kuželu v px (8 m), polovina úhlu kuželu (45°) a měkký okraj.
+// Stejná čísla má day_night.gd (obdélník kolem kuželu).
 const float LAMP_RANGE = 512.0;
 const float LAMP_HALF_ANGLE = 0.785;
 const float LAMP_SOFT_ANGLE = 0.14;

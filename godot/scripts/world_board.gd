@@ -57,6 +57,8 @@ const Benchmark := preload("res://scripts/benchmark.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
+## Za kolik sekund se obarvení jedem srovná při přechodu do jiného čtverce.
+const TINT_FADE := 1.5
 ## Kolik terénů si nový čtverec vybere (MapGenerator.pick_terrains). Víc by mapu rozdrobilo.
 const TERRAINS_PER_SQUARE := 3
 ## Terény, které úvodní čtverec nikdy nemá: bažina by hned na začátku zpomalila, voda
@@ -112,6 +114,11 @@ var _props: Node2D
 ## Stíny objektů mezi porostem a objekty, a den s nocí.
 var _shadows: Shadows
 var _day: DayNight
+## Obarvení světa jedem (SquareAir.tint) podle čtverce pod středem kamery. Mezi čtverci se
+## síla jedu mění plynule za TINT_FADE sekund.
+var _tint: CanvasModulate
+var _tint_amount := 0.0
+var _tint_time := 0.0
 var _chunks: PropChunks
 var _hud: Hud
 var _party: Party
@@ -269,6 +276,9 @@ func start(host) -> void:
 	_day.full_moon_only = _flyover
 	_host.add_child(_day)
 	_day.setup(_camera, _shadows, _host._persons)
+	_tint = CanvasModulate.new()
+	_tint.name = "PoisonTint"
+	_host.add_child(_tint)
 	_chunks = PropChunks.new()
 	_chunks.name = "PropChunks"
 	_chunks.setup(_camera)
@@ -295,6 +305,7 @@ func tick(delta: float) -> void:
 	if not _opened:
 		return
 	_day.advance(delta)
+	_follow_tint(delta)
 	if _hud != null:
 		_hud.set_sky(_day.phase, _day.moon_index())
 	if _flyover:
@@ -714,6 +725,7 @@ func _finish_step() -> void:
 			sq.forest.spawn(_camera, _props, _chunks)
 		4:
 			sq.river.spawn(_rivers, sq.origin, _catalog.water_material, _bank_look, sq.painted)
+		5:
 			sq.decor.spawn(_decor_kit, _decor, sq.origin)
 		_:
 			_finishing.remove_at(0)
@@ -921,6 +933,7 @@ func _show_terrain(sq: Square) -> void:
 		sq.ground = chunks
 	var water := mats["water"] as ShaderMaterial
 	water.set_shader_parameter("map_origin", sq.origin)
+	(mats["bake"] as ShaderMaterial).set_shader_parameter("map_origin", sq.origin)
 	chunks.setup(
 		_catalog,
 		sq.map.size,
@@ -1179,6 +1192,17 @@ func _has_ready(coord: Vector2i) -> bool:
 
 func _square(coord: Vector2i) -> Square:
 	return _squares.get(coord) as Square
+
+
+## Jed čtverce pod středem kamery obarví svět, noční závoj obarvení vyrovná (DayNight).
+func _follow_tint(delta: float) -> void:
+	var sq := _square(_coord(_camera.get_screen_center_position()))
+	var target: float = sq.air.poison() if sq != null and sq.air != null else 0.0
+	_tint_amount = move_toward(_tint_amount, target, delta / TINT_FADE)
+	_tint_time += delta
+	var color := SquareAir.tint(_tint_amount, _tint_time)
+	_tint.color = color
+	_day.set_canvas_tint(color)
 
 
 func _coord(pos: Vector2) -> Vector2i:

@@ -4,7 +4,8 @@ extends Node2D
 ## řekou a porostem a pod objekty.
 ##
 ## Kreslí se do obrázků zmenšených proti obrazovce (SubViewport s kamerou za hlavní kamerou):
-## stíny a stíny čelovek na čtvrtinu (SHADOW_SCALE), překážky na polovinu (SCALE). Stíny jsou
+## stíny a stíny čelovek na čtvrtinu (SHADOW_SCALE), překážky na polovinu (SCALE), obojí ještě
+## krát rozlišení světa (Graphics.world_scale). Stíny jsou
 ## měkké, rozdíl skoro není vidět, a menší obrázek je na slabé grafice mnohem levnější:
 ## - stíny: každá vrstva objektu nad zemí jako černá silueta (shadow_layer.gdshader), posunutá
 ##   podle výšky vrstvy a globálního sun_shadow (DayNight). Obrázek se roztáhne přes svět
@@ -202,7 +203,8 @@ func _view_size() -> Vector2:
 	return _camera.get_viewport_rect().size / maxf(_camera.zoom.x, 0.001)
 
 
-## Obrázky drží záběr hlavní kamery, zmenšený o SHADOW_SCALE (stíny) a SCALE (ostatní).
+## Obrázky drží záběr hlavní kamery, zmenšený o SHADOW_SCALE (stíny) a SCALE (ostatní) a
+## o rozlišení světa.
 func _fit() -> void:
 	if _camera == null:
 		return
@@ -212,7 +214,7 @@ func _fit() -> void:
 	for row: Array in [[_shadow_view, _shadow_camera, SHADOW_SCALE], [_occluder_view, _occluder_camera, SCALE], [_lamp_view, _lamp_camera, SHADOW_SCALE]]:
 		var view: SubViewport = row[0]
 		var camera: Camera2D = row[1]
-		var share: float = row[2]
+		var share: float = row[2] * Graphics.world_scale()
 		var pixels := Vector2i(maxi(int(screen.x * share), 1), maxi(int(screen.y * share), 1))
 		if view == _shadow_view:
 			shadow_pixels = pixels
@@ -239,6 +241,7 @@ func _place_lamp_rect() -> void:
 
 func _apply_setting() -> void:
 	_enabled = Graphics.shadows_on()
+	_fit()
 	_shadow_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if _enabled else SubViewport.UPDATE_DISABLED
 	_occluder_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if _lamps else SubViewport.UPDATE_DISABLED
 	# Obrázek světla čelovek se kreslí vždy, když svítí, stíny v něm jsou podle lamp_shades_on.

@@ -5,8 +5,9 @@ extends Node
 ##
 ## Rozlišení světa je podíl rozlišení obrazovky (SCALES). Při 100 % se svět kreslí přímo do
 ## okna. Při nižším ho kreslí _view (SubViewport se stejným World2D jako okno) ve zmenšené
-## velikosti a obrázek se roztáhne přes obrazovku pod HUD. HUD a menu zůstanou ostré, svět je
-## stejně velký, jen méně ostrý, a na slabé grafice je mnohem levnější. Hlavní okno svět
+## velikosti a obrázek se roztáhne přes obrazovku pod HUD, bez vyhlazení (pixely jsou vidět).
+## HUD a menu zůstanou ostré, svět je stejně velký, jen hrubší, a na slabé grafice je mnohem
+## levnější. Hlavní okno svět
 ## přeskočí: uzel hry (attach_world) dostane vrstvu viditelnosti WORLD_LAYER, kterou okno
 ## nekreslí (canvas_cull_mask). Mimo hru (menu) se kreslí vždy přímo.
 ##
@@ -133,7 +134,8 @@ func _build_view() -> void:
 	picture.texture = _view.get_texture()
 	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	picture.stretch_mode = TextureRect.STRETCH_SCALE
-	picture.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	# Bez vyhlazení: pixely zmenšeného světa jsou vidět ostře.
+	picture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	picture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_view_layer.add_child(picture)

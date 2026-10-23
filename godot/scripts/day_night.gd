@@ -18,7 +18,8 @@ extends Node2D
 ## a pod obzorem zmizí. Měsíc vrhá slabší stín.
 ##
 ## Světlo se kreslí závojem nad objekty i mlhou a pod HUD (night_veil.gdshader), svět se jím
-## vynásobí. Den je bílý. Když slunce klesne pod DUSK.y (stíny už jsou dlouhé), světlo slábne
+## vynásobí. Svět obarvený jedem (set_canvas_tint, CanvasModulate) závoj obarvení vyrovná, ať
+## se v noci nenásobí dvakrát. Den je bílý. Když slunce klesne pod DUSK.y (stíny už jsou dlouhé), světlo slábne
 ## a teplá, až je slunce celé pod obzorem (DUSK.x), je noc tmavá do modra. Ráno obráceně.
 ## Měsíc stejně přidává světlo noci podle své výšky. Za soumraku se hráčům rozsvítí
 ## čelovky: kužel před postavou a slabá záře kolem ní, objekty do výšky čelovky jí stíní.
@@ -58,8 +59,13 @@ const WARM := 0.4
 const LAMP_DUSK := Vector2(0.6, 0.9)
 ## Nejvíc čelovek (hráčů). Stejné číslo má night_veil.gdshader.
 const MAX_LAMPS := 6
-## Kam čelovka dosvítí v px (LAMP_RANGE v lamp_light.gdshaderinc) i s okrajem na rozmazání.
-const LAMP_REACH := 512.0 + 64.0
+## Kužel čelovky: dosah v px, polovina úhlu i s měkkým okrajem a poloměr záře kolem postavy.
+## Stejná čísla má lamp_light.gdshaderinc (LAMP_RANGE, LAMP_HALF_ANGLE + LAMP_SOFT_ANGLE,
+## GLOW_RADIUS). Obdélník čelovek obepíná jen kužel a záři, okraj LAMP_MARGIN je na rozmazání.
+const LAMP_RANGE := 512.0
+const LAMP_HALF := 0.925
+const LAMP_GLOW := 96.0
+const LAMP_MARGIN := 48.0
 ## Závoj je o tolik větší než záběr, ať při rychlém pohybu kamery nevykoukne kraj.
 const VEIL_PAD := 0.15
 ## Nad mlhou a sněhem (SquareAir.Z), pod jmény dolů (PondLabels).
@@ -164,6 +170,12 @@ func _apply() -> void:
 	_veil.visible = lamp > 0.001 or not ambient.is_equal_approx(DAY)
 
 
+## Svět je obarvený (jed, CanvasModulate). Závoj obarvení vyrovná.
+func set_canvas_tint(color: Color) -> void:
+	if _veil_material != null:
+		_veil_material.set_shader_parameter("canvas_tint", Vector3(color.r, color.g, color.b))
+
+
 ## Čelovky na hlavách postav: poloha a směr, kam postava hledí.
 func _aim_lamps() -> void:
 	var lamps: Array[Vector4] = []
@@ -175,7 +187,7 @@ func _aim_lamps() -> void:
 			continue
 		var facing := Vector2.from_angle(person.global_rotation - PI * 0.5)
 		lamps.append(Vector4(person.global_position.x, person.global_position.y, facing.x, facing.y))
-		var reach := Rect2(person.global_position, Vector2.ZERO).grow(LAMP_REACH)
+		var reach := _lamp_bounds(person.global_position, facing.angle())
 		area = reach if lamps.size() == 1 else area.merge(reach)
 	while lamps.size() < MAX_LAMPS:
 		lamps.append(Vector4.ZERO)
@@ -193,6 +205,19 @@ func _aim_lamps() -> void:
 		_set_lamp("view_origin", rect.position)
 		_set_lamp("view_size", rect.size)
 		_shadows.set_lamp_area(area)
+
+
+## Obdélník kolem kuželu čelovky v at, který míří úhlem angle, a záře kolem postavy: kraje
+## oblouku, a kde oblouk přechází přes osu, i ten nejvzdálenější bod.
+static func _lamp_bounds(at: Vector2, angle: float) -> Rect2:
+	var bounds := Rect2(at, Vector2.ZERO).grow(LAMP_GLOW)
+	bounds = bounds.expand(at + Vector2.from_angle(angle - LAMP_HALF) * LAMP_RANGE)
+	bounds = bounds.expand(at + Vector2.from_angle(angle + LAMP_HALF) * LAMP_RANGE)
+	for k in 4:
+		var axis := k * PI * 0.5
+		if absf(angle_difference(angle, axis)) <= LAMP_HALF:
+			bounds = bounds.expand(at + Vector2.from_angle(axis) * LAMP_RANGE)
+	return bounds.grow(LAMP_MARGIN)
 
 
 func _set_lamp(param: StringName, value: Variant) -> void:
