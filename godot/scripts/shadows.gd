@@ -4,7 +4,7 @@ extends Node2D
 ## řekou a porostem a pod objekty.
 ##
 ## Kreslí se do obrázků zmenšených proti obrazovce (SubViewport s kamerou za hlavní kamerou):
-## stíny na čtvrtinu (SHADOW_SCALE), překážky a stíny čelovek na polovinu (SCALE). Stíny jsou
+## stíny a stíny čelovek na čtvrtinu (SHADOW_SCALE), překážky na polovinu (SCALE). Stíny jsou
 ## měkké, rozdíl skoro není vidět, a menší obrázek je na slabé grafice mnohem levnější:
 ## - stíny: každá vrstva objektu nad zemí jako černá silueta (shadow_layer.gdshader), posunutá
 ##   podle výšky vrstvy a globálního sun_shadow (DayNight). Obrázek se roztáhne přes svět
@@ -12,9 +12,10 @@ extends Node2D
 ## - překážky: výška vrstev, které stíní čelovce (occluder_layer.gdshader). Čelovka je ve výšce
 ##   LAMP_HEIGHT, stíní vrstvy plných těles (skála, dům, příšera) a vrstvy do její výšky (keř).
 ##   Koruna stromu ne, ta je nad čelovkou: zapíše se jen do masky korun v kanálu G
-##   (crown_mask.gdshader) a čelovka ji neosvětlí. Noční závoj (DayNight) podle obrázku trasuje
-##   paprsky ke čelovkám a koruny nechá tmavé.
-## - stíny čelovek: kužely čelovek se stíny podle překážek (lamp_shade.gdshader). Noční závoj
+##   (crown_mask.gdshader) a čelovka ji neosvětlí. Světlo čelovek podle obrázku trasuje
+##   paprsky ke čelovkám, noční závoj (DayNight) podle masky nechá koruny tmavé.
+## - světlo čelovek: kužely se stíny podle překážek a záře kolem postav (lamp_shade.gdshader),
+##   jen kolem čelovek (set_lamp_area), jinde zůstane obrázek prázdný. Noční závoj
 ##   ho rozmaže a přidá do světla. Kde čelovka svítí, stín od slunce a měsíce slábne
 ##   (shadow_shown.gdshader).
 ## Stíny jdou vypnout v nastavení grafiky (Graphics.shadows_on), pak se obrázky stínů nekreslí.
@@ -51,9 +52,9 @@ const LAMP_HEIGHT := 1.5
 ## Výška v obrázku překážek je podíl HEIGHT_RANGE (kanál R má rozsah 0 až 1). Stejné číslo
 ## mají occluder_layer.gdshader a night_veil.gdshader.
 const HEIGHT_RANGE := 16.0
-## Obrázky překážek a stínů čelovek mají takový podíl velikosti obrazovky.
+## Obrázek překážek má takový podíl velikosti obrazovky.
 const SCALE := 0.5
-## Obrázek stínů od slunce a měsíce má takový podíl velikosti obrazovky.
+## Obrázky stínů od slunce a měsíce a stínů čelovek mají takový podíl velikosti obrazovky.
 const SHADOW_SCALE := 0.25
 ## Poloměr kolečka kmene v obrázku (trunk), sprite se zmenší na poloměr kmene.
 const DISC_RADIUS := 16
@@ -80,6 +81,10 @@ var _disc: ImageTexture
 var _follow: Array = []
 var _enabled := true
 var _lamps := false
+## Stíny čelovek, jdou se stíny. Zvlášť je vypíná jen benchmark (set_lamp_shades).
+var _lamp_shades := true
+## Obdélník světa, kam čelovky dosvítí (set_lamp_area). Jen tam se počítají jejich stíny.
+var _lamp_area := Rect2()
 var _strength := 0.0
 
 
@@ -132,6 +137,23 @@ func set_strength(strength: float) -> void:
 
 func enabled() -> bool:
 	return _enabled
+
+
+## Kreslí se stíny čelovek? Bez nich svítí kužel celý (night_veil.gdshader).
+func lamp_shades_on() -> bool:
+	return _enabled and _lamp_shades
+
+
+## Obdélník světa, kam čelovky dosvítí. Stíny čelovek se trasují jen v něm.
+func set_lamp_area(area: Rect2) -> void:
+	_lamp_area = area
+	_place_lamp_rect()
+
+
+## Vypne nebo zapne jen stíny čelovek, stíny od slunce a měsíce zůstanou (benchmark).
+func set_lamp_shades(on: bool) -> void:
+	_lamp_shades = on
+	_apply_setting()
 
 
 ## Svítí čelovky? Jen pak se kreslí obrázek překážek a korun.
@@ -187,7 +209,7 @@ func _fit() -> void:
 	var screen := _camera.get_viewport_rect().size
 	var center := _camera.get_screen_center_position()
 	var shadow_pixels := Vector2i.ONE
-	for row: Array in [[_shadow_view, _shadow_camera, SHADOW_SCALE], [_occluder_view, _occluder_camera, SCALE], [_lamp_view, _lamp_camera, SCALE]]:
+	for row: Array in [[_shadow_view, _shadow_camera, SHADOW_SCALE], [_occluder_view, _occluder_camera, SCALE], [_lamp_view, _lamp_camera, SHADOW_SCALE]]:
 		var view: SubViewport = row[0]
 		var camera: Camera2D = row[1]
 		var share: float = row[2]
@@ -201,15 +223,26 @@ func _fit() -> void:
 		camera.force_update_scroll()
 	_shown.position = center
 	_shown.scale = Vector2.ONE * _view_size().x / float(shadow_pixels.x)
-	_lamp_rect.position = center - _view_size() * 0.5
-	_lamp_rect.size = _view_size()
+	_place_lamp_rect()
+
+
+## Obdélník trasování stínů čelovek: záběr oříznutý na dosah čelovek.
+func _place_lamp_rect() -> void:
+	if _camera == null:
+		return
+	var area := view_rect().intersection(_lamp_area)
+	_lamp_rect.visible = area.has_area()
+	if _lamp_rect.visible:
+		_lamp_rect.position = area.position
+		_lamp_rect.size = area.size
 
 
 func _apply_setting() -> void:
 	_enabled = Graphics.shadows_on()
 	_shadow_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if _enabled else SubViewport.UPDATE_DISABLED
 	_occluder_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if _lamps else SubViewport.UPDATE_DISABLED
-	_lamp_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if _lamps and _enabled else SubViewport.UPDATE_DISABLED
+	# Obrázek světla čelovek se kreslí vždy, když svítí, stíny v něm jsou podle lamp_shades_on.
+	_lamp_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS if _lamps else SubViewport.UPDATE_DISABLED
 	set_strength(_strength)
 
 

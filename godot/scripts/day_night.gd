@@ -58,6 +58,8 @@ const WARM := 0.4
 const LAMP_DUSK := Vector2(0.6, 0.9)
 ## Nejvíc čelovek (hráčů). Stejné číslo má night_veil.gdshader.
 const MAX_LAMPS := 6
+## Kam čelovka dosvítí v px (LAMP_RANGE v lamp_light.gdshaderinc) i s okrajem na rozmazání.
+const LAMP_REACH := 512.0 + 64.0
 ## Závoj je o tolik větší než záběr, ať při rychlém pohybu kamery nevykoukne kraj.
 const VEIL_PAD := 0.15
 ## Nad mlhou a sněhem (SquareAir.Z), pod jmény dolů (PondLabels).
@@ -165,6 +167,7 @@ func _apply() -> void:
 ## Čelovky na hlavách postav: poloha a směr, kam postava hledí.
 func _aim_lamps() -> void:
 	var lamps: Array[Vector4] = []
+	var area := Rect2()
 	for person: Node2D in _persons:
 		if lamps.size() >= MAX_LAMPS:
 			break
@@ -172,6 +175,8 @@ func _aim_lamps() -> void:
 			continue
 		var facing := Vector2.from_angle(person.global_rotation - PI * 0.5)
 		lamps.append(Vector4(person.global_position.x, person.global_position.y, facing.x, facing.y))
+		var reach := Rect2(person.global_position, Vector2.ZERO).grow(LAMP_REACH)
+		area = reach if lamps.size() == 1 else area.merge(reach)
 	while lamps.size() < MAX_LAMPS:
 		lamps.append(Vector4.ZERO)
 	_set_lamp("lamps", lamps)
@@ -180,13 +185,14 @@ func _aim_lamps() -> void:
 		if is_instance_valid(person) and person.is_inside_tree():
 			count += 1
 	_set_lamp("lamp_count", mini(count, MAX_LAMPS))
-	var shadows_on := _shadows != null and _shadows.enabled()
-	_veil_material.set_shader_parameter("lamp_shadows", 1.0 if shadows_on else 0.0)
+	var shadows_on := _shadows != null and _shadows.lamp_shades_on()
+	_set_lamp("lamp_shadows", 1.0 if shadows_on else 0.0)
 	# Obrázek překážek nese i masku korun, ta platí i bez stínů.
 	if _shadows != null:
 		var rect := _shadows.view_rect()
 		_set_lamp("view_origin", rect.position)
 		_set_lamp("view_size", rect.size)
+		_shadows.set_lamp_area(area)
 
 
 func _set_lamp(param: StringName, value: Variant) -> void:

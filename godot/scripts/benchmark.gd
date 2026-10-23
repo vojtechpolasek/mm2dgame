@@ -12,7 +12,8 @@ extends Node
 ## 1. Trasa ve dne: stání, les, k vodě, brodění, vesnice. Úsek začne LEG_M metrů před cílem
 ##    (každý běh na stejném místě) a postavu vede po NavGrid stejnými akcemi jako hráč. Končí
 ##    v cíli nebo po svém limitu.
-## 2. Noc: stání a brodění se zapnutými čelovkami.
+## 2. Noc: stání a brodění se zapnutými čelovkami. Ve složkách noci jdou zvlášť vypnout i stíny
+##    čelovek (kužel pak svítí celý).
 ## 3. Složky: postava stojí u vody a postupně se vypínají části scény (stíny, jen stíny
 ##    objektů bez stínů břehů, terén, voda jezer, řeka, porost, objekty, tvorové, HUD, jen
 ##    minimapa, mlha, noční závoj) a mění rozlišení. Rozdíl proti „vse“ je cena té části.
@@ -249,6 +250,7 @@ func _build_plan() -> void:
 	_add("noc_bez_zavoje", "slozky_noc", STILL, {"night": true, "off": "bez_zavoje"})
 	_add("noc_bez_stinu", "slozky_noc", STILL, {"night": true, "off": "bez_stinu"})
 	_add("noc_bez_stinu_objektu", "slozky_noc", STILL, {"night": true, "off": "bez_stinu_objektu"})
+	_add("noc_bez_stinu_celovek", "slozky_noc", STILL, {"night": true, "off": "bez_stinu_celovek"})
 	_add("plne_rozliseni", "rozliseni", STILL, {"reduced": false})
 	_add("usporne_rozliseni", "rozliseni", STILL, {"reduced": true})
 
@@ -381,6 +383,7 @@ func _apply_off(part: String) -> void:
 	# obnoví obrázek, když se fáze mění.
 	var shadows: Node2D = Shadows.current
 	if shadows != null:
+		shadows.set_lamp_shades(part != "bez_stinu_celovek")
 		shadows.visible = part != "bez_stinu_objektu"
 		if part == "bez_stinu_objektu":
 			(shadows.get("_shadow_view") as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED

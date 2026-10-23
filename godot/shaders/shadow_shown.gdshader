@@ -3,7 +3,8 @@ render_mode unshaded;
 
 // Obrázek stínů od slunce a měsíce roztažený přes svět (shadows.gd). Kde svítí čelovka,
 // stín slábne až zmizí: v jejím světle stín od měsíce vidět není. Ve stínu od čelovky
-// (lamp_light) měsíční stín zůstane.
+// (lamp_light) měsíční stín zůstane. Obrázek světla čelovek se čte jednou bez rozmazání,
+// jde jen o to, jak moc stín zeslábne.
 
 #include "res://shaders/lamp_light.gdshaderinc"
 
@@ -15,9 +16,9 @@ void vertex() {
 
 void fragment() {
 	COLOR = texture(TEXTURE, UV) * COLOR;
-	if (lamp_on > 0.001) {
-		vec2 uv = view_uv(world);
-		float beam = in_view(uv) ? shaded_beams_at(uv) : beams_at(world);
-		COLOR.a *= 1.0 - clamp((beam + glows_at(world)) * lamp_on, 0.0, 1.0);
+	vec2 uv = view_uv(world);
+	if (lamp_on > 0.001 && in_view(uv)) {
+		vec2 lamp = texture(lamp_light, uv).rg;
+		COLOR.a *= 1.0 - clamp((lamp.x + lamp.y) * lamp_on, 0.0, 1.0);
 	}
 }

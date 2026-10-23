@@ -1,4 +1,4 @@
-// Světlo čelovek, společné pro noční závoj (night_veil.gdshader), stíny od čelovek
+// Světlo čelovek, společné pro noční závoj (night_veil.gdshader), obrázek světla čelovek
 // (lamp_shade.gdshader) a obrázek stínů od slunce a měsíce (shadow_shown.gdshader).
 // Parametry nastavuje DayNight všem třem stejně.
 
@@ -10,8 +10,12 @@ uniform vec4 lamps[6];
 // Obdélník světa, který pokrývají obrázky překážek a stínů čelovek (shadows.gd).
 uniform vec2 view_origin;
 uniform vec2 view_size = vec2(1.0);
-// Kužel čelovek se stíny v polovičním rozlišení (lamp_shade.gdshader), kanál R.
+// Světlo čelovek ve čtvrtinovém rozlišení (lamp_shade.gdshader): R kužely (se stíny, když
+// jsou zapnuté), G záře kolem postav. Jen tady se počítá smyčka přes čelovky, závoj a obrázek
+// stínů už jen čtou. Smyčka v celoobrazovkovém průchodu je na slabé grafice drahá.
 uniform sampler2D lamp_light : filter_linear, repeat_disable, hint_default_black;
+// 1 kužely se stíny, 0 bez stínů (stíny vypnuté). Čte ho lamp_shade.gdshader.
+uniform float lamp_shadows = 1.0;
 
 // Dosah kuželu v px (8 m), polovina úhlu kuželu (45°) a měkký okraj.
 const float LAMP_RANGE = 512.0;
@@ -46,32 +50,12 @@ float lamp_glow(vec2 at, vec4 lamp) {
 	return GLOW * (1.0 - smoothstep(GLOW_RADIUS * 0.3, GLOW_RADIUS, distance(at, lamp.xy)));
 }
 
-// Záře všech čelovek v bodě at.
-float glows_at(vec2 at) {
-	float glow = 0.0;
-	for (int i = 0; i < lamp_count; i++) {
-		glow += lamp_glow(at, lamps[i]);
-	}
-	return glow;
-}
-
-// Kužely všech čelovek v bodě at, bez stínů.
-float beams_at(vec2 at) {
-	float beam = 0.0;
-	for (int i = 0; i < lamp_count; i++) {
-		beam += lamp_beam(at, lamps[i]);
-	}
-	return beam;
-}
-
-// Kužely se stíny z obrázku lamp_light, rozmazané přes 4 x 4 pixely obrázku. Okraj stínu
-// je pak měkký a zrno z trasování paprsků zmizí.
-float shaded_beams_at(vec2 uv) {
+// Světlo čelovek z obrázku lamp_light (x kužely, y záře), rozmazané. Čtení na rohu mezi
+// texely vrátí průměr čtyř texelů, dvě čtení přes úhlopříčku tak pokryjí skoro 4 x 4 pixely
+// obrázku. Okraj stínu je pak měkký a zrno z trasování paprsků zmizí.
+vec2 lamp_light_at(vec2 uv) {
 	vec2 texel = 1.0 / vec2(textureSize(lamp_light, 0));
-	float sum = 0.0;
-	sum += texture(lamp_light, uv + texel * vec2(-1.0, -1.0)).r;
-	sum += texture(lamp_light, uv + texel * vec2(1.0, -1.0)).r;
-	sum += texture(lamp_light, uv + texel * vec2(-1.0, 1.0)).r;
-	sum += texture(lamp_light, uv + texel * vec2(1.0, 1.0)).r;
-	return sum * 0.25;
+	vec2 sum = texture(lamp_light, uv + texel * vec2(-1.0, -1.0)).rg;
+	sum += texture(lamp_light, uv + texel * vec2(1.0, 1.0)).rg;
+	return sum * 0.5;
 }
