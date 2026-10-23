@@ -188,7 +188,7 @@ class Square:
 	var decor
 	## Vzduch nad čtvercem (mlha, sníh, jed) a jeho maska terénu z vlákna.
 	var air
-	var air_mask: Image
+	var air_mask: Dictionary
 	## Obrázek čtverce pro mapu v rohu, pixel na dlaždici (MiniMap.chart).
 	var chart: Image
 	var rng: RandomNumberGenerator
@@ -729,7 +729,7 @@ func _finish(sq: Square) -> void:
 	sq.air.name = "Air_%d_%d" % [sq.coord.x, sq.coord.y]
 	_host.add_child(sq.air)
 	sq.air.setup(sq.air_mask, _side, sq.origin, sq.level > 0 and not _done.has(sq.coord))
-	sq.air_mask = null
+	sq.air_mask = {}
 	_chunks.refresh()
 	_built_square(sq)
 	sq.ready = true
