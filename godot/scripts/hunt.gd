@@ -15,7 +15,8 @@ extends Node
 ## losování, objevená příšera zůstane i po změně dne a noci.
 ## Jednou za sekundu se uklidí příšera, která je od všech postav dál, než je delší strana
 ## obrazovky. Příšery se toulají bez mřížky cest a utíkají kamkoli (Monster.hunt).
-## Chycená příšera pozvolna zprůhlední (Monster.fade).
+## Chycená příšera pozvolna zprůhlední (Monster.fade). Nad toulající se příšerou je nápis
+## s jejím jménem a body (tags), při úprku zmizí.
 ##
 ## Ať se hra při objevení příšery necukne: příšery se nestaví, berou se ze zásoby schovaných
 ## (_pool, od každého druhu jedna postavená při startu, další přibude, když je zásoba druhu
@@ -61,9 +62,19 @@ const WARM_FRAMES := 3
 signal scored(points: int, caught: int)
 signal finished(points: int, caught: int)
 
+## Nápis nad toulající se příšerou: velikost písma a obrysu na obrazovce, šířka a výška
+## řádku a o kolik pixelů obrazovky je nad tělem.
+const TAG_FONT := 15
+const TAG_OUTLINE := 5
+const TAG_WIDTH := 260.0
+const TAG_LINE := 22.0
+const TAG_LIFT_PX := 8.0
+
 class Prey:
 	var monster: Monster
 	var creature: Dictionary
+	## Nápis „jméno +body“, držák s Labelem pod tags.
+	var tag: Node2D
 
 
 var points := 0
@@ -98,6 +109,11 @@ var _spawn_left := SPAWN_MIN
 var _day := true
 var _rng := RandomNumberGenerator.new()
 var _over := false
+## Nápisy nad toulajícími se příšerami. Jsou ve světě nad vším jako nápisy dolů (PondLabels),
+## do scény je přidá WorldBoard. Utíkající příšera nápis schová. Ukázané se posouvají každý
+## snímek, je jich nejvýš MAX_ALIVE. Držáky se po uklizení příšery vrací do _spare_tags.
+var tags := Node2D.new()
+var _spare_tags: Array[Node2D] = []
 
 
 ## Přečte hunt.json a načte vzhled příšer dopředu. Volá se před tvorbou prvního čtverce,
@@ -170,6 +186,7 @@ func tick(delta: float, phase: float) -> void:
 	time_left = maxf(time_left - delta, 0.0)
 	_day = phase < 0.5
 	_catch()
+	_place_tags()
 	_track_left -= delta
 	if _track_left <= 0.0:
 		_track_left = 1.0
@@ -308,6 +325,7 @@ func _advance() -> void:
 	var prey := Prey.new()
 	prey.monster = monster
 	prey.creature = creature
+	prey.tag = _take_tag("%s +%d" % [creature["title"], creature["points"]])
 	_alive.append(prey)
 
 
@@ -364,6 +382,7 @@ func _catch() -> void:
 func _caught(prey: Prey) -> void:
 	var monster := prey.monster
 	_alive.erase(prey)
+	_drop_tag(prey)
 	_leave_crowd(monster)
 	monster.fade(FADE, _park.bind(monster, int(prey.creature["material"])))
 	Sound.at("sfx/pickup", monster.position, 2.0)
@@ -377,6 +396,7 @@ func _caught(prey: Prey) -> void:
 ## Uklidí příšeru do zásoby.
 func _release(prey: Prey) -> void:
 	_alive.erase(prey)
+	_drop_tag(prey)
 	_leave_crowd(prey.monster)
 	_park(prey.monster, int(prey.creature["material"]))
 
@@ -385,6 +405,50 @@ func _leave_crowd(monster: Monster) -> void:
 	if crowd != null and monster.crowd_id >= 0:
 		crowd.leave(monster.crowd_id)
 	monster.crowd_id = -1
+
+
+## Posune nápisy nad příšery. Velikost drží na obrazovce stejnou, utíkající příšera nápis schová.
+func _place_tags() -> void:
+	var zoom := _camera.zoom.x
+	for prey in _alive:
+		var shown := not prey.monster.is_fleeing()
+		prey.tag.visible = shown
+		if shown:
+			prey.tag.scale = Vector2.ONE / zoom
+			prey.tag.global_position = prey.monster.global_position - Vector2(0.0, prey.monster.crowd_body() + TAG_LIFT_PX / zoom)
+
+
+## Nápis s textem text ze zásoby, nebo nový.
+func _take_tag(text: String) -> Node2D:
+	var holder: Node2D = _spare_tags.pop_back() if not _spare_tags.is_empty() else _make_tag()
+	(holder.get_child(0) as Label).text = text
+	holder.visible = false
+	return holder
+
+
+func _drop_tag(prey: Prey) -> void:
+	if prey.tag == null:
+		return
+	prey.tag.visible = false
+	_spare_tags.append(prey.tag)
+	prey.tag = null
+
+
+## Držák s Labelem, spodní okraj textu leží na držáku. Styl jako nápisy dolů, menší.
+func _make_tag() -> Node2D:
+	var holder := Node2D.new()
+	tags.add_child(holder)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", TAG_FONT)
+	label.add_theme_color_override("font_color", Color(0.98, 0.93, 0.8))
+	label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.04))
+	label.add_theme_constant_override("outline_size", TAG_OUTLINE)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	label.size = Vector2(TAG_WIDTH, TAG_LINE)
+	label.position = Vector2(-TAG_WIDTH * 0.5, -TAG_LINE)
+	holder.add_child(label)
+	return holder
 
 
 ## Vzdálenost od pos k nejbližší postavě v pixelech.

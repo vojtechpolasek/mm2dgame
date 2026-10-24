@@ -60,11 +60,10 @@ const DETOUR_ANGLES: Array[float] = [1.2, 1.7, 2.3]
 ## Natáčení za směrem pohybu v radiánech za sekundu.
 const TURN_SPEED := 7.0
 ## Skok jako u postavy: první polovina snímků chůze, uprostřed skoku zvětšení o JUMP_GROW.
-## Ve skoku je příšera JUMP_BOOST krát rychlejší než právě běží. Než skočí, najde místo přistání
+## Ve skoku běží stejně rychle jako po terénu, odkud skáče. Než skočí, najde místo přistání
 ## za překážkou, nejdál JUMP_REACH metrů. Když je za ním volno, doskočí dál, ať skok trvá aspoň
 ## JUMP_TIME sekund. Kratší skok trvá kratší dobu, rychlost zůstane.
 const JUMP_TIME := 0.7
-const JUMP_BOOST := 1.1
 const JUMP_GROW := 0.15
 const JUMP_REACH := 10.0
 const JUMP_STEP := 0.25
@@ -86,7 +85,9 @@ const FLEE_EVERY := 0.33
 const FLEE_MIN := 3.0
 const FLEE_LOOK := 4.0
 const FLEE_TURNS: Array[float] = [0.0, 0.52, -0.52, 1.05, -1.05, 1.57, -1.57, 2.09, -2.09]
-## Toulání v hunt zkusí nejvýš tolik směrů.
+## Směrů úprku se za snímek zkusí nejvýš tolik, mezitím běží dosavadním směrem.
+const FLEE_TURNS_PER_FRAME := 3
+## Toulání v hunt zkusí nejvýš tolik směrů, jeden za snímek. Každý stojí až 14 kontrol místa.
 const WAY_TRIES := 4
 ## Za úprku řve po ROAR_MIN až ROAR_MAX sekundách, jen když je vidět.
 const ROAR_MIN := 1.0
@@ -183,6 +184,13 @@ var _flee_left := 0.0
 var _roar_left := 0.0
 var _near: Person
 var _near_left := 0.0
+## Hledání směru úprku (_flee_search): další pootočení z FLEE_TURNS, -1 nehledá. Směr od
+## postavy a dosah kontroly platí, jak byly na začátku hledání.
+var _flee_turn := -1
+var _flee_away := Vector2.ZERO
+var _flee_reach := 0.0
+## Toulání (hunt): kolik směrů ještě zkusí, jeden za snímek (_pick_way).
+var _ways_left := 0
 ## Patří honička k hudbě? Zapne se se zařváním, vypne, když příšera přestane honit nebo odejde z obrazovky.
 
 
@@ -364,6 +372,7 @@ func _hunt(delta: float) -> void:
 			_fleeing = true
 			_resting = false
 			_flee_left = 0.0
+			_flee_turn = -1
 			_roar_left = 0.0
 			_watch_reset(CHASE_WATCH)
 		elif _fleeing and near_dist > FLEE_FAR * tile:
@@ -384,25 +393,35 @@ func _flee(delta: float, from: Vector2) -> void:
 		if _on_screen():
 			Sound.at("monsters/%s_roar" % kind_name, global_position, 2.0)
 	_flee_left -= delta
-	if _flee_left <= 0.0:
+	if _flee_left <= 0.0 and _flee_turn < 0:
 		_flee_left = FLEE_EVERY
-		_flee_dir = _flee_way(from)
+		var tile := float(TerrainCatalog.TILE_SIZE)
+		var away := position - from
+		var dist := away.length()
+		_flee_away = away / dist if dist > 0.01 else Vector2.from_angle(_rng.randf() * TAU)
+		_flee_reach = clampf(dist, FLEE_MIN * tile, FLEE_LOOK * tile)
+		_flee_turn = 0
+	if _flee_turn >= 0:
+		_flee_search()
 	_move(_flee_dir * _chase_px * _pace() * delta)
 
 
-## Směr úprku od postavy na from. Rovně pryč, nebo první pootočený směr, kde nic nestojí.
-## Když nikde, dosavadní směr: příšera klouže podél překážky a dá se chytit.
-func _flee_way(from: Vector2) -> Vector2:
-	var tile := float(TerrainCatalog.TILE_SIZE)
-	var away := position - from
-	var dist := away.length()
-	var dir := away / dist if dist > 0.01 else Vector2.from_angle(_rng.randf() * TAU)
-	var reach := clampf(dist, FLEE_MIN * tile, FLEE_LOOK * tile)
-	for turn in FLEE_TURNS:
-		var way := dir.rotated(turn)
-		if _way_open(way, reach):
-			return way
-	return _flee_dir if _flee_dir != Vector2.ZERO else dir
+## Směr úprku od postavy: rovně pryč, nebo první pootočený směr, kde nic nestojí. Zkouší
+## nejvýš FLEE_TURNS_PER_FRAME směrů, další v příštím snímku. Když nejde žádný, dosavadní
+## směr: příšera klouže podél překážky a dá se chytit.
+func _flee_search() -> void:
+	for _try in FLEE_TURNS_PER_FRAME:
+		if _flee_turn >= FLEE_TURNS.size():
+			if _flee_dir == Vector2.ZERO:
+				_flee_dir = _flee_away
+			_flee_turn = -1
+			return
+		var way := _flee_away.rotated(FLEE_TURNS[_flee_turn])
+		_flee_turn += 1
+		if _way_open(way, _flee_reach):
+			_flee_dir = way
+			_flee_turn = -1
+			return
 
 
 ## Dá se jít směrem way na reach pixelů? Po metrech: na zemi a mimo překážky (skokan jen
@@ -450,6 +469,7 @@ func reuse(at: Vector2) -> void:
 	_fleeing = false
 	_flee_dir = Vector2.ZERO
 	_flee_left = 0.0
+	_flee_turn = -1
 	_roar_left = 0.0
 	_near = null
 	_near_left = 0.0
@@ -588,6 +608,9 @@ func _watch(delta: float, speed: float, window: float) -> int:
 
 func _wander(delta: float) -> void:
 	if _resting:
+		if _ways_left > 0:
+			_try_way()
+			return
 		_rest_left -= delta
 		if _rest_left <= 0.0:
 			_pick_target()
@@ -668,7 +691,7 @@ func _try_jump(dir: Vector2) -> bool:
 		if _walker.place(spot, _body, _jump_clear, crowd_id).distance_squared_to(spot) > 0.25:
 			return false
 		if along >= _body and not _walker.blocked(spot, _body, crowd_id):
-			var speed := (_chase_px if _prey != null or _fleeing else _wander_px) * JUMP_BOOST
+			var speed := (_chase_px if _prey != null or _fleeing else _wander_px) * _pace()
 			var landing := along
 			while landing + step <= speed * JUMP_TIME and _landing_free(position + dir * (landing + step)):
 				landing += step
@@ -777,18 +800,28 @@ func _pick_target() -> void:
 	_rest()
 
 
-## Chytej příšery: cíl toulání rovně náhodným směrem, kam se dá dojít (_way_open). Když
-## žádný z WAY_TRIES směrů nejde, odpočívá.
+## Chytej příšery: cíl toulání rovně náhodným směrem, kam se dá dojít (_way_open). Směry
+## zkouší _try_way po jednom za snímek, mezitím příšera stojí. Ať se při objevení příšery
+## nedělá všechno v jednom snímku.
 func _pick_way() -> void:
+	_ways_left = WAY_TRIES
+	_resting = true
+	_rest_left = 0.0
+
+
+## Jeden směr toulání. Když nejde ani poslední, odpočívá.
+func _try_way() -> void:
+	_ways_left -= 1
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	for attempt in WAY_TRIES:
-		var way := Vector2.from_angle(_rng.randf() * TAU)
-		var reach := _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
-		if _way_open(way, reach):
-			_target = position + way * reach
-			_start_trip(PackedVector2Array())
-			return
-	_rest()
+	var way := Vector2.from_angle(_rng.randf() * TAU)
+	var reach := _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
+	if _way_open(way, reach):
+		_ways_left = 0
+		_resting = false
+		_target = position + way * reach
+		_start_trip(PackedVector2Array())
+	elif _ways_left <= 0:
+		_rest()
 
 
 ## Náhodné místo v oblasti kolem dolu. Rovnoměrně po ploše mezikruží, úhel kolem toho, kde

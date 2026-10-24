@@ -394,18 +394,28 @@ func surface_at(pos: Vector2) -> String:
 	return sq.walker.surface(pos)
 
 
+## Skály a stromy jen ze čtverců, které na tělo dosáhnou. Ostatní by bod neposunuly a jejich
+## mřížky by se procházely zbytečně. Rezerva je dvojnásobná, bod se mezi průchody posouvá.
+## Vesnice si vzdálenost hlídá sama (Town.avoid).
 func move_body(pos: Vector2, body: float, clearance: float) -> Vector2:
 	var around: Array[Square] = []
+	var props: Array[bool] = []
 	var coord := _coord(pos)
+	var span := Vector2.ONE * _span()
 	for y in range(-1, 2):
 		for x in range(-1, 2):
 			var sq := _square(coord + Vector2i(x, y))
-			if sq != null and sq.ready:
-				around.append(sq)
+			if sq == null or not sq.ready:
+				continue
+			var near := (maxf(sq.rocks.reach(), sq.forest.reach()) + body) * 2.0
+			around.append(sq)
+			props.append(Rect2(_origin_of(sq.coord), span).grow(near).has_point(pos))
 	for _pass in 2:
-		for sq in around:
-			pos = sq.rocks.avoid(pos, body, clearance)
-			pos = sq.forest.avoid(pos, body, clearance)
+		for i in around.size():
+			var sq := around[i]
+			if props[i]:
+				pos = sq.rocks.avoid(pos, body, clearance)
+				pos = sq.forest.avoid(pos, body, clearance)
 			pos = sq.town.avoid(pos, body)
 	return pos
 
@@ -858,6 +868,9 @@ func _open_play(sq: Square) -> void:
 	if _hunt != null:
 		_hunt.crowd = _crowd
 		_hunt.start(self, _camera, _host._persons, _props, _day.phase, sq.map.surfaces)
+		_hunt.tags.name = "HuntTags"
+		_hunt.tags.z_index = 20
+		_host.add_child(_hunt.tags)
 		_hunt.scored.connect(_hud.set_hunt_score)
 		_hunt.finished.connect(_finish_hunt)
 

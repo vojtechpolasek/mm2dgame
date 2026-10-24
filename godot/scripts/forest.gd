@@ -214,6 +214,11 @@ func block_cells(grid: AStarGrid2D, body: float, margin: float, clearance: float
 					grid.set_point_solid(Vector2i(x, y))
 
 
+## Nejdál od středu stromu, kam sahá kmen (bez těla). Bod dál od všech stromů avoid neposune.
+func reach() -> float:
+	return _solid_reach
+
+
 func avoid(pos: Vector2, body: float, clearance: float = -1.0) -> Vector2:
 	if _grid == null or _pos.is_empty():
 		return pos
