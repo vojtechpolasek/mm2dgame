@@ -33,6 +33,8 @@ const WANDER_NEAR := 4.0
 const WANDER_FAR := 14.0
 const REST_MIN := 1.0
 const REST_MAX := 3.5
+## Chytej příšery: po neúspěšném losování směru (nebo u cíle) vždy tolik sekund postojí.
+const HUNT_REST := 1.5
 ## Na cestu k cíli má TRIP_SLACK krát víc času, než by trvala, a TRIP_EXTRA sekund navíc.
 ## Pak si vybere jiný cíl, ať došel, nebo ne.
 const TRIP_SLACK := 2.0
@@ -88,7 +90,7 @@ const FLEE_TURNS: Array[float] = [0.0, 0.52, -0.52, 1.05, -1.05, 1.57, -1.57, 2.
 ## Směrů úprku se za snímek zkusí nejvýš tolik, mezitím běží dosavadním směrem.
 const FLEE_TURNS_PER_FRAME := 3
 ## Toulání v hunt zkusí nejvýš tolik směrů, jeden za snímek. Každý stojí až 14 kontrol místa.
-const WAY_TRIES := 4
+const WAY_TRIES := 2
 ## Za úprku řve po ROAR_MIN až ROAR_MAX sekundách, jen když je vidět.
 const ROAR_MIN := 1.0
 const ROAR_MAX := 3.0
@@ -349,7 +351,8 @@ func _chase(delta: float) -> void:
 	_bite()
 
 
-## Chytej příšery: toulání, a když je postava blízko, úprk.
+## Chytej příšery: toulání, a když je postava blízko, úprk. Toulání je dekorace: bez
+## plných srážek a mimo obrazovku bez animace.
 func _hunt(delta: float) -> void:
 	if _jumping:
 		_step_jump(delta)
@@ -381,9 +384,12 @@ func _hunt(delta: float) -> void:
 	var before := position
 	if _fleeing and _near != null:
 		_flee(delta, _near.position)
-	else:
-		_wander(delta)
-	_animate(delta, position - before)
+		_animate(delta, position - before)
+		return
+	_wander(delta)
+	# Mimo obrazovku toulání nikdo nevidí: bez animace a kroků.
+	if _on_screen(OFF_SCREEN_M * tile):
+		_animate(delta, position - before)
 
 
 func _flee(delta: float, from: Vector2) -> void:
@@ -622,16 +628,23 @@ func _wander(delta: float) -> void:
 	_trip_i = _next_point(_trip, _trip_i)
 	var aim := _trip[_trip_i] if _trip_i < _trip.size() else _target
 	var to := aim - position
-	var step := _wander_px * _pace() * delta
+	# Hunt: cíl už ověřil _way_open, povrch a srážky by jen stály CPU.
+	var step := _wander_px * (1.0 if hunt else _pace()) * delta
 	if _trip_i >= _trip.size() and to.length() <= step:
-		_move(to)
+		if hunt:
+			position += to
+		else:
+			_move(to)
 		if _flying:
 			_pick_target()
 		else:
 			_rest()
 		return
-	if _trip_i < _trip.size() and not _flying and not _escaping and not _on_screen(OFF_SCREEN_M * float(TerrainCatalog.TILE_SIZE)):
+	if hunt or (_trip_i < _trip.size() and not _flying and not _escaping
+			and not _on_screen(OFF_SCREEN_M * float(TerrainCatalog.TILE_SIZE))):
 		position += to.limit_length(step)
+		if hunt and _watch(delta, _wander_px, WANDER_WATCH) == 1:
+			_pick_target()
 		return
 	_move(to.limit_length(step))
 	if _watch(delta, _wander_px, WANDER_WATCH) == 1:
@@ -801,8 +814,8 @@ func _pick_target() -> void:
 
 
 ## Chytej příšery: cíl toulání rovně náhodným směrem, kam se dá dojít (_way_open). Směry
-## zkouší _try_way po jednom za snímek, mezitím příšera stojí. Ať se při objevení příšery
-## nedělá všechno v jednom snímku.
+## zkouší _try_way po jednom za snímek (nejvýš WAY_TRIES), mezitím příšera stojí. Když
+## nic nevyjde, odpočinek HUNT_REST. Ať se při objevení nedělá všechno v jednom snímku.
 func _pick_way() -> void:
 	_ways_left = WAY_TRIES
 	_resting = true
@@ -880,7 +893,7 @@ func crowd_flying() -> bool:
 
 func _rest() -> void:
 	_resting = true
-	_rest_left = _rng.randf_range(REST_MIN, REST_MAX)
+	_rest_left = HUNT_REST if hunt else _rng.randf_range(REST_MIN, REST_MAX)
 
 
 ## Natočí se za pohybem a krokuje podle ušlé dráhy, ať nohy neklouzají. Stojící má první snímek.
