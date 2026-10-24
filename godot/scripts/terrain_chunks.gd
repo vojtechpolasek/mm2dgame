@@ -1,12 +1,13 @@
 extends Node2D
 
-## Terén po chuncích. Souš, přechody a břehy chunku se jednou předpečou do textury s mipmapami
-## (terrain_bake.gdshader) a dál je kreslí obyčejný sprite. Drahý shader terénu tak neběží
-## v každém snímku přes celou obrazovku. Voda se vlní jen přes dlaždice, které mají v rohu vodu
-## (terrain_water.gdshader). Chunky se pečou podle kamery. Vzdálený chunk vrátí sprite i texturu
-## do zásobníku, nový chunk si je odtud vezme a jen se přepeče. Založit texturu je drahé (jednotky
-## ms), proto se zásobník naplní už při načítání levelu. Čtverce světa sdílejí jeden zásobník
-## (share_spare), jinak by každý otevřený čtverec držel své textury, i když je daleko.
+## Terén po chuncích. Souš, přechody a břehy (jezero i řeka) chunku se jednou předpečou do
+## textury s mipmapami (terrain_bake.gdshader) a dál je kreslí obyčejný sprite. Drahý shader
+## terénu tak neběží v každém snímku přes celou obrazovku. Voda jezer se vlní jen přes dlaždice,
+## které mají v rohu vodu (terrain_water.gdshader); vodu řeky kreslí river.gd. Chunky se pečou
+## podle kamery. Vzdálený chunk vrátí sprite i texturu do zásobníku, nový chunk si je odtud
+## vezme a jen se přepeče. Založit texturu je drahé (jednotky ms), proto se zásobník naplní už
+## při načítání levelu. Čtverce světa sdílejí jeden zásobník (share_spare), jinak by každý
+## otevřený čtverec držel své textury, i když je daleko.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
@@ -215,6 +216,7 @@ func _new_sprite() -> Sprite2D:
 	if _chunk_material == null:
 		_chunk_material = ShaderMaterial.new()
 		_chunk_material.shader = CHUNK_SHADER
+		_chunk_material.set_shader_parameter("chunk_px", float(TILES * TerrainCatalog.TILE_SIZE))
 	sprite.material = _chunk_material
 	sprite.visible = false
 	var water := MeshInstance2D.new()

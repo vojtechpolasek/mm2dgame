@@ -971,13 +971,24 @@ func _show_terrain(sq: Square) -> void:
 		sq.ground = chunks
 	var water := mats["water"] as ShaderMaterial
 	water.set_shader_parameter("map_origin", sq.origin)
-	(mats["bake"] as ShaderMaterial).set_shader_parameter("map_origin", sq.origin)
+	var bake := mats["bake"] as ShaderMaterial
+	bake.set_shader_parameter("map_origin", sq.origin)
+	# Břehy řeky do pečení terénu (jako jezera). Pole vzniklo ve vlákně v river.plan.
+	var field: ImageTexture = sq.river.field_texture() if sq.river != null else null
+	if field != null:
+		var look: Dictionary = sq.river.field_look()
+		bake.set_shader_parameter("river_field", field)
+		bake.set_shader_parameter("river_field_on", 1.0)
+		bake.set_shader_parameter("river_field_size", look["size"])
+		bake.set_shader_parameter("river_field_step", look["step"])
+	else:
+		bake.set_shader_parameter("river_field_on", 0.0)
 	chunks.setup(
 		_catalog,
 		sq.map.size,
 		sq.painted["corners"],
 		_camera,
-		mats["bake"] as ShaderMaterial,
+		bake,
 		water,
 	)
 

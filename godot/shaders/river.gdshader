@@ -24,10 +24,8 @@ shader_type canvas_item;
 // a parametry jí předá katalog terénu (River.spawn). Navíc teče: odlesky a pěna u břehu jedou
 // po proudu, stojaté vlny jezera jsou slabší. Uprostřed hlubší, u břehů mělčina, nad
 // náplavou široká.
-// Kreslí se dvakrát: part 0 jsou břehy všech ramen, part 1 jejich voda. Voda pak v soutoku
-// překryje břeh druhého ramene.
-// water_mask je voda čtverce po dlaždicích. Nad jezerem se břeh nekreslí a voda řeky přejde
-// do jezera a kousek za břehem zmizí. Ústí tak navazuje přímo na břeh.
+// Břehy jsou v terénu (terrain_bake / river_bank). Tady part 1 je jen voda; part 0 už se
+// nespouští. water_mask: voda řeky přejde do jezera a kousek za břehem zmizí.
 
 #include "res://shaders/terrain_common.gdshaderinc"
 

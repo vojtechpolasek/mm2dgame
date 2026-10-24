@@ -21,15 +21,12 @@ extends RefCounted
 ## šířku vtoku. Síť každého čtverce končí přesně na kraji a UV.x (proud) na kraji je u obou
 ## čtverců FLOW_BASE, takže voda i břeh navazují.
 ##
-## Kreslí je jedna síť (pásy trojúhelníků podél ramen) se shaderem river.gdshader, dvakrát:
-## nejdřív břehy (svah dolů k hladině) všech ramen, pak voda všech ramen. Pás sítě je o svah
-## (BANK_PAD * BANK_REACH) širší než rameno a nese zakřivení osy: na vnitřní straně zákruty
-## je náplava, na vnější vymletý břeh. Voda tak v soutoku překryje
-## břeh druhého ramene. Most přes cestu je sprite. Shader dostane masku vody čtverce
-## (water_mask): nad jezerem řeka nekreslí písčitý břeh a voda řeky se kousek za břehem
-## jezera ztratí v jeho mělčině. Ústí tak navazuje přímo na břeh a k jezeru se rozšíří
-## do nálevky. Postava i příšery řekou projdou, ale zpomalí (water_at), most je cesta
-## a nezpomalí.
+## Břehy se předpečou do terénu (terrain_bake, stejně jako břehy jezer): plan ve vlákně
+## sestaví pole koryta (_field), chunky z něj při pečení vezmou barvu a výšku svahu. Runtime
+## kreslí jen vodu (river.gdshader) — pásy trojúhelníků podél ramen. Pás je o svah
+## (BANK_PAD * BANK_REACH) širší než rameno. Most přes cestu je sprite. Shader dostane masku
+## vody čtverce (water_mask): voda řeky se kousek za břehem jezera ztratí v jeho mělčině.
+## Postava i příšery řekou projdou, ale zpomalí (water_at), most je cesta a nezpomalí.
 ##
 ## Průběh: plan a place_bridges ve vlákně (nesahá na scénu), spawn na hlavním.
 
@@ -139,11 +136,15 @@ const END_FADE := 48.0
 ## Voda je vnitřní část šířky, zbytek je břeh. Zpomaluje jen voda.
 const WATER_SHARE := 0.78
 ## Svah břehu za šířkou ramene v px: BANK_MIN + šířka * BANK_SHARE, nejvýš BANK_PAD. Shader
-## ho po proudu mění, na náplavě až BANK_REACH krát. Stejná čísla má river.gdshader.
+## i pole břehů ho po proudu mění, na náplavě až BANK_REACH krát. Stejná čísla má
+## river.gdshader a terrain_common (river_bank).
 const BANK_PAD := 40.0
 const BANK_MIN := 10.0
 const BANK_SHARE := 0.4
 const BANK_REACH := 1.6
+## Pole koryta pro pečení břehů do terénu: 1 texel = FIELD_STEP px světa. Větší krok = rychlejší
+## plan (jinak GDScript na celém čtverci zasekne zakládání hry).
+const FIELD_STEP := 4
 ## Zakřivení osy, které je v barvě vrcholu naplno (náplava), v 1/px. Měří se přes
 ## BEND_SPAN bodů na každou stranu.
 const BEND_FULL := 0.011
@@ -177,6 +178,10 @@ var _nodes: Array[Node] = []
 var _water_mask: Image
 ## Texel masky i leží na rohu dlaždice i (posun 0.5), nebo na jejím středu (0).
 var _mask_shift := 0.0
+## Pole koryta (výška, rel, inner/outer) pro terrain_bake. Vzniká ve vlákně v plan.
+var _field: Image
+## Textura z _field, až na hlavním vlákně (field_texture).
+var _field_tex: ImageTexture
 
 # Jen během plan.
 var _map: MapData
@@ -217,6 +222,8 @@ func plan(
 	bridges.clear()
 	_spring_rocks = PackedVector3Array()
 	_cells.clear()
+	_field = null
+	_field_tex = null
 	_size = map.size
 	var water := map.names.find("water")
 	_lake = _largest_water(map, water) if water >= 0 else PackedVector2Array()
@@ -252,6 +259,7 @@ func plan(
 		_water_mask = _mask(map, water, vertex)
 		_mask_shift = 0.5 if _water_mask.get_width() > map.size else 0.0
 		_index()
+		_build_field()
 		if rocks != null:
 			_place_springs()
 	_map = null
@@ -259,6 +267,22 @@ func plan(
 	_grid = null
 	_shore = {}
 	_taken = {}
+
+
+## Textura pole koryta pro terrain_bake (břehy jako u jezera). Null bez řeky. Volat na hlavním.
+func field_texture() -> ImageTexture:
+	if _field == null:
+		return null
+	if _field_tex == null:
+		_field_tex = ImageTexture.create_from_image(_field)
+	return _field_tex
+
+
+## Strana pole v texelech a krok v px světa (terrain_bake).
+func field_look() -> Dictionary:
+	if _field == null:
+		return {}
+	return {"size": float(_field.get_width()), "step": float(FIELD_STEP)}
 
 
 ## Kde u vtoků inlets (viz plan) nesmí stát skála, ať k nim řeka projde: kruhy (střed x, y
@@ -1064,6 +1088,116 @@ func _index() -> void:
 					_cells[key] = list
 
 
+## Pole koryta pro pečení břehů: R výška 0–1, G (rel+2)/4, B inner+strana, A outer+platnost.
+## Po texelech AABB úseku (bez děr na šikmé řece). bank_at jen 2× na úsek, ne na pixel.
+func _build_field() -> void:
+	var map_px := _size * TerrainCatalog.TILE_SIZE
+	var side := ceili(float(map_px) / float(FIELD_STEP))
+	var img := Image.create(side, side, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1.0, 0.5, 0.0, 0.0))
+	var data := img.get_data()
+	var step := float(FIELD_STEP)
+	for line in lines:
+		var line_points: PackedVector2Array = line["points"]
+		var line_widths: PackedFloat32Array = line["widths"]
+		var length := float(line["length"])
+		var from_spring := str(line["spring"]) != ""
+		var mouth := bool(line["mouth"])
+		var bends := _curvature(line_points, BEND_SPAN, 2)
+		var along := 0.0
+		for i in line_points.size() - 1:
+			var a := line_points[i]
+			var b := line_points[i + 1]
+			var ab := b - a
+			var ab_len_sq := ab.length_squared()
+			var seg_len := sqrt(ab_len_sq)
+			var mid := (a + b) * 0.5
+			var width_mid := (line_widths[i] + line_widths[i + 1]) * 0.5
+			var bend_mid := (bends[i] + bends[i + 1]) * 0.5
+			var dist_mid := along + seg_len * 0.5
+			var fade := 1.0
+			if from_spring:
+				fade *= smoothstep(0.0, START_FADE, dist_mid)
+			if mouth:
+				fade *= smoothstep(0.0, END_FADE, length - dist_mid)
+			if fade > 0.01:
+				var bank_r := _field_bank(width_mid, dist_mid, mid, 1.0, bend_mid)
+				var bank_l := _field_bank(width_mid, dist_mid, mid, -1.0, bend_mid)
+				var half := maxf(bank_r.x + bank_r.y * 1.35, bank_l.x + bank_l.y * 1.35) + step
+				var low := a.min(b) - Vector2(half, half)
+				var high := a.max(b) + Vector2(half, half)
+				var x0 := clampi(floori(low.x / step), 0, side - 1)
+				var y0 := clampi(floori(low.y / step), 0, side - 1)
+				var x1 := clampi(ceili(high.x / step) - 1, 0, side - 1)
+				var y1 := clampi(ceili(high.y / step) - 1, 0, side - 1)
+				var flow_dir := Vector2.RIGHT if seg_len < 0.001 else ab / seg_len
+				var normal := flow_dir.orthogonal()
+				for fy in range(y0, y1 + 1):
+					for fx in range(x0, x1 + 1):
+						var at := Vector2((fx + 0.5) * step, (fy + 0.5) * step)
+						var t := 0.0 if ab_len_sq < 0.0001 else clampf((at - a).dot(ab) / ab_len_sq, 0.0, 1.0)
+						var closest := a + ab * t
+						var signed_across := (at - closest).dot(normal)
+						var use: Vector4 = bank_r if signed_across > 0.0 else bank_l
+						var across := absf(signed_across)
+						var rel := (across - use.x) / maxf(use.y, 0.001)
+						if rel > 1.35:
+							continue
+						var height := 0.0 if rel < 0.0 else pow(clampf(rel, 0.0, 1.0), 0.6 + 0.9 * use.z - 0.3 * use.w)
+						var o := (fy * side + fx) * 4
+						if data[o + 3] >= 128:
+							var old_rel := float(data[o + 1]) / 255.0 * 4.0 - 2.0
+							if absf(rel) >= absf(old_rel):
+								continue
+						data[o] = clampi(roundi(height * 255.0), 0, 255)
+						data[o + 1] = clampi(roundi(clampf((rel + 2.0) / 4.0, 0.0, 1.0) * 255.0), 0, 255)
+						var side_bit := 0.5 if signed_across > 0.0 else 0.0
+						data[o + 2] = clampi(roundi((side_bit + use.z * 0.5) * 255.0), 0, 255)
+						data[o + 3] = clampi(roundi((0.5 + use.w * 0.5) * 255.0), 128, 255)
+			along += seg_len
+	_field = Image.create_from_data(side, side, false, Image.FORMAT_RGBA8, data)
+
+
+## bank_at z river.gdshader (zjednodušený šum): x půl vody, y šířka svahu, z inner, w outer.
+func _field_bank(width: float, along: float, at: Vector2, signed_across: float, bend: float) -> Vector4:
+	var side := 1.0 if signed_across > 0.0 else 0.0
+	var toward := -bend if signed_across > 0.0 else bend
+	var inner := clampf(toward, 0.0, 1.0)
+	var outer := clampf(-toward, 0.0, 1.0)
+	var jag := _field_noise(at / 40.0)
+	var low := _field_noise(Vector2(along / 140.0, side * 7.3))
+	var base := minf(BANK_PAD, 10.0 + width * 0.4)
+	var slope := base * (0.45 + 0.9 * low) * (1.0 + 1.3 * inner) * (1.0 - 0.5 * outer)
+	slope = clampf(slope, 3.0, BANK_PAD * BANK_REACH - 6.0)
+	var swell := _field_noise(Vector2(along / 90.0, side * 5.1 + 11.0))
+	var water := width * 0.5 * WATER_SHARE * (0.88 + 0.24 * swell) - inner * width * 0.1 + outer * width * 0.03
+	water += (jag - 0.5) * minf(8.0, width * 0.15)
+	water = maxf(water, 1.5)
+	slope = clampf(minf(slope, (BANK_PAD * BANK_REACH - water - 2.0) / 1.25), 3.0, BANK_PAD * BANK_REACH - 6.0)
+	return Vector4(water, slope, inner, outer)
+
+
+## value_noise jako v terrain_common (Dave Hoskins hash).
+static func _field_noise(p: Vector2) -> float:
+	var cell := p.floor()
+	var fraction := p - cell
+	fraction = fraction * fraction * (Vector2(3.0, 3.0) - 2.0 * fraction)
+	var a := _field_hash(cell)
+	var b := _field_hash(cell + Vector2(1.0, 0.0))
+	var c := _field_hash(cell + Vector2(0.0, 1.0))
+	var d := _field_hash(cell + Vector2(1.0, 1.0))
+	return lerpf(lerpf(a, b, fraction.x), lerpf(c, d, fraction.x), fraction.y)
+
+
+static func _field_hash(p: Vector2) -> float:
+	var p3 := Vector3(p.x, p.y, p.x) * 0.1031
+	p3 = Vector3(p3.x - floorf(p3.x), p3.y - floorf(p3.y), p3.z - floorf(p3.z))
+	var n := p3.dot(Vector3(p3.y + 33.33, p3.z + 33.33, p3.x + 33.33))
+	p3 += Vector3(n, n, n)
+	var v := (p3.x + p3.y) * p3.z
+	return v - floorf(v)
+
+
 ## Mosty tam, kde řeka překročí cestu: podél cesty přes řeku, dlouhé jako řeka napříč cestou
 ## a kus navíc. Volá se po town.plan, před relocate.
 func place_bridges(town: Town) -> void:
@@ -1091,11 +1225,10 @@ func place_bridges(town: Town) -> void:
 
 # --- Scéna ---
 
-## Síť řeky a mosty pod host. origin je levý horní roh čtverce ve světě. look je materiál
-## vody jezer z katalogu terénu, řeka si z něj vezme barvy, texturu vody a vlny.
-## bank: svah břehu podle terénu (TerrainCatalog.bank_look). painted: rohy a varianty dlaždic čtverce
-## (MapGenerator.corner_data), z nich shader pozná terén pod břehem.
-func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null, bank := {}, painted := {}) -> void:
+## Voda řeky a mosty pod host. Břehy jsou v terénu (terrain_bake). origin je levý horní roh
+## čtverce ve světě. look je materiál vody jezer z katalogu terénu. bank a painted už břehy
+## nepotřebují (zůstávají kvůli volání ze world_board).
+func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null, _bank := {}, _painted := {}) -> void:
 	if not exists():
 		return
 	var shader := load(SHADER) as Shader
@@ -1107,32 +1240,21 @@ func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null, bank := {
 				shared[uniform["name"]] = value
 	var mesh := _mesh()
 	var mask := ImageTexture.create_from_image(_water_mask) if _water_mask != null else null
-	var ground := {}
-	if painted.has("corners") and painted.has("variants"):
-		ground["ground_on"] = 1.0
-		ground["map_size"] = float(_size)
-		ground["corner_map"] = ImageTexture.create_from_image(Image.create_from_data(_size, _size, false, Image.FORMAT_RGBA8, painted["corners"]))
-		ground["variant_map"] = ImageTexture.create_from_image(Image.create_from_data(_size, _size, false, Image.FORMAT_R8, painted["variants"]))
-	ground.merge(bank)
-	# Nejdřív břehy všech ramen, potom voda všech ramen.
-	for part in 2:
-		var node := MeshInstance2D.new()
-		node.mesh = mesh
-		node.position = origin
-		var material := ShaderMaterial.new()
-		material.shader = shader
-		for key: String in shared:
-			material.set_shader_parameter(key, shared[key])
-		material.set_shader_parameter("part", part)
-		for key: String in ground:
-			material.set_shader_parameter(key, ground[key])
-		if mask != null:
-			material.set_shader_parameter("water_mask", mask)
-			material.set_shader_parameter("mask_size", float(_water_mask.get_width()))
-			material.set_shader_parameter("mask_shift", _mask_shift)
-		node.material = material
-		host.add_child(node)
-		_nodes.append(node)
+	var node := MeshInstance2D.new()
+	node.mesh = mesh
+	node.position = origin
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	for key: String in shared:
+		material.set_shader_parameter(key, shared[key])
+	material.set_shader_parameter("part", 1)
+	if mask != null:
+		material.set_shader_parameter("water_mask", mask)
+		material.set_shader_parameter("mask_size", float(_water_mask.get_width()))
+		material.set_shader_parameter("mask_shift", _mask_shift)
+	node.material = material
+	host.add_child(node)
+	_nodes.append(node)
 	var texture := load(BRIDGE) as Texture2D
 	if texture == null:
 		return

@@ -479,3 +479,60 @@ vec3 lake_bank(vec3 surface, float f, vec2 at, float lod) {
 	}
 	return mix(color, surface, land);
 }
+
+// Pole koryta řeky (river.gd _build_field): 1 texel = river_field_step px. A < 0.5 = bez řeky.
+uniform sampler2D river_field : filter_linear, repeat_disable, hint_default_black;
+uniform float river_field_on = 0.0;
+uniform float river_field_size = 1.0;
+uniform float river_field_step = 2.0;
+
+// Výška břehu řeky 0–1, 1 bez řeky. Stejná alfa jako u jezera (stín v terrain_water / chunk).
+float river_height(vec2 at) {
+	if (river_field_on < 0.5) {
+		return 1.0;
+	}
+	vec2 uv = at / (river_field_size * river_field_step);
+	vec4 rf = texture(river_field, uv);
+	if (rf.a < 0.5) {
+		return 1.0;
+	}
+	return rf.r;
+}
+
+// Břeh řeky v předpečení z pole koryta. Nad jezerem zmizí (water_mass). Náplava z inner.
+vec3 river_bank(vec3 surface, vec2 at, float lod) {
+	if (river_field_on < 0.5) {
+		return surface;
+	}
+	vec2 uv = at / (river_field_size * river_field_step);
+	vec4 rf = texture(river_field, uv);
+	if (rf.a < 0.5) {
+		return surface;
+	}
+	float mass = water_mass_at(at);
+	float lake = 1.0 - smoothstep(0.25, 0.55, mass);
+	if (lake <= 0.0) {
+		return surface;
+	}
+	float rel = rf.g * 4.0 - 2.0;
+	float side = step(0.5, rf.b);
+	float inner = clamp((rf.b - side * 0.5) * 2.0, 0.0, 1.0);
+	float outer = clamp((rf.a - 0.5) * 2.0, 0.0, 1.0);
+	float height = rf.r;
+	float jag = value_noise(at / 14.0) * 0.6 + value_noise(at / 40.0) * 0.4;
+	float land = max(smoothstep(bank_lip(at) - 0.12, bank_lip(at) + 0.05, rel), bank_tufts(at, jag, rel));
+	if (land >= 1.0) {
+		return surface;
+	}
+	vec3 soil;
+	vec3 bar_color;
+	vec2 amounts;
+	vec3 top;
+	float bar = clamp(inner * 1.4, 0.0, 1.0) * smoothstep(0.3, 0.5, value_noise(at / 40.0) + 0.2);
+	bank_ground(at, at, lod, bar > 0.0, soil, bar_color, amounts, top);
+	vec3 color = bank_slope(soil, bar_color, amounts, top, at, lod, rel, height, bar, outer, side);
+	if (rel < 0.0) {
+		color = mix(mix(color, shallow_color, 0.3 * shallow_strength), surface, smoothstep(0.4, 1.4, -rel));
+	}
+	return mix(mix(color, surface, land), surface, 1.0 - lake);
+}
