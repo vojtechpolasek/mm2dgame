@@ -14,6 +14,7 @@ const MaterialTitle := preload("res://scripts/material_title.gd")
 const MiniMap := preload("res://scripts/minimap.gd")
 const DayNight := preload("res://scripts/day_night.gd")
 const SuitSaves := preload("res://scripts/suit_saves.gd")
+const SoftKeyboard := preload("res://scripts/soft_keyboard.gd")
 
 ## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře drží ARROW_BELOW pod
 ## panely v rozích, nejméně ARROW_TOP.
@@ -243,31 +244,17 @@ func show_result(title: String, note: String, again := false) -> void:
 		_result_button("Návrat do menu", menu_pressed).grab_focus()
 
 
-## Okno konce Chytej příšery, než se výkon zapíše: pole s předvyplněným jménem name
-## a tlačítko Uložit (name_entered).
+## Okno konce Chytej příšery, než se výkon zapíše: softwarová klávesnice s předvyplněným
+## jménem name. Po potvrzení name_entered (oříznuté, nikdy prázdné).
 func ask_name(title: String, note: String, name: String) -> void:
 	_open_result(title, note)
-	var edit := LineEdit.new()
-	edit.custom_minimum_size = Vector2(320, 52)
-	edit.max_length = 32
-	edit.placeholder_text = "Jméno"
-	edit.text = name
-	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_result_body.add_child(edit)
-	var save := Button.new()
-	save.text = "Uložit"
-	save.custom_minimum_size = Vector2(320, 52)
-	_result_buttons.add_child(save)
-	var submit := func(_text: String) -> void:
-		if save.disabled:
-			return
-		save.disabled = true
-		var entered := edit.text.strip_edges()
-		name_entered.emit(entered if not entered.is_empty() else "Hráči")
-	edit.text_submitted.connect(submit)
-	save.pressed.connect(submit.bind(""))
-	edit.grab_focus()
-	edit.caret_column = edit.text.length()
+	var keys := SoftKeyboard.new()
+	keys.setup(name, "Uložit")
+	keys.submitted.connect(func(entered: String) -> void:
+		var trimmed := entered.strip_edges()
+		name_entered.emit(trimmed if not trimmed.is_empty() else "Hráči"))
+	_result_body.add_child(keys)
+	keys.focus_start()
 
 
 ## Okno konce Chytej příšery po zápisu: tabulka výkonů rows (Hunt.records), řádek mark

@@ -6,6 +6,7 @@ extends Control
 ## Rozehranou hru musí dohrát stejný počet hráčů, kolik ji začalo. Esc nebo B vrací zpět.
 
 const SuitSaves := preload("res://scripts/suit_saves.gd")
+const SoftKeyboard := preload("res://scripts/soft_keyboard.gd")
 const LOGO := preload("res://graphics/menu/logo.png")
 const MaterialTitle := preload("res://scripts/material_title.gd")
 
@@ -27,7 +28,8 @@ const ACCENT := Color(0.86, 0.66, 0.3)
 
 ## Stránka menu: main, name, saved, results. Esc z vnořené stránky vrací na main.
 var _page := "main"
-var _name_edit: LineEdit
+## Softwarová klávesnice na stránce jména, jinak null.
+var _name_keys: SoftKeyboard
 ## Výkony pro tolik hráčů.
 var _result_players := 1
 ## Uložená hra, kterou chce hráč smazat. Druhý stisk ji smaže.
@@ -74,22 +76,18 @@ func _show_main() -> void:
 	focus.grab_focus()
 
 
-## Kdo hraje: jméno se uloží k výkonu. Nabídne se naposledy zadané.
+## Kdo hraje: jméno se uloží k výkonu. Nabídne se naposledy zadané. Zadává se
+## softwarovou klávesnicí (gamepad i fyzická klávesnice).
 func _show_name() -> void:
 	_clear("name")
 	_title("Nová hra")
 	_note("Kdo hraje? Jméno se zapíše k výkonu.", 16)
-	_name_edit = LineEdit.new()
-	_name_edit.custom_minimum_size = ROW_SIZE
-	_name_edit.max_length = 32
-	_name_edit.placeholder_text = "Jméno"
-	_name_edit.text = SuitSaves.last_name()
-	_name_edit.text_submitted.connect(func(_text: String) -> void: _start_new())
-	_column.add_child(_name_edit)
-	_button("Vybrat hráče", _start_new)
+	_name_keys = SoftKeyboard.new()
+	_name_keys.setup(SuitSaves.last_name(), "Vybrat hráče")
+	_name_keys.submitted.connect(func(_text: String) -> void: _start_new())
+	_column.add_child(_name_keys)
 	_button("Zpět", _back_main)
-	_name_edit.grab_focus()
-	_name_edit.caret_column = _name_edit.text.length()
+	_name_keys.focus_start()
 
 
 ## Rozehrané hry od naposledy hrané. Každou jde načíst, nebo dvěma stisky smazat.
@@ -196,7 +194,9 @@ func _pick_players(count: int) -> void:
 # --- Akce ---
 
 func _start_new() -> void:
-	var name := _name_edit.text.strip_edges() if _name_edit != null else ""
+	var name := ""
+	if _name_keys != null:
+		name = _name_keys.text().strip_edges()
 	if name.is_empty():
 		name = "Hráči"
 	SuitSaves.remember_name(name)
@@ -246,12 +246,15 @@ func _back_main() -> void:
 
 # --- Stavba ---
 
-## Smaže stránku. Logo nahoře zůstává na každé stránce.
+## Smaže stránku. Logo nahoře zůstává, jen u zadání jména ne (klávesnice by se nevešla).
 func _clear(page: String) -> void:
 	_page = page
+	_name_keys = null
 	for child in _column.get_children():
 		_column.remove_child(child)
 		child.queue_free()
+	if page == "name":
+		return
 	var logo := TextureRect.new()
 	logo.texture = LOGO
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
