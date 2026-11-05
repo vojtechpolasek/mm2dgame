@@ -73,7 +73,7 @@ const JUMP_STEP := 0.25
 ## sekund, ne v každém snímku klouzání podél překážky.
 const JUMP_RETRY := 0.2
 ## Hlasitost kroků podle druhu v dB. Chodící dupne dvakrát za cyklus, létající mávne jednou.
-const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "koule": -8.0}
+const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "kocour": -9.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "koule": -8.0}
 const STEP_VARIANTS := 3
 ## Úprk (hunt): začne, když je postava blíž než FLEE_NEAR metrů, skončí dál než FLEE_FAR.
 ## Po FLEE_EVERY sekundách volí směr: od nejbližší postavy, cíl je od ní dvakrát dál než
@@ -139,6 +139,8 @@ var _rng: RandomNumberGenerator
 var _flying := false
 var _wander_px := 64.0
 var _chase_px := 320.0
+## Rychlost honičky druhu bez násobku materiálu, v px za sekundu.
+var _chase_unit := 320.0
 var _body := 24.0
 var _touch := 40.0
 var _cycle_px := 64.0
@@ -222,7 +224,8 @@ func setup(
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	_flying = bool(info.get("flying", false))
 	_wander_px = float(info.get("wander_meters", 1.0)) * tile
-	_chase_px = float(info.get("chase_meters", 5.0)) * tile * speed
+	_chase_unit = float(info.get("chase_meters", 5.0)) * tile
+	_chase_px = _chase_unit * speed
 	_body = float(info.get("body_meters", 0.4)) * tile
 	_touch = _body + Person.BODY + BITE * tile
 	_cycle_px = maxf(float(info.get("cycle_meters", 1.0)) * tile, 1.0)
@@ -464,6 +467,21 @@ func park() -> void:
 	_active = false
 	visible = false
 	process_mode = Node.PROCESS_MODE_DISABLED
+
+
+## Chytej příšery: příšera ze zásoby dostane materiál mat. colors jako v setup (bez glint_maps,
+## druh zůstává), speed násobí rychlost honičky druhu.
+func repaint(mat: int, colors: Dictionary, speed: float) -> void:
+	material_index = mat
+	_chase_px = _chase_unit * speed
+	for sprite in _sprites:
+		var material := sprite.material as ShaderMaterial
+		material.set_shader_parameter("body_color", colors["body"])
+		material.set_shader_parameter("accent_color", colors["accent"])
+		material.set_shader_parameter("eye_color", colors["eye"])
+		if colors.has("sparkle"):
+			material.set_shader_parameter("glint_color", colors["glint"])
+			material.set_shader_parameter("sparkle", colors["sparkle"])
 
 
 ## Chytej příšery: příšera ze zásoby vyjde na at, jako by se tam právě objevila.

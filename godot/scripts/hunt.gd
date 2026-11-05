@@ -9,8 +9,13 @@ extends Node
 ## šířky obrazovky napříč. Další přijde za SPAWN_MIN až SPAWN_MAX sekund. Když se nepovede
 ## (hráči stojí, místo je ve vodě, v překážce nebo na čtverci, který ještě není hotový),
 ## zkusí se znovu za RETRY sekund.
-## Vylosuje se z hunt.json: z těch, které povolují terén pod místem a denní dobu,
-## s pravděpodobností podle váhy. Na vodě jen létající. Živých je nejvýš MAX_ALIVE: když
+## Losuje se ve dvou krocích podle hunt.json. Nejdřív druh: váha je váha druhu pro povrch pod
+## místem krát váha pro denní dobu (day, night), na vodě jen létající. Pak materiál stejně podle
+## vah materiálu, kromě materiálů, které má druh zakázané (forbidden). Chybějící povrch má váhu 0,
+## chybějící denní doba 1. Body jsou body druhu krát násobitel materiálu. Úprk druhu je flee
+## [od, do] v m/s, materiál ho posune o speedup (0 až 1) mezi od a do. Jméno je jméno druhu
+## a přídavné jméno materiálu v rodě druhu (adjective je kmen: „pískovcov“ + ý, á, é).
+## Živých je nejvýš MAX_ALIVE: když
 ## je plno, nová vytlačí nejstarší, která není na obrazovce. Denní doba se kontroluje jen při
 ## losování, objevená příšera zůstane i po změně dne a noci.
 ## Jednou za sekundu se uklidí příšera, která je od všech postav dál, než je delší strana
@@ -20,7 +25,8 @@ extends Node
 ##
 ## Ať se hra při objevení příšery necukne: příšery se nestaví, berou se ze zásoby schovaných
 ## (_pool, od každého druhu jedna postavená při startu, další přibude, když je zásoba druhu
-## prázdná). Uklizená i chycená příšera se do zásoby vrací. Výběr místa a objevení jsou
+## prázdná). Při vyjmutí dostane příšera barvy a rychlost vylosovaného materiálu (Monster.repaint).
+## Uklizená i chycená příšera se do zásoby vrací. Výběr místa a objevení jsou
 ## v různých snímcích (_pending). Shadery příšer se při startu jednou vykreslí mimo obrazovku
 ## (_warm), ať se nepřekládají až u první příšery.
 
@@ -40,8 +46,8 @@ const RECORDS_KEPT := 30
 const NAMES := "names"
 ## Délka hry v sekundách.
 const SECONDS := 540.0
-const SPAWN_MIN := 5.0
-const SPAWN_MAX := 9.0
+const SPAWN_MIN := 3.0
+const SPAWN_MAX := 5.0
 const RETRY := 1.0
 const MOVED_SECONDS := 3
 const MOVED_M := 6.0
@@ -80,9 +86,13 @@ class Prey:
 var points := 0
 var caught_count := 0
 var time_left := SECONDS
-## Příšery podle hunt.json: material (číslo), title, weight, points, time, terrains (množina),
-## flying, body (px) a speed (úprk flee v m/s jako násobek rychlosti honičky druhu).
-var _creatures: Array[Dictionary] = []
+## Druhy podle hunt.json: kind, title, gender, points, flee (Vector2 od, do v m/s), surfaces,
+## day, night, forbidden (množina čísel materiálů), flying, body (px) a chase (m/s, honička druhu,
+## Monster bere rychlost jako její násobek).
+var _species: Array[Dictionary] = []
+## Materiály podle hunt.json: material (číslo), adjective, points (násobitel), speedup,
+## surfaces, day, night.
+var _materials: Array[Dictionary] = []
 ## Těla chodících příšer v pixelech. Hranice skal pro ně počítá vlákno s tvorbou čtverce
 ## (Rocks.prepare_bounds), na hlavním vlákně by výpočet zasekl hru.
 var bodies := PackedFloat64Array()
@@ -97,10 +107,10 @@ var _maker: Monsters
 ## Chodec všech příšer přes celý svět.
 var _walker: Walker
 var _alive: Array[Prey] = []
-## Schované příšery podle materiálu: material -> Array[Monster].
+## Schované příšery podle druhu: kind -> Array[Monster].
 var _pool := {}
-## Vybrané místo, příšera se objeví v dalším snímku: spot, creature a monster, když už je
-## vzatá ze zásoby. Prázdné nic.
+## Vybrané místo, příšera se objeví v dalším snímku: spot, creature (vylosovaná kombinace,
+## viz _draw) a monster, když už je vzatá ze zásoby. Prázdné nic.
 var _pending := {}
 ## Střed kamery po sekundách, nejvýš MOVED_SECONDS + 1 posledních.
 var _track := PackedVector2Array()
@@ -131,33 +141,51 @@ func load_catalog(crystal: Crystal) -> void:
 	var index := {}
 	for i in crystal.count():
 		index[crystal.name_of(i)] = i
-	for entry: Dictionary in (parsed as Dictionary).get("creatures", []):
-		var key := str(entry.get("material", ""))
+	var listed: Dictionary = (parsed as Dictionary).get("materials", {})
+	for key: String in listed:
 		if not index.has(key):
-			push_warning("Příšera %s chce materiál %s, ten chybí." % [entry.get("title", ""), key])
+			push_warning("Chytej příšery chce materiál %s, ten chybí." % key)
 			continue
-		var mat := int(index[key])
-		var info := _maker.info_of(crystal, mat)
+		var entry: Dictionary = listed[key]
+		var time: Dictionary = entry.get("time", {})
+		_materials.append({
+			"material": int(index[key]),
+			"adjective": str(entry.get("adjective", key)),
+			"points": float(entry.get("points", 1.0)),
+			"speedup": clampf(float(entry.get("speedup", 0.0)), 0.0, 1.0),
+			"surfaces": entry.get("surfaces", {}),
+			"day": float(time.get("day", 1.0)),
+			"night": float(time.get("night", 1.0)),
+		})
+	listed = (parsed as Dictionary).get("species", {})
+	for kind: String in listed:
+		var info := _maker.species_info(kind)
 		if info.is_empty():
 			continue
-		var terrains := {}
-		for terrain: Variant in entry.get("terrains", []):
-			terrains[str(terrain)] = true
-		_maker.preload_looks(crystal, mat)
+		var entry: Dictionary = listed[kind]
+		var forbidden := {}
+		for key: Variant in entry.get("forbidden", []):
+			if index.has(str(key)):
+				forbidden[int(index[str(key)])] = true
+		var flee: Array = entry.get("flee", [3.0, 4.0])
+		var time: Dictionary = entry.get("time", {})
+		_maker.preload_looks(kind)
 		var body := float(info.get("body_meters", 0.4)) * float(TerrainCatalog.TILE_SIZE)
 		if not bool(info.get("flying", false)) and not bodies.has(body):
 			bodies.append(body)
-		_creatures.append({
-			"material": mat,
-			"title": str(entry.get("title", key)),
-			"weight": maxf(float(entry.get("weight", 1.0)), 0.0),
-			"points": int(entry.get("points", 10)),
-			"time": str(entry.get("time", "any")),
-			"terrains": terrains,
+		_species.append({
+			"kind": kind,
+			"title": str(entry.get("title", kind)),
+			"gender": str(entry.get("gender", "m")),
+			"points": float(entry.get("points", 10)),
+			"flee": Vector2(float(flee[0]), float(flee[1])),
+			"surfaces": entry.get("surfaces", {}),
+			"day": float(time.get("day", 1.0)),
+			"night": float(time.get("night", 1.0)),
+			"forbidden": forbidden,
 			"flying": bool(info.get("flying", false)),
 			"body": body,
-			# Úprk v m/s z hunt.json (flee) jako násobek rychlosti honičky druhu, ten bere Monster.
-			"speed": float(entry.get("flee", 3.0)) / maxf(float(info.get("chase_meters", 5.0)), 0.1),
+			"chase": maxf(float(info.get("chase_meters", 5.0)), 0.1),
 		})
 
 
@@ -173,10 +201,14 @@ func start(board, camera: MapCamera, persons: Array[Person], host: Node2D, phase
 	_walker.world_board = board
 	_walker.crowd = crowd
 	_walker.use_surfaces(surfaces)
-	for creature in _creatures:
+	if _materials.is_empty():
+		push_error("Chytej příšery nemá žádný materiál.")
+		return
+	for species in _species:
+		var creature := _creature(species, _materials[0])
 		var monster := _build(creature)
 		if monster != null:
-			_park(monster, int(creature["material"]))
+			_park(monster, str(creature["kind"]))
 	_warm()
 
 
@@ -243,9 +275,45 @@ func _room() -> bool:
 	return false
 
 
-func _fits_time(creature: Dictionary) -> bool:
-	var time := str(creature["time"])
-	return time == "any" or (time == "day") == _day
+## Váha druhu nebo materiálu entry na povrchu terrain v nynější denní době.
+func _weight(entry: Dictionary, terrain: String) -> float:
+	var surfaces: Dictionary = entry["surfaces"]
+	return maxf(float(surfaces.get(terrain, 0.0)), 0.0) * maxf(float(entry["day" if _day else "night"]), 0.0)
+
+
+## Položka z items podle vah weights. Prázdná, když jsou všechny váhy nulové.
+func _pick(items: Array[Dictionary], weights: PackedFloat32Array) -> Dictionary:
+	var total := 0.0
+	for weight in weights:
+		total += weight
+	if total <= 0.0:
+		return {}
+	var roll := _rng.randf() * total
+	for i in items.size():
+		roll -= weights[i]
+		if roll < 0.0 and weights[i] > 0.0:
+			return items[i]
+	for i in range(items.size() - 1, -1, -1):
+		if weights[i] > 0.0:
+			return items[i]
+	return {}
+
+
+## Příšera druhu species z materiálu material: kind, material, title, points, speed (násobek
+## honičky druhu), flying a body.
+func _creature(species: Dictionary, material: Dictionary) -> Dictionary:
+	var flee: Vector2 = species["flee"]
+	var meters := flee.x + (flee.y - flee.x) * float(material["speedup"])
+	var ending := {"f": "á", "n": "é"}.get(str(species["gender"]), "ý") as String
+	return {
+		"kind": species["kind"],
+		"material": material["material"],
+		"title": "%s %s%s" % [species["title"], material["adjective"], ending],
+		"points": roundi(float(species["points"]) * float(material["points"])),
+		"speed": meters / float(species["chase"]),
+		"flying": species["flying"],
+		"body": species["body"],
+	}
 
 
 ## Místo před hráči ve směru, kam se kamera posunula, a příšera pro něj. Objeví se až
@@ -277,31 +345,27 @@ func _spawn() -> bool:
 	return false
 
 
-## Vylosuje příšeru pro spot. Prázdné, když se žádná nehodí nebo chodící nemá kde stát.
+## Vylosuje druh a pak materiál pro spot (viz popis třídy). Prázdné, když se žádný druh nebo
+## materiál nehodí nebo chodící nemá kde stát.
 func _draw(spot: Vector2) -> Dictionary:
 	var terrain := _walker.surface(spot)
 	var dry := _walker.dry(spot)
-	var total := 0.0
-	var fits: Array[Dictionary] = []
-	for creature in _creatures:
-		if not (creature["terrains"] as Dictionary).has(terrain) or not _fits_time(creature):
-			continue
-		if not dry and not bool(creature["flying"]):
-			continue
-		fits.append(creature)
-		total += float(creature["weight"])
-	if total <= 0.0:
+	var weights := PackedFloat32Array()
+	for entry in _species:
+		weights.append(_weight(entry, terrain) if dry or bool(entry["flying"]) else 0.0)
+	var species := _pick(_species, weights)
+	if species.is_empty():
 		return {}
-	var roll := _rng.randf() * total
-	var chosen: Dictionary = fits[fits.size() - 1]
-	for creature in fits:
-		roll -= float(creature["weight"])
-		if roll < 0.0:
-			chosen = creature
-			break
-	if not bool(chosen["flying"]) and _walker.blocked(spot, float(chosen["body"])):
+	var forbidden: Dictionary = species["forbidden"]
+	weights.clear()
+	for entry in _materials:
+		weights.append(0.0 if forbidden.has(entry["material"]) else _weight(entry, terrain))
+	var material := _pick(_materials, weights)
+	if material.is_empty():
 		return {}
-	return chosen
+	if not bool(species["flying"]) and _walker.blocked(spot, float(species["body"])):
+		return {}
+	return _creature(species, material)
 
 
 ## Další krok objevení vybrané příšery, jeden za snímek: vzít ji ze zásoby (prázdná
@@ -309,11 +373,13 @@ func _draw(spot: Vector2) -> Dictionary:
 func _advance() -> void:
 	var creature: Dictionary = _pending["creature"]
 	if not _pending.has("monster"):
-		var stock: Array = _pool.get(int(creature["material"]), [])
+		var stock: Array = _pool.get(str(creature["kind"]), [])
 		var monster: Monster = stock.pop_back() if not stock.is_empty() else _build(creature)
 		if monster == null:
 			_pending = {}
 			return
+		var mat := int(creature["material"])
+		monster.repaint(mat, _maker.colors_of(_crystal, mat, _maker.species_info(str(creature["kind"]))), float(creature["speed"]))
 		_pending["monster"] = monster
 		return
 	var monster: Monster = _pending["monster"]
@@ -334,19 +400,19 @@ func _build(creature: Dictionary) -> Monster:
 	_walker.crowd = null
 	var at := _camera.get_screen_center_position()
 	var monster: Monster = _maker.make(int(creature["material"]), _crystal, _walker, null, _persons, _camera, _host,
-		_rng, at, Vector2.INF, Vector2.ZERO, float(creature["speed"]), true)
+		_rng, at, Vector2.INF, Vector2.ZERO, float(creature["speed"]), true, str(creature["kind"]))
 	_walker.crowd = crowd
 	if monster != null:
 		monster.park()
 	return monster
 
 
-## Vrátí příšeru do zásoby jejího materiálu.
-func _park(monster: Monster, mat: int) -> void:
+## Vrátí příšeru do zásoby jejího druhu.
+func _park(monster: Monster, kind: String) -> void:
 	monster.park()
-	if not _pool.has(mat):
-		_pool[mat] = []
-	(_pool[mat] as Array).append(monster)
+	if not _pool.has(kind):
+		_pool[kind] = []
+	(_pool[kind] as Array).append(monster)
 
 
 ## Jednou vykreslí vrstvy všech příšer do malého obrázku mimo obrazovku. Shadery a textury
@@ -358,8 +424,8 @@ func _warm() -> void:
 	view.transparent_bg = true
 	view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(view)
-	for creature in _creatures:
-		for sprite in _maker.sample_layers(_crystal, int(creature["material"])):
+	for species in _species:
+		for sprite in _maker.sample_layers(str(species["kind"])):
 			sprite.position = Vector2(32, 32)
 			view.add_child(sprite)
 	for frame in WARM_FRAMES:
@@ -384,7 +450,7 @@ func _caught(prey: Prey) -> void:
 	_alive.erase(prey)
 	_drop_tag(prey)
 	_leave_crowd(monster)
-	monster.fade(FADE, _park.bind(monster, int(prey.creature["material"])))
+	monster.fade(FADE, _park.bind(monster, str(prey.creature["kind"])))
 	Sound.at("sfx/pickup", monster.position, 2.0)
 	var gained := int(prey.creature["points"])
 	points += gained
@@ -398,7 +464,7 @@ func _release(prey: Prey) -> void:
 	_alive.erase(prey)
 	_drop_tag(prey)
 	_leave_crowd(prey.monster)
-	_park(prey.monster, int(prey.creature["material"]))
+	_park(prey.monster, str(prey.creature["kind"]))
 
 
 func _leave_crowd(monster: Monster) -> void:

@@ -43,6 +43,36 @@
         7
       ]
     },
+    "hadec": {
+      "title": "Hadec",
+      "shape": "stone",
+      "points": 4,
+      "color": "8C9A58",
+      "sparkle": 0.15,
+      "glint": "E4ECC0",
+      "monster": "stir",
+      "monster_accent": "2A3320",
+      "monster_speed": 1.0,
+      "monster_range": [
+        3,
+        9
+      ]
+    },
+    "porfyr": {
+      "title": "Porfyr",
+      "shape": "stone",
+      "points": 6,
+      "color": "7E3A6A",
+      "sparkle": 0.2,
+      "glint": "F0C0D8",
+      "monster": "stir",
+      "monster_accent": "E0C8B0",
+      "monster_speed": 1.08,
+      "monster_range": [
+        3,
+        8
+      ]
+    },
     "lavovy": {
       "title": "Lávový kámen",
       "shape": "stone",
@@ -129,6 +159,36 @@
       "monster_range": [
         4,
         11
+      ]
+    },
+    "ametyst": {
+      "title": "Ametyst",
+      "shape": "crystal",
+      "points": 34,
+      "color": "8A4FC8",
+      "sparkle": 0.7,
+      "glint": "F2E0FF",
+      "monster": "kocour",
+      "monster_accent": "E2C8FF",
+      "monster_speed": 1.0,
+      "monster_range": [
+        4,
+        13
+      ]
+    },
+    "akvamarin": {
+      "title": "Akvamarín",
+      "shape": "crystal",
+      "points": 38,
+      "color": "6EC8D8",
+      "sparkle": 0.75,
+      "glint": "F0FFFF",
+      "monster": "kocour",
+      "monster_accent": "E4FFFF",
+      "monster_speed": 1.08,
+      "monster_range": [
+        4,
+        12
       ]
     },
     "smaragd": {

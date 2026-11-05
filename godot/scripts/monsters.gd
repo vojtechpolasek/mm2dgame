@@ -106,19 +106,38 @@ func spawn(
 
 ## Druh příšery materiálu mat z monsters.json. Prázdný, když v katalogu chybí.
 func info_of(crystal: Crystal, mat: int) -> Dictionary:
+	return species_info(crystal.monster_of(mat))
+
+
+## Druh kind z monsters.json. Prázdný, když v katalogu chybí.
+func species_info(kind: String) -> Dictionary:
 	if _catalog.is_empty():
 		_catalog = _read_catalog()
 	var species: Dictionary = _catalog.get("species", {})
-	var kind := crystal.monster_of(mat)
 	if not species.has(kind):
-		push_warning("Materiál %d chce příšeru %s, v katalogu chybí." % [mat, kind])
+		push_warning("Příšera %s v katalogu chybí." % kind)
 		return {}
 	return species[kind]
 
 
-## Načte textury a materiál příšery materiálu mat dopředu, ať je make nenačítá uprostřed hry.
-func preload_looks(crystal: Crystal, mat: int) -> void:
-	var info := info_of(crystal, mat)
+## Barvy příšery druhu info v materiálu mat pro Monster.setup a Monster.repaint: tělo, kresba
+## a oči, u kamenné navíc odlesk a třpyt materiálu.
+func colors_of(crystal: Crystal, mat: int, info: Dictionary) -> Dictionary:
+	var eye: Dictionary = info.get("colors", {})
+	var colors := {
+		"body": crystal.color_of(mat),
+		"accent": crystal.monster_accent(mat),
+		"eye": Color.html(str(eye.get("eye", "FFFFFF"))),
+	}
+	if str(info.get("shader", "")) == "stone":
+		colors["glint"] = crystal.glint_of(mat)
+		colors["sparkle"] = crystal.sparkle_of(mat)
+	return colors
+
+
+## Načte textury a materiál druhu kind dopředu, ať je make nenačítá uprostřed hry.
+func preload_looks(kind: String) -> void:
+	var info := species_info(kind)
 	if info.is_empty():
 		return
 	_layer_textures(CATALOG.get_base_dir(), info)
@@ -128,11 +147,11 @@ func preload_looks(crystal: Crystal, mat: int) -> void:
 	_shared_material(stone)
 
 
-## Vrstvy příšery materiálu mat jako prosté sprity s jejím shaderem a texturami, k jednomu
-## vykreslení při startu (shader se přeloží dopředu). Bez druhu prázdné.
-func sample_layers(crystal: Crystal, mat: int) -> Array[Sprite2D]:
+## Vrstvy druhu kind jako prosté sprity s jeho shaderem a texturami, k jednomu vykreslení
+## při startu (shader se přeloží dopředu). Bez druhu prázdné.
+func sample_layers(kind: String) -> Array[Sprite2D]:
 	var out: Array[Sprite2D] = []
-	var info := info_of(crystal, mat)
+	var info := species_info(kind)
 	if info.is_empty():
 		return out
 	var shared := _shared_material(str(info.get("shader", "")) == "stone")
@@ -156,6 +175,7 @@ func nav_of(info: Dictionary, walker: Walker, rocks: Rocks, forest: Forest) -> N
 
 ## Jedna příšera materiálu mat na místě at, toulá se v mezikruží area (px) kolem home.
 ## speed násobí rychlost honičky druhu. hunt: místo honičky utíká před postavami (Hunt).
+## kind: druh příšery, prázdný bere druh materiálu z katalogu krystalu.
 ## Bez druhu v katalogu nebo bez textur null.
 func make(
 	mat: int,
@@ -171,28 +191,23 @@ func make(
 	area: Vector2,
 	speed: float,
 	hunt := false,
+	kind := "",
 ) -> Monster:
-	var info := info_of(crystal, mat)
+	if kind.is_empty():
+		kind = crystal.monster_of(mat)
+	var info := species_info(kind)
 	if info.is_empty():
 		return null
 	var textures := _layer_textures(CATALOG.get_base_dir(), info)
 	if textures.is_empty():
 		return null
-	var eye: Dictionary = info.get("colors", {})
-	var colors := {
-		"body": crystal.color_of(mat),
-		"accent": crystal.monster_accent(mat),
-		"eye": Color.html(str(eye.get("eye", "FFFFFF"))),
-	}
+	var colors := colors_of(crystal, mat, info)
 	var layer_material := _shared_material(str(info.get("shader", "")) == "stone")
 	if layer_material == null:
 		return null
-	if str(info.get("shader", "")) == "stone":
-		colors["glint"] = crystal.glint_of(mat)
-		colors["sparkle"] = crystal.sparkle_of(mat)
+	if colors.has("sparkle"):
 		colors["glint_maps"] = _glint_textures(CATALOG.get_base_dir(), info)
 	var flying := bool(info.get("flying", false))
-	var kind := crystal.monster_of(mat)
 	var monster := Monster.new()
 	monster.name = "Monster_%s_%d" % [kind, mat]
 	monster.material_index = mat

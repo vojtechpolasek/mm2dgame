@@ -58,7 +58,7 @@ STONE_SPARKS = (210, 150, 96)
 # jde podle pořadí materiálu.
 # monster je druh příšery z gen_monsters.MONSTERS. Příšera má tělo v barvě color a kresbu
 # v monster_accent, jinak v glint. monster_speed zrychlí honičku příšery dražšího materiálu ve skupině.
-# Skupiny jdou od nejméně po nejvíc nebezpečné: had, pavouk, kamenná koule, vlk, tyranosaurus,
+# Skupiny jdou od nejméně po nejvíc nebezpečné: had, štír, pavouk, kamenná koule, vlk, kocour, tyranosaurus,
 # ptakoještěr. Koule hlídá poslední kameny, krystaly začínají vlkem.
 # Ptakoještěr letí přímo přes všechno, proto hlídá nejvzácnější materiály.
 MATERIALS = {
@@ -66,6 +66,10 @@ MATERIALS = {
                  "monster": "had2", "monster_accent": "5E4022", "monster_speed": 1.0},
     "sira": {"title": "Síra", "shape": "stone", "points": 2, "color": "D6C43A", "sparkle": 0.18, "glint": "FFF3A8",
              "monster": "had2", "monster_accent": "4A3A18", "monster_speed": 1.08},
+    "hadec": {"title": "Hadec", "shape": "stone", "points": 4, "color": "8C9A58", "sparkle": 0.15, "glint": "E4ECC0",
+              "monster": "stir", "monster_accent": "2A3320", "monster_speed": 1.0},
+    "porfyr": {"title": "Porfyr", "shape": "stone", "points": 6, "color": "7E3A6A", "sparkle": 0.20, "glint": "F0C0D8",
+               "monster": "stir", "monster_accent": "E0C8B0", "monster_speed": 1.08},
     "lavovy": {"title": "Lávový kámen", "shape": "stone", "points": 8, "color": "6A332C", "sparkle": 0.24, "glint": "FF7848",
                "monster": "pavouk2", "monster_speed": 1.0},
     "grafit": {"title": "Grafit", "shape": "stone", "points": 10, "color": "1A1C1E", "sparkle": 0.0, "glint": "3A3A3A",
@@ -78,6 +82,10 @@ MATERIALS = {
                 "monster": "vlk2", "monster_accent": "4E5A6C", "monster_speed": 1.0},
     "jantar": {"title": "Jantar", "shape": "crystal", "points": 30, "color": "B4621C", "sparkle": 0.62, "glint": "FFE1B0",
                "monster": "vlk2", "monster_accent": "5A2410", "monster_speed": 1.08},
+    "ametyst": {"title": "Ametyst", "shape": "crystal", "points": 34, "color": "8A4FC8", "sparkle": 0.70, "glint": "F2E0FF",
+                "monster": "kocour", "monster_accent": "E2C8FF", "monster_speed": 1.0},
+    "akvamarin": {"title": "Akvamarín", "shape": "crystal", "points": 38, "color": "6EC8D8", "sparkle": 0.75, "glint": "F0FFFF",
+                  "monster": "kocour", "monster_accent": "E4FFFF", "monster_speed": 1.08},
     "smaragd": {"title": "Smaragd", "shape": "crystal", "points": 42, "color": "1E8A45", "sparkle": 0.80, "glint": "E7FFE8",
                 "monster": "rex2", "monster_accent": "E2B33A", "monster_speed": 1.0},
     "zlato": {"title": "Zlato", "shape": "crystal", "points": 62, "color": "ECC420", "sparkle": 0.80, "glint": "FFF0A8",
@@ -94,12 +102,16 @@ MATERIALS = {
 MONSTER_RANGE = {
     "piskovec": [3, 8],
     "sira": [3, 7],
+    "hadec": [3, 9],
+    "porfyr": [3, 8],
     "lavovy": [3, 10],
     "grafit": [3, 8],
     "magnetit": [3, 11],
     "kremen": [3, 11],
     "stribro": [4, 12],
     "jantar": [4, 11],
+    "ametyst": [4, 13],
+    "akvamarin": [4, 12],
     "smaragd": [5, 16],
     "zlato": [5, 15],
     "rubin": [8, 25],
