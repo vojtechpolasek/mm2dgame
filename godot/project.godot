@@ -81,3 +81,7 @@ shadow_opacity={
 "type": "float",
 "value": 0.0
 }
+bank_shadows={
+"type": "float",
+"value": 1.0
+}

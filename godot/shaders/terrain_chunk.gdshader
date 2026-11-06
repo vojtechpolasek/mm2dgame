@@ -8,6 +8,8 @@ render_mode blend_mix;
 
 global uniform vec2 sun_shadow;
 global uniform float shadow_opacity;
+// Stíny břehů v nastavení (Graphics), 0 vypnuté.
+global uniform float bank_shadows;
 
 const float BANK_SHADOW_DEPTH = 0.9;
 const float BANK_SHADOW = 0.9;
@@ -16,7 +18,7 @@ uniform float chunk_px = 512.0;
 void fragment() {
 	vec4 tex = texture(TEXTURE, UV);
 	float shadow = 0.0;
-	if (shadow_opacity > 0.001 && tex.a < 0.999) {
+	if (shadow_opacity > 0.001 && bank_shadows > 0.5 && tex.a < 0.999) {
 		vec2 back_uv = UV - sun_shadow * BANK_SHADOW_DEPTH / chunk_px;
 		float back = texture(TEXTURE, clamp(back_uv, vec2(0.0), vec2(1.0))).a;
 		shadow = clamp((back - tex.a) * 1.6, 0.0, 1.0) * shadow_opacity * BANK_SHADOW;

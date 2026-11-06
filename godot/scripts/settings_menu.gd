@@ -1,6 +1,6 @@
 extends Control
 
-## Nastavení: hudba a zvuky zvlášť, rozlišení, třpyt kamenů a stíny. Hudba a zvuky se ve hře přepínají
+## Nastavení: hudba a zvuky zvlášť, rozlišení, třpyt kamenů, stíny a stíny břehů. Hudba a zvuky se ve hře přepínají
 ## i klávesami (Controls), tady se popisky tlačítek drží podle Sound a Graphics.
 
 @onready var music: Button = $Center/Panel/Column/Music
@@ -8,6 +8,7 @@ extends Control
 @onready var resolution: Button = $Center/Panel/Column/Resolution
 @onready var sparkle: Button = $Center/Panel/Column/Sparkle
 @onready var shadows: Button = $Center/Panel/Column/Shadows
+@onready var bank_shadows: Button = $Center/Panel/Column/BankShadows
 
 
 func _ready() -> void:
@@ -17,6 +18,7 @@ func _ready() -> void:
 	resolution.pressed.connect(func() -> void: Graphics.set_world_scale(Graphics.next_world_scale(Graphics.world_scale())))
 	sparkle.pressed.connect(func() -> void: Graphics.set_sparkle(not Graphics.sparkle_on()))
 	shadows.pressed.connect(func() -> void: Graphics.set_shadows(not Graphics.shadows_on()))
+	bank_shadows.pressed.connect(func() -> void: Graphics.set_bank_shadows(not Graphics.bank_shadows_on()))
 	$Center/Panel/Column/Back.pressed.connect(_back)
 	Sound.settings_changed.connect(_label)
 	Graphics.changed.connect(_label)
@@ -30,6 +32,7 @@ func _label() -> void:
 	resolution.text = "Rozlišení: %d %%" % roundi(Graphics.world_scale() * 100.0)
 	sparkle.text = "Třpyt kamenů: %s" % ("zapnutý" if Graphics.sparkle_on() else "vypnutý")
 	shadows.text = "Stíny: %s" % ("zapnuté" if Graphics.shadows_on() else "vypnuté")
+	bank_shadows.text = "Stíny břehů: %s" % ("zapnuté" if Graphics.bank_shadows_on() else "vypnuté")
 
 
 func _back() -> void:

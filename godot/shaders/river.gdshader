@@ -41,6 +41,8 @@ uniform int part = 1;
 uniform float ground_on = 0.0;
 global uniform vec2 sun_shadow;
 global uniform float shadow_opacity;
+// Stíny břehů v nastavení (Graphics), 0 vypnuté.
+global uniform float bank_shadows;
 global uniform vec2 camera_position;
 global uniform float camera_zoom;
 // Šířka, ke které je g barvy vrcholu (river.gd WIDTH_MAX), a pás svahu (river.gd BANK_PAD,
@@ -114,7 +116,7 @@ float bank_jag(vec2 at) {
 // Stín břehu v místě (along, at, signed_across) s výškou height: kus směrem ke slunci napříč
 // ramenem je terén výš.
 float bank_shadow(float width, float along, vec2 at, float signed_across, float jag, float height) {
-	if (shadow_opacity <= 0.001 || dot(across_dir, across_dir) <= 0.0) {
+	if (shadow_opacity <= 0.001 || bank_shadows < 0.5 || dot(across_dir, across_dir) <= 0.0) {
 		return 0.0;
 	}
 	float back = signed_across - dot(sun_shadow * BANK_SHADOW_DEPTH, normalize(across_dir));

@@ -18,6 +18,8 @@ uniform float chunk_px = 512.0;
 uniform vec2 map_origin = vec2(0.0);
 global uniform vec2 sun_shadow;
 global uniform float shadow_opacity;
+// Stíny břehů v nastavení (Graphics), 0 vypnuté.
+global uniform float bank_shadows;
 global uniform vec2 camera_position;
 global uniform float camera_zoom;
 
@@ -83,7 +85,7 @@ float height_at(sampler2D chunk, vec2 at, vec2 ground, vec2 uv) {
 
 // Stín břehu jezera v bodě at s výškou here: kus směrem ke slunci (sun_shadow) je břeh výš.
 float bank_shadow(sampler2D chunk, vec2 at, float here, vec2 ground, vec2 uv) {
-	if (shadow_opacity <= 0.001) {
+	if (shadow_opacity <= 0.001 || bank_shadows < 0.5) {
 		return 0.0;
 	}
 	float back = height_at(chunk, at - sun_shadow * BANK_SHADOW_DEPTH, ground, uv);
@@ -131,7 +133,8 @@ void fragment() {
 		COLOR = vec4(color, 1.0);
 	} else {
 		vec2 at = surface_pos - map_origin;
-		float shadow = bank_shadow(TEXTURE, at, height_at(TEXTURE, at, ground, UV), ground, UV);
+		// Bez stínů břehů se výška ani nečte.
+		float shadow = bank_shadows > 0.5 ? bank_shadow(TEXTURE, at, height_at(TEXTURE, at, ground, UV), ground, UV) : 0.0;
 		float amount = smoothstep(mask_start, 1.0, share);
 		vec2 phases = wave_phase;
 		float height = lake_wave(phases);

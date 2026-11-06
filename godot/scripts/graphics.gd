@@ -13,10 +13,12 @@ extends Node
 ##
 ## Třpyt vypne odlesky kamenů, příšer a dolů přes globální uniformu sparkle_on.
 ## Stíny vypnou stíny od slunce, měsíce i čelovek (Shadows). Den, noc a světlo čelovek zůstanou.
+## Stíny břehů vypnou stín, který břeh jezera a řeky vrhá na svah a vodu (globální uniforma
+## bank_shadows). Shadery ho pak vůbec nepočítají, na slabé grafice to je znát.
 ## Bez persist se změna neuloží (benchmark přepíná jen na dobu měření).
 ##
-## Výchozí rozlišení světa je na ARM (Raspberry Pi) ARM_SCALE, jinde plné. Uložené nastavení
-## hráče má přednost.
+## Výchozí rozlišení světa je na ARM (Raspberry Pi) ARM_SCALE, jinde plné, a stíny břehů jsou
+## na ARM vypnuté. Uložené nastavení hráče má přednost.
 
 signal changed
 
@@ -34,6 +36,7 @@ const VIEW_LAYER := -128
 var _scale := 1.0
 var _sparkle := true
 var _shadows := true
+var _bank_shadows := true
 ## Uzel hry, jehož svět se kreslí zmenšeně (attach_world), null mimo hru.
 var _world: CanvasItem
 var _view: SubViewport
@@ -43,9 +46,11 @@ var _view_layer: CanvasLayer
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_scale = default_world_scale()
+	_bank_shadows = not _arm()
 	var config := ConfigFile.new()
 	if config.load(SETTINGS) == OK:
 		_scale = float(config.get_value(SECTION, "scale", _scale))
+		_bank_shadows = bool(config.get_value(SECTION, "bank_shadows", _bank_shadows))
 		_sparkle = bool(config.get_value(SECTION, "sparkle", _sparkle))
 		_shadows = bool(config.get_value(SECTION, "shadows", _shadows))
 	if not SCALES.has(_scale):
@@ -55,7 +60,12 @@ func _ready() -> void:
 
 ## Rozlišení světa, dokud ho hráč nezmění: na ARM ARM_SCALE, jinde plné.
 static func default_world_scale() -> float:
-	return ARM_SCALE if Engine.get_architecture_name().begins_with("arm") else 1.0
+	return ARM_SCALE if _arm() else 1.0
+
+
+## Běží hra na ARM (Raspberry Pi)?
+static func _arm() -> bool:
+	return Engine.get_architecture_name().begins_with("arm")
 
 
 ## Rozlišení světa, podíl rozlišení obrazovky (jedna ze SCALES).
@@ -74,6 +84,17 @@ func sparkle_on() -> bool:
 
 func shadows_on() -> bool:
 	return _shadows
+
+
+func bank_shadows_on() -> bool:
+	return _bank_shadows
+
+
+func set_bank_shadows(on: bool, persist := true) -> void:
+	_bank_shadows = on
+	_apply()
+	if persist:
+		_save()
 
 
 func set_shadows(on: bool, persist := true) -> void:
@@ -107,6 +128,7 @@ func attach_world(world: CanvasItem) -> void:
 
 func _apply() -> void:
 	RenderingServer.global_shader_parameter_set(&"sparkle_on", 1.0 if _sparkle else 0.0)
+	RenderingServer.global_shader_parameter_set(&"bank_shadows", 1.0 if _bank_shadows else 0.0)
 	_apply_view()
 	changed.emit()
 
@@ -175,4 +197,5 @@ func _save() -> void:
 	config.set_value(SECTION, "scale", _scale)
 	config.set_value(SECTION, "sparkle", _sparkle)
 	config.set_value(SECTION, "shadows", _shadows)
+	config.set_value(SECTION, "bank_shadows", _bank_shadows)
 	config.save(SETTINGS)
