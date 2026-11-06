@@ -17,7 +17,7 @@ extends Node
 ## a přídavné jméno materiálu v rodě druhu (adjective je kmen: „pískovcov“ + ý, á, é).
 ## Vodní druh ("aquatic" v katalogu, aligátor) žije jen v brodítelné vodě (Walker.swims). Pro něj
 ## se kolem místa hledá nejbližší taková voda nejdál SWIM_REACH metrů, široká aspoň dvakrát
-## SWIM_WIDTH, mimo obrazovku. Jeho váha se počítá z povrchu té vody a objeví se v ní.
+## SWIM_WIDTH, mimo obrazovku. Čtverce bez vody se přeskočí (WorldBoard.may_swim_near). Jeho váha se počítá z povrchu té vody a objeví se v ní.
 ## Živých je nejvýš MAX_ALIVE: když
 ## je plno, nová vytlačí nejstarší, která není na obrazovce. Denní doba se kontroluje jen při
 ## losování, objevená příšera zůstane i po změně dne a noci.
@@ -61,7 +61,9 @@ const SIDE_SPREAD := 0.3
 ## Když místo nejde (voda, nehotový čtverec, překážka), zkusí se jiný posun, nejvýš tolikrát.
 const SPAWN_TRIES := 4
 const SWIM_REACH := 5.0
-const SWIM_STEP := 0.4
+const SWIM_STEP := 0.75
+## Na každém kruhu hledání vody nejvýš tolik bodů.
+const SWIM_AROUND := 32
 const SWIM_WIDTH := 0.3
 ## Obrazovka zvětšená o tolik metrů na každou stranu: tam se nikdo neobjeví.
 const HIDDEN_M := 1.0
@@ -374,13 +376,13 @@ func _swim_spot(spot: Vector2, hidden: Rect2) -> Vector2:
 	var any := false
 	for species in _species:
 		any = any or bool(species["aquatic"])
-	if not any:
-		return Vector2.INF
 	var tile := float(TerrainCatalog.TILE_SIZE)
+	if not any or not _board.may_swim_near(spot, SWIM_REACH * tile):
+		return Vector2.INF
 	var step := SWIM_STEP * tile
 	var radius := 0.0
 	while radius <= SWIM_REACH * tile:
-		var around := 1 if radius == 0.0 else clampi(int(TAU * radius / step), 8, 64)
+		var around := 1 if radius == 0.0 else clampi(int(TAU * radius / step), 8, SWIM_AROUND)
 		for i in around:
 			var at := spot + Vector2.from_angle(TAU * float(i) / float(around)) * radius
 			if _swims_wide(at) and not hidden.has_point(at) and _board.has_ground(at):

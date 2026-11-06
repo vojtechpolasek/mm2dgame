@@ -381,6 +381,16 @@ func is_dry(pos: Vector2) -> bool:
 	return false
 
 
+## Může být brodítelná voda do reach pixelů od pos? Ptá se čtverců v rozích čtverce kolem pos.
+## Čtverce jsou větší než reach, víc jich to být nemůže.
+func may_swim_near(pos: Vector2, reach: float) -> bool:
+	for corner in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		var sq := _ready_at(pos + corner * reach)
+		if sq != null and sq.walker.may_swim():
+			return true
+	return false
+
+
 ## Brodítelná voda v bodě světa pro vodní příšeru (Walker.swims). Voda u kraje čtverce se bere
 ## jako mělčina, když je za krajem souš (stejně jako is_dry).
 func swims(pos: Vector2) -> bool:

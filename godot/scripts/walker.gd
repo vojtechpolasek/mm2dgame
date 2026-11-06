@@ -42,6 +42,8 @@ var _forest: Forest
 var town: Town
 ## Řeka čtverce. Ve vodě zpomalí na RIVER_PACE, na mostě (cesta) ne. Nastaví svět.
 var river
+## Má mapa mělčinu nebo vodu u kraje (_mark_shallows)? Viz may_swim.
+var _has_shallow := false
 var _map_size := Vector2.ZERO
 var _tiles := 0
 ## Světové souřadnice levého horního rohu mapy. Nula je jedna mapa od počátku.
@@ -97,8 +99,10 @@ func _mark_shallows() -> void:
 						shore = true
 			if shore:
 				_walkable[y * _tiles + x] = SHALLOW
+				_has_shallow = true
 			elif x < SHORE_TILES or y < SHORE_TILES or x > last - SHORE_TILES or y > last - SHORE_TILES:
 				_walkable[y * _tiles + x] = EDGE_WATER
+				_has_shallow = true
 
 
 ## Prázdný chodec (bez mapy) chodí po celém světě: world_board musí být nastavený. Rychlost
@@ -223,6 +227,12 @@ func stands(pos: Vector2, body: float) -> bool:
 		if not dry(pos + probe * body):
 			return false
 	return true
+
+
+## Může mít tahle mapa brodítelnou vodu (mělčinu, vodu u kraje nebo řeku)? Když ne, vodu pro
+## vodní příšeru tu není třeba hledat.
+func may_swim() -> bool:
+	return _has_shallow or (river != null and river.exists())
 
 
 ## Brodítelná voda pro vodní příšeru (aligátor): mělčina u břehu nebo voda řeky, i pod mostem.
