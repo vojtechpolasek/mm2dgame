@@ -1,5 +1,4 @@
 shader_type canvas_item;
-// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
 render_mode blend_mix;
 
 // Mlha nad močálem a padající sníh nad sněhem (square_air.gd). Kreslí se jen kusy čtverce,

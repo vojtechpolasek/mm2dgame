@@ -1,7 +1,7 @@
 extends RefCounted
 
-## Pohyb po zemi, společný postavě i příšerám. Překážky jsou paty skal, keře a kmeny, továrna
-## a domy, ostatní tvorové z crowd, neschůdný povrch je voda a mimo mapu se nesmí. Tělo je kruh o poloměru
+## Pohyb po zemi, společný postavě i příšerám. Překážky jsou paty skal, keře a kmeny,
+## ostatní tvorové z crowd, neschůdný povrch je voda a mimo mapu se nesmí. Tělo je kruh o poloměru
 ## body v pixelech. who je číslo tvora v crowd, -1 ostatní tvory nebere v úvahu.
 ##
 ## Do vody se smí jen na mělčinu: dlaždice vody nejdál SHORE_TILES dlaždic od souše (i úhlopříčně).
@@ -11,12 +11,11 @@ extends RefCounted
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const Rocks := preload("res://scripts/rocks.gd")
 const Forest := preload("res://scripts/forest.gd")
-const Town := preload("res://scripts/town.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Crowd := preload("res://scripts/crowd.gd")
 
-## Střed těla nesmí blíž ke kraji čtverce než tolik metrů. Platí pro postavy, příšery
-## i vesničany, chodící i létající.
+## Střed těla nesmí blíž ke kraji mapy než tolik metrů. Platí pro postavy i příšery,
+## chodící i létající.
 const EDGE_M := 1.0
 ## Ve vodě řeky a na mělčině se jde pomaleji.
 const RIVER_PACE := 0.8
@@ -38,9 +37,7 @@ const PROBES: Array[Vector2] = [
 
 var _rocks: Rocks
 var _forest: Forest
-## Továrna, cesta a domy. Mřížka cest příšer z ní bere půdorysy.
-var town: Town
-## Řeka čtverce. Ve vodě zpomalí na RIVER_PACE, na mostě (cesta) ne. Nastaví svět.
+## Řeka čtverce. Ve vodě zpomalí na RIVER_PACE. Nastaví svět.
 var river
 ## Má mapa mělčinu nebo vodu u kraje (_mark_shallows)? Viz may_swim.
 var _has_shallow := false
@@ -58,15 +55,12 @@ var _terrain := PackedByteArray()
 var _names := PackedStringArray()
 ## Tvorové, kteří nechodí přes sebe. Nastaví svět, než se kdo pohne.
 var crowd: Crowd
-## Ohrada ve světě: střed těla z ní nevyjde. Prázdná nic nehlídá. Nastaví svět.
-var fence := Rect2()
 
 
 ## Bez mapy vznikne prázdný chodec, ten jen pro use_surfaces.
-func _init(rocks: Rocks = null, forest: Forest = null, town_at: Town = null, map: MapData = null) -> void:
+func _init(rocks: Rocks = null, forest: Forest = null, map: MapData = null) -> void:
 	_rocks = rocks
 	_forest = forest
-	town = town_at
 	if map == null:
 		return
 	var tile := float(TerrainCatalog.TILE_SIZE)
@@ -135,13 +129,11 @@ func pace(pos: Vector2) -> float:
 	return ground * river_pace(pos)
 
 
-## Ve vodě řeky a na mělčině RIVER_PACE, jinde a na mostě 1. pos je bod ve světě.
+## Ve vodě řeky a na mělčině RIVER_PACE, jinde 1. pos je bod ve světě.
 func river_pace(pos: Vector2) -> float:
 	if ground(pos) != LAND:
 		return RIVER_PACE
 	if river == null or not river.water_at(pos):
-		return 1.0
-	if town != null and town.on_road(pos):
 		return 1.0
 	return RIVER_PACE
 
@@ -163,10 +155,9 @@ func world() -> Vector2:
 	return _map_size
 
 
-## Odkud se začíná: před výstupkem továrny. Bez továrny střed mapy.
+## Odkud se začíná: střed mapy.
 func home() -> Vector2:
-	var spot := town.home() if town != null else Vector2.INF
-	return space_origin + _map_size * 0.5 if spot == Vector2.INF else spot
+	return space_origin + _map_size * 0.5
 
 
 ## Krok z from do desired. Když cíl nejde, zkusí klouzat jen po ose x, pak jen po ose y.
@@ -191,14 +182,10 @@ func place(pos: Vector2, body: float, clearance: float = -1.0, who: int = -1) ->
 		pos = world_board.move_body(pos, body, clearance)
 		if crowd != null and who >= 0:
 			pos = crowd.avoid(pos, body, who, clearance)
-		if fence.has_area():
-			pos = pos.clamp(fence.position, fence.end)
 		return pos
 	for _pass in 2:
 		pos = _rocks.avoid(pos, body, clearance)
 		pos = _forest.avoid(pos, body, clearance)
-		if town != null:
-			pos = town.avoid(pos, body)
 		if crowd != null and who >= 0:
 			pos = crowd.avoid(pos, body, who, clearance)
 	return fit(pos, EDGE_M * float(TerrainCatalog.TILE_SIZE))

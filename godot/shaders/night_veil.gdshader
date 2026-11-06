@@ -6,8 +6,7 @@ render_mode blend_mul, unshaded;
 // čelovky hráčů přidají kužel před postavou a slabou záři kolem ní.
 // Kužely se stíny i záři čelovek počítá lamp_shade.gdshader do obrázku ve čtvrtinovém
 // rozlišení (lamp_light), závoj ho jen rozmaže, okraje stínů jsou měkké. Kam čelovky
-// nedosvítí, je v obrázku 0 a zbude okolní světlo. Závoj je unshaded, obarvení světa jedem
-// (CanvasModulate) se ho netýká a v noci se tak nenásobí dvakrát.
+// nedosvítí, je v obrázku 0 a zbude okolní světlo. Závoj je unshaded.
 // Koruny stromů jsou nad čelovkou: kde je v obrázku překážek maska koruny (kanál G), čelovka
 // nesvítí a koruna zůstane tmavá. Stín kmene je tak jen na zemi kolem koruny.
 

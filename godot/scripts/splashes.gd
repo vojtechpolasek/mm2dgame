@@ -1,7 +1,7 @@
 extends Node2D
 
 ## Cákání vody od nohou při chůzi vodou (brod v řece, mělčina jezera). Na každý krok
-## (_footstep postavy, vesničana a chodící příšery) se od chodidla rozběhne kroužek po hladině a odletí shluk kapek, víc
+## (_footstep postavy a chodící příšery) se od chodidla rozběhne kroužek po hladině a odletí shluk kapek, víc
 ## dopředu, kam postava jde. Kreslí se nad vodou a pod postavami, bez textur: kroužky
 ## a kapky jsou jen kreslené kruhy, ať je to levné i se šesti hráči.
 
@@ -53,8 +53,7 @@ func _ready() -> void:
 	Benchmark.seed_rng(_rng, 2)
 
 
-## Je bod ve vodě, kterou se brodí (řeka nebo mělčina, ne most), v kterémkoli čtverci?
-## Příšery a vesničané mají chůzi jen po svém čtverci, voda se proto ptá světa.
+## Je bod ve vodě, kterou se brodí (řeka nebo mělčina), v kterémkoli čtverci?
 func wet(at: Vector2) -> bool:
 	return board != null and board.river_pace(at) < 1.0
 

@@ -1,53 +1,32 @@
 extends Node
 
-## Hra jako otevřený svět ze čtverců SQUARE × SQUARE m, které navazují terénem. Level se hraje
-## na čtverci s továrnou a vesnicí, ostatní čtverce jsou jen krajina (stromy a skály, bez vesnice,
-## továrny a dolů). Kolem se dotváří, jak se hráči blíží ke kraji, ať za ním není prázdno.
-## Nový čtverec převezme krajní řady hotových sousedů, takže svět závisí na pořadí, v jakém
-## hráči čtverce otevřou. Ukládá se proto celá hotová mapa, ne jen semínko.
-## Během levelu hráči čtverec levelu neopustí: kraj je zastaví FENCE_M metrů před sebou. Šipka
-## ukazuje na továrnu, BLINK_M metrů od kraje bliká a od ALARM_M výrazně.
-## Po splnění levelu vznikne další čtverec s továrnou na nejbližším místě, kde ještě nic není
-## (při shodě náhodně), a šipka ukáže na něj. Hráči mezitím chodí kamkoli. Až se kdokoli
-## přiblíží k nové továrně na LOCK_M metrů, kdo je v jejím čtverci, už z něj nevyjde.
-## Tvorové jsou jen na čtverci hráče a na jeho sousedech, dál zmizí (_actors).
-## Po patnáctém levelu hra končí.
-## Čtverec s továrnou má tři sklady (Town.plan_stores), kam si hráči můžou kameny odložit.
-## Volný pohyb (GameSession.free_roam): všechny čtverce jsou krajina bez továren, vesnic, dolů
-## a příšer. Není level, čas, šipka ani ohrada, nic se neukládá. Čtverec dál než PARK_AT od
-## čtverců hráčů se uvolní ze scény a zůstane jen jeho mapa (_parked). Po návratu se z ní
-## postaví stejně, jako když se načítá uložená hra.
-## Chytej příšery (GameSession.hunt): volný pohyb, ve kterém se rodí příšery k chytání.
-## Kde a jaké příšery se objeví, čas a body řídí Hunt. Čtverce pro něj nic nepřipravují.
+## Hra jako otevřený svět ze čtverců SQUARE × SQUARE m, které navazují terénem. Kolem se
+## dotváří, jak se hráči blíží ke kraji, ať za ním není prázdno. Nový čtverec převezme krajní
+## řady hotových sousedů, takže svět závisí na pořadí, v jakém hráči čtverce otevřou.
+## Čtverec dál než PARK_AT od čtverců hráčů se uvolní ze scény a zůstane jen jeho mapa
+## (_parked). Po návratu se z ní postaví stejně.
+## Režim hry je GameSession.mode. Ve volném pohybu nejsou příšery, čas ani cíl. Chytej příšery
+## a Sbírání materiálů řídí Hunt: kde a jaké příšery a kameny se objeví, čas a body. Čtverce pro
+## něj nic nepřipravují. Nic se neukládá, kromě výkonů.
 ## Průlet v menu (start_flyover): stejná krajina, bez postavy. Kamera jede stálou rychlostí
-## šikmo nahoru doprava a podle ní se otevírají další čtverce. Nic se neukládá.
+## šikmo nahoru doprava a podle ní se otevírají další čtverce.
 ## Den a noc (DayNight): slunce a měsíc obíhají, objekty vrhají stíny (Shadows) a v noci
-## se svět ztmaví. Denní doba se ukládá s hrou.
-## Hra se ukládá sama (SuitSaves): každých SAVE_EVERY sekund, po splnění levelu a při odchodu.
-## Uloží se mapy všech hotových čtverců, kameny ve skladech všech čtverců a přesný stav levelu:
-## postavy a co nesou, zásobníky továrny, vesničané a příšery jeho čtverce. Po načtení se hraje
-## tam, kde hra skončila.
+## se svět ztmaví.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapGenerator := preload("res://scripts/map_generator.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Forest := preload("res://scripts/forest.gd")
 const Rocks := preload("res://scripts/rocks.gd")
-const Town := preload("res://scripts/town.gd")
 const PropChunks := preload("res://scripts/prop_chunks.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
 const Crystal := preload("res://scripts/crystal.gd")
 const Hud := preload("res://scripts/hud.gd")
-const Monsters := preload("res://scripts/monsters.gd")
-const Villagers := preload("res://scripts/villagers.gd")
 const Crowd := preload("res://scripts/crowd.gd")
 const Party := preload("res://scripts/party.gd")
 const Walker := preload("res://scripts/walker.gd")
 const TerrainChunks := preload("res://scripts/terrain_chunks.gd")
-const PondLabels := preload("res://scripts/pond_labels.gd")
-const SuitGame := preload("res://scripts/suit_game.gd")
-const SuitSaves := preload("res://scripts/suit_saves.gd")
 const GroundDecor := preload("res://scripts/ground_decor.gd")
 const SquareAir := preload("res://scripts/square_air.gd")
 const River := preload("res://scripts/river.gd")
@@ -60,8 +39,6 @@ const Hunt := preload("res://scripts/hunt.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
-## Za kolik sekund se obarvení jedem srovná při přechodu do jiného čtverce.
-const TINT_FADE := 1.5
 ## Kolik terénů si nový čtverec vybere (MapGenerator.pick_terrains). Víc by mapu rozdrobilo.
 const TERRAINS_PER_SQUARE := 3
 ## Terény, které úvodní čtverec nikdy nemá: bažina by hned na začátku zpomalila, voda
@@ -69,28 +46,11 @@ const TERRAINS_PER_SQUARE := 3
 const START_BANNED: PackedStringArray = ["swamp", "water"]
 ## Od kraje, kde se na pozadí začne tvořit soused. Roh otevře i šikmý čtverec.
 const APPROACH := 32.0
-## Kolem továrny se voda vysuší, ať nestojí v jezeře. Kraj čtverce to nemění.
-const CLEAR := 12.0
-## Řeka drží od středu továrny tolik metrů: továrna, výstupek a začátek cesty. Dál ji
-## cesta přejde po mostě a domy, doly a sklady se jí vyhnou.
-const RIVER_CLEAR := 7.0
-## Střed dolu neblíž ke kraji než tolik metrů. Ústí dolu zůstane na mapě.
-const EDGE := 2.0
 const WATER_CELL := 4
 const WATER_HEAR := 14.0
+## Další hráči stojí v kruhu tolik metrů kolem prvního.
 const SPAWN_RING := 1.5
-const FENCE_M := Walker.EDGE_M
-const BLINK_M := 12.0
-const ALARM_M := 7.0
-const LOCK_M := 20.0
-## Hláška po splnění levelu svítí tolik sekund.
-const LEVEL_NOTICE := 7.0
-## Vesnice čtverce s továrnou: T s domy jako v jednom levelu.
-const TOWN_LAYOUT := "large"
-const SAVE_EVERY := 60.0
-## Příšery uložené hry si po načtení tolik sekund nikoho nevšímají.
-const LOAD_CALM := 3.0
-## Volný pohyb: čtverec aspoň tolik čtverců od každého hráče se uvolní. Nový čtverec vzniká
+## Čtverec aspoň tolik čtverců od každého hráče se uvolní. Nový čtverec vzniká
 ## nejvýš o jeden dál než hráč a navazuje na sousedy, ty jsou tedy pořád ve scéně.
 const PARK_AT := 3
 ## Průlet menu: pixely za sekundu. Směr je šikmo nahoru doprava, nahoru je ve světě záporné y.
@@ -105,7 +65,6 @@ var _catalog: TerrainCatalog
 ## Svah břehu řek podle terénu (River.spawn, bank v surfaces.json).
 var _bank_look := {}
 var _crystal: Crystal
-var _road: Node2D
 ## Řeky a mosty všech čtverců, nad cestou a pod porostem.
 var _rivers: Node2D
 ## Cákání vody od nohou (Splashes), nad vodou a pod postavami.
@@ -117,11 +76,6 @@ var _props: Node2D
 ## Stíny objektů mezi porostem a objekty, a den s nocí.
 var _shadows: Shadows
 var _day: DayNight
-## Obarvení světa jedem (SquareAir.tint) podle čtverce pod středem kamery. Mezi čtverci se
-## síla jedu mění plynule za TINT_FADE sekund.
-var _tint: CanvasModulate
-var _tint_amount := 0.0
-var _tint_time := 0.0
 var _chunks: PropChunks
 var _hud: Hud
 var _party: Party
@@ -132,57 +86,24 @@ var _waiting: Array[Vector2i] = []
 ## Čtverce hotové z vlákna, které se po částech přidávají do scény (_finish_step).
 var _finishing: Array[Vector2i] = []
 ## Objevené dlaždice mapy v rohu: souřadnice čtverce -> PackedByteArray, 255 objevená.
-## Ukládá se s hrou a drží i čtverce, které se mezitím uvolnily.
+## Drží i čtverce, které se mezitím uvolnily.
 var _seen := {}
-var _where := {}
 var _world_rng := RandomNumberGenerator.new()
 var _opened := false
 var _closing := false
 ## Strana čtverce v dlaždicích.
 var _side := SQUARE
-## Level, který se právě hraje, a jeho čtverec.
-var _level := 1
-var _active := Vector2i.ZERO
-## Hráči jsou zavření ve čtverci levelu. Po splnění levelu až do příchodu k nové továrně ne.
-var _locked := true
-## Čtverce s továrnou: souřadnice -> level.
-var _levels := {}
-## Úkol každého čtverce s továrnou podle souřadnic.
-var _games := {}
-## Splněné čtverce: souřadnice -> kolik skafandrů leží na výstupku (z uložené hry, než
-## čtverec vznikne).
-var _done := {}
-## Kde hráči začínají. U uložené hry čtverec, kde stál první hráč.
-var _start := Vector2i.ZERO
-## Celkový čas hry a čas právě hraného levelu v sekundách.
-var _time := 0.0
-var _level_time := 0.0
-## Jak daleko od kraje drží ohrada postavu, podle postavy. Postava, která do čtverce levelu
-## teprve vešla, má ohradu tam, kde stojí, a ta se rozšíří až na FENCE_M.
-var _insets := {}
-var _finished := false
-var _save_left := SAVE_EVERY
-## Hra už je uložená při zavírání okna.
-var _closed_saved := false
-## Stav uložené hry, který čeká, až vzniknou postavy a tvorové a továrna čtverce levelu.
-var _pending := {}
-## Kameny ve skladech uložené hry podle souřadnic čtverce, dokud čtverec nevznikne.
-var _stores := {}
-## Volný pohyb.
-var _free := false
 ## Průlet v menu. Krajina jako volný pohyb, kamera jede sama a postava se nespawnuje.
 var _flyover := false
-## Uvolněné čtverce volného pohybu: souřadnice -> mapa (_record).
+## Uvolněné čtverce: souřadnice -> mapa (_record).
 var _parked := {}
-## Chytej příšery, jinak null.
+## Chytej příšery a Sbírání materiálů, jinak null.
 var _hunt: Hunt
 
 
 class Square:
 	var coord := Vector2i.ZERO
 	var origin := Vector2.ZERO
-	var layout := ""
-	var level := 1
 	var task := -1
 	## Kolik částí _finish_step už do scény přidal.
 	var stage := 0
@@ -192,30 +113,23 @@ class Square:
 	var painted := {}
 	var rocks
 	var forest
-	var town
-	var monsters
-	var villagers
 	var walker
 	var river
 	var decor
-	## Vzduch nad čtvercem (mlha, sníh, jed) a jeho maska terénu z vlákna.
+	## Vzduch nad čtvercem (mlha, sníh) a jeho maska terénu z vlákna.
 	var air
 	var air_mask: Dictionary
 	## Obrázek čtverce pro mapu v rohu, pixel na dlaždici (MiniMap.chart).
 	var chart: Image
 	var rng: RandomNumberGenerator
-	## Stav rng po nakreslení terénu. Odtud se sází továrna, skály a stromy, takže čtverec
+	## Stav rng po nakreslení terénu. Odtud se sází skály a stromy, takže čtverec
 	## jde z uložené mapy postavit znovu stejně.
 	var plan_state := 0
 	## Řeky přes kraj (River.plan): open, bity stran bez mapy souseda, a inlets, vtoky
 	## hotových sousedů. Platí, jak byly při tvoření, ukládají se s mapou.
 	var river_links := {}
-	## Uložená mapa (_record), ze které se čtverec staví místo tvoření.
+	## Mapa uvolněného čtverce (_record), ze které se po návratu staví místo tvoření.
 	var saved := {}
-	## _record zabalený pro soubor uložení a jeho délka před zabalením. Mapa se po vytvoření
-	## nemění, balí se jednou.
-	var blob := PackedByteArray()
-	var blob_size := 0
 	var water_far := PackedInt32Array()
 	var water_side := 0
 	## Terén čtverce ve scéně.
@@ -249,8 +163,7 @@ func start(host) -> void:
 	_crystal = Crystal.new()
 	if not _crystal.load_catalog():
 		push_error("Chybí materiály krystalu.")
-	_free = _flyover or GameSession.free_roam
-	if GameSession.hunt and not _flyover:
+	if GameSession.timed() and not _flyover:
 		_hunt = Hunt.new()
 		_hunt.name = "Hunt"
 		add_child(_hunt)
@@ -258,14 +171,10 @@ func start(host) -> void:
 	Benchmark.seed_rng(_world_rng, 0)
 	_camera.position = Vector2(_span(), _span()) * 0.5
 	_camera.roam()
-	_road = Node2D.new()
-	_road.name = "Road"
-	_host.add_child(_road)
-	_host.move_child(_road, _ground.get_index() + 1)
 	_rivers = Node2D.new()
 	_rivers.name = "Rivers"
 	_host.add_child(_rivers)
-	_host.move_child(_rivers, _road.get_index() + 1)
+	_host.move_child(_rivers, _ground.get_index() + 1)
 	_decor = Node2D.new()
 	_decor.name = "Decor"
 	_host.add_child(_decor)
@@ -292,25 +201,11 @@ func start(host) -> void:
 	_day.full_moon_only = _flyover
 	_host.add_child(_day)
 	_day.setup(_camera, _shadows, _host._persons)
-	_tint = CanvasModulate.new()
-	_tint.name = "PoisonTint"
-	_host.add_child(_tint)
 	_chunks = PropChunks.new()
 	_chunks.name = "PropChunks"
 	_chunks.setup(_camera)
 	_host.add_child(_chunks)
-	_begin()
-
-
-func _begin() -> void:
-	if _free:
-		_enqueue(Vector2i.ZERO)
-		return
-	if GameSession.suit_resume.is_empty():
-		_levels[Vector2i.ZERO] = 1
-		_enqueue(Vector2i.ZERO)
-		return
-	_load(GameSession.suit_resume)
+	_enqueue(Vector2i.ZERO)
 
 
 func tick(delta: float) -> void:
@@ -321,7 +216,6 @@ func tick(delta: float) -> void:
 	if not _opened:
 		return
 	_day.advance(delta)
-	_follow_tint(delta)
 	if _hud != null:
 		_hud.set_sky(_day.phase, _day.moon_index())
 	if _flyover:
@@ -332,27 +226,11 @@ func tick(delta: float) -> void:
 		return
 	for person in _host._persons:
 		_consider(person.position)
-	_follow()
-	_actors()
-	if _free:
-		if _hunt != null:
-			_hunt.tick(delta, _day.phase)
-			_hud.set_countdown(_hunt.time_left, Hunt.SECONDS)
-		_sound(delta)
-		_park_far()
-		return
-	_show_task()
+	if _hunt != null:
+		_hunt.tick(delta, _day.phase)
+		_hud.set_countdown(_hunt.time_left, Hunt.SECONDS)
 	_sound(delta)
-	if _finished:
-		return
-	_time += delta
-	_level_time += delta
-	_hud.set_time(_time)
-	_check_lock()
-	_update_fence()
-	_save_left -= delta
-	if _save_left <= 0.0:
-		_save()
+	_park_far()
 
 
 func shutdown() -> void:
@@ -362,8 +240,6 @@ func shutdown() -> void:
 		if sq.task >= 0:
 			WorkerThreadPool.wait_for_task_completion(sq.task)
 			sq.task = -1
-	if not _closed_saved:
-		_save()
 
 
 func is_dry(pos: Vector2) -> bool:
@@ -423,7 +299,6 @@ func surface_at(pos: Vector2) -> String:
 
 ## Skály a stromy jen ze čtverců, které na tělo dosáhnou. Ostatní by bod neposunuly a jejich
 ## mřížky by se procházely zbytečně. Rezerva je dvojnásobná, bod se mezi průchody posouvá.
-## Vesnice si vzdálenost hlídá sama (Town.avoid).
 func move_body(pos: Vector2, body: float, clearance: float) -> Vector2:
 	var around: Array[Square] = []
 	var props: Array[bool] = []
@@ -443,7 +318,6 @@ func move_body(pos: Vector2, body: float, clearance: float) -> Vector2:
 			if props[i]:
 				pos = sq.rocks.avoid(pos, body, clearance)
 				pos = sq.forest.avoid(pos, body, clearance)
-			pos = sq.town.avoid(pos, body)
 	return pos
 
 
@@ -475,61 +349,17 @@ func _enqueue(coord: Vector2i, saved: Dictionary = {}) -> void:
 	sq.rng = RandomNumberGenerator.new()
 	if saved.is_empty():
 		sq.rng.seed = _world_rng.randi()
-		_plan_square(sq)
 	else:
-		sq.layout = str(saved["layout"])
-		sq.level = int(saved["level"])
 		sq.plan_state = int(saved["plan_state"])
 		sq.river_links = saved.get("river", {})
 		sq.saved = saved
 	sq.rocks = Rocks.new()
 	sq.forest = Forest.new()
-	sq.town = Town.new()
-	sq.monsters = Monsters.new()
-	sq.villagers = Villagers.new()
 	sq.rocks.name = "Rocks"
 	sq.forest.name = "Trees"
-	sq.town.name = "Town"
-	sq.rocks.bind_crystal(_crystal)
-	sq.rocks.edge_guard = EDGE
-	_configure(sq)
 	_squares[coord] = sq
 	_waiting.append(coord)
 	_dispatch()
-
-
-func _plan_square(sq: Square) -> void:
-	sq.level = int(_levels.get(sq.coord, 0))
-	sq.layout = TOWN_LAYOUT if sq.level > 0 else "empty"
-
-
-## Čtverec s továrnou: doly materiálů ze zásobníků v úzkých pásech kolem továrny a zásobníky
-## podle levelu. Ostatní čtverce nemají doly ani továrnu.
-func _configure(sq: Square) -> void:
-	if sq.level <= 0:
-		sq.rocks.set_available(0)
-		return
-	sq.town.stores = true
-	sq.rocks.set_available(GameSession.material_window(sq.level))
-	var order: PackedInt32Array = sq.rocks.by_points()
-	var plan: Array = []
-	for pair: Array in GameSession.suit_lanes(sq.level):
-		plan.append([order[mini(int(pair[0]), order.size() - 1)], int(pair[1])])
-	# Každý materiál ze zásobníků má jeden důl, materiál, který továrna nechce, žádný.
-	var used := GameSession.suit_orders(sq.level)
-	var mines := PackedInt32Array()
-	mines.resize(mini(GameSession.material_window(sq.level), order.size()))
-	var recipe := PackedInt32Array()
-	for at in used:
-		if at >= mines.size():
-			continue
-		mines[at] = 1
-		if recipe.size() < GameSession.SUIT_RECIPE:
-			recipe.append(order[at])
-	sq.rocks.mine_plan = mines
-	sq.rocks.band_max = GameSession.SUIT_BAND_M
-	sq.town.suit_plan = plan
-	sq.town.suit_recipe = recipe
 
 
 ## Čtverec se začne tvořit, až žádný z osmi sousedů není rozpracovaný. Hotové sousedy
@@ -635,14 +465,11 @@ func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
 	return fixed
 
 
-## Katalogy skal, stromů a vesnice. Ve vlákně čtverce, na hlavním by čtení katalogů zaseklo
+## Katalogy skal a stromů. Ve vlákně čtverce, na hlavním by čtení katalogů zaseklo
 ## hru při přechodu do dalšího čtverce (na Raspberry Pi desítky ms).
 func _load_catalogs(sq: Square) -> void:
 	sq.rocks.load_catalog(_catalog.names, _catalog.surfaces)
 	sq.forest.load_catalog(_catalog.names, _catalog.surfaces)
-	if sq.town.load_assets():
-		sq.rocks.town = sq.town
-		sq.forest.town = sq.town
 
 
 func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> void:
@@ -652,8 +479,6 @@ func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> voi
 	var pool := MapGenerator.pick_terrains(_catalog.names, _catalog.surfaces, sq.rng, TERRAINS_PER_SQUARE, ring, banned)
 	var map := MapGenerator.grow(_side, _catalog.names, sq.rng, _catalog.max_distance, _catalog.max_share, ring, pool)
 	map.surfaces = _catalog.surfaces
-	if sq.layout != "empty":
-		MapGenerator.clear_disk(map, CLEAR)
 	# U vtoku řeky od souseda je souš, jinak by řeka skončila na kraji.
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	for spot in River.clear_spots(sq.river_links.get("inlets", []), _side):
@@ -694,11 +519,9 @@ func _rebuild(sq: Square) -> void:
 	_furnish(sq, map)
 
 
-## Mapa čtverce k uložení. Stačí terén, vrcholy, varianty dlaždic a okolí od sousedů.
+## Mapa uvolněného čtverce. Stačí terén, vrcholy, varianty dlaždic a okolí od sousedů.
 func _record(sq: Square) -> Dictionary:
 	return {
-		"layout": sq.layout,
-		"level": sq.level,
 		"plan_state": sq.plan_state,
 		"terrain": sq.map.terrain,
 		"vertex": sq.painted["vertex"],
@@ -708,39 +531,28 @@ func _record(sq: Square) -> Dictionary:
 	}
 
 
-## Čtverec po terénu, jako by rostl: přírodní skály, řeky mezi nimi, vesnice (domy a sklady
-## mimo řeku, cesta přes ni po mostě), doly, nakonec stromy a porost. Co by vesnici nebo
-## dolům překáželo, zmizí, řeka zůstane. Místo pro továrnu (RIVER_CLEAR) řeka obteče.
+## Čtverec po terénu, jako by rostl: přírodní skály, řeky mezi nimi, nakonec stromy a porost.
 func _furnish(sq: Square, map: MapData) -> void:
 	var inlets: Array = sq.river_links.get("inlets", [])
 	sq.rocks.keep_clear = River.clear_spots(inlets, map.size)
 	sq.rocks.plant(map, sq.rng)
 	# Řeka má vlastní náhodu, ať nemění, co se losuje po ní.
 	sq.river = River.new()
-	var reserve := Vector3.ZERO
-	if sq.layout != "empty":
-		var middle := float(map.size * TerrainCatalog.TILE_SIZE) * 0.5
-		reserve = Vector3(middle, middle, RIVER_CLEAR * TerrainCatalog.TILE_SIZE)
 	var open := int(sq.river_links.get("open", 0))
-	sq.river.plan(map, sq.rocks, reserve, hash(sq.plan_state) + 1, sq.painted["vertex"], open, inlets)
-	sq.town.river = sq.river
-	sq.town.plan(map, sq.rng, sq.layout)
+	sq.river.plan(map, sq.rocks, hash(sq.plan_state) + 1, sq.painted["vertex"], open, inlets)
 	sq.rocks.river = sq.river
-	sq.rocks.plant_town(map, sq.rng)
-	sq.river.place_bridges(sq.town)
 	sq.forest.river = sq.river
 	sq.forest.plant(map, sq.rng, sq.rocks)
 	# Porost má vlastní náhodu, ať nemění, co se losuje po něm.
 	sq.decor = GroundDecor.new()
-	sq.decor.plant(_decor_kit, map, sq.painted["corners"], sq.town, _catalog.water_index, sq.coord * _side, hash(sq.plan_state), sq.river)
+	sq.decor.plant(_decor_kit, map, sq.painted["corners"], _catalog.water_index, sq.coord * _side, hash(sq.plan_state), sq.river)
 	sq.air_mask = SquareAir.mask(map)
-	sq.walker = Walker.new(sq.rocks, sq.forest, sq.town, map)
+	sq.walker = Walker.new(sq.rocks, sq.forest, map)
 	sq.walker.river = sq.river
-	sq.monsters.prepare(sq.rocks.pond_materials(), _crystal, sq.walker, sq.rocks, sq.forest)
+	# Hranice skal pro těla příšer a postavy tady ve vlákně, na hlavním by výpočet zasekl hru.
 	if _hunt != null:
 		for body in _hunt.bodies:
 			sq.rocks.prepare_bounds(body)
-	sq.villagers.prepare(sq.walker, sq.rocks, sq.forest)
 	sq.rocks.prepare_bounds(Person.BODY)
 	# Textury tady ve vlákně, na hlavním by načtení zaseklo hru.
 	sq.rocks.load_used_textures()
@@ -750,7 +562,7 @@ func _furnish(sq: Square, map: MapData) -> void:
 	sq.water_far = water["far"]
 	# Menu mapu v rohu nemá.
 	if not _flyover:
-		sq.chart = MiniMap.chart(map, sq.rocks, sq.forest, sq.town, sq.river)
+		sq.chart = MiniMap.chart(map, sq.rocks, sq.forest, sq.river)
 	# Co jde, se připraví tady, ať dokončení čtverce na hlavním vlákně nezasekne hru.
 	sq.water = TerrainChunks.find_water(map.size, sq.painted["corners"], _catalog.water_index)
 	sq.river.prepare_mesh()
@@ -772,24 +584,18 @@ func _finish_step() -> void:
 			sq.origin = _origin_of(sq.coord)
 			sq.rocks.relocate(sq.origin)
 			sq.forest.relocate(sq.origin)
-			sq.town.relocate(sq.origin)
 			sq.river.relocate(sq.origin)
 			sq.walker.set_space(sq.origin)
-			sq.monsters.set_space(sq.origin)
-			sq.villagers.set_space(sq.origin)
 			_show_terrain(sq)
 		1:
-			add_child(sq.town)
-			sq.town.spawn(_camera, _road, _props, _crystal)
-		2:
 			add_child(sq.rocks)
 			sq.rocks.spawn(_camera, _props, _chunks)
-		3:
+		2:
 			add_child(sq.forest)
 			sq.forest.spawn(_camera, _props, _chunks)
-		4:
+		3:
 			sq.river.spawn(_rivers, sq.origin, _catalog.water_material, _bank_look, sq.painted)
-		5:
+		4:
 			sq.decor.spawn(_decor_kit, _decor, sq.origin)
 		_:
 			_finishing.remove_at(0)
@@ -799,63 +605,23 @@ func _finish_step() -> void:
 
 
 func _finish(sq: Square) -> void:
-	add_child(sq.monsters)
-	# Nad čtvercem levelu visí jed, dokud továrna level nesplní.
 	sq.air = SquareAir.new()
 	sq.air.name = "Air_%d_%d" % [sq.coord.x, sq.coord.y]
 	_host.add_child(sq.air)
-	sq.air.setup(sq.air_mask, _side, sq.origin, sq.level > 0 and not _done.has(sq.coord))
+	sq.air.setup(sq.air_mask, _side, sq.origin)
 	sq.air_mask = {}
 	_chunks.refresh()
-	_built_square(sq)
 	sq.ready = true
 	_chart(sq)
-	if not _opened and _opens_at(sq):
+	if not _opened and sq.coord == Vector2i.ZERO:
 		_open_play(sq)
-	elif _opened and sq.layout != "empty":
-		_add_labels(sq)
 
 
-## Čtverec do mapy v rohu: jeho obrázek a značky továrny a skladů.
+## Čtverec do mapy v rohu.
 func _chart(sq: Square) -> void:
 	if _hud == null or sq.chart == null:
 		return
-	var marks: Array = []
-	if sq.town.suit_factory() != null and sq.town.center() != Vector2.INF:
-		marks.append([sq.town.center(), true])
-	for store in sq.town.store_count():
-		marks.append([sq.town.store_center(store), false])
-	_hud.minimap.add_square(sq.coord, sq.origin, sq.chart, marks)
-
-
-func _built_square(sq: Square) -> void:
-	if sq.level <= 0 or sq.town.suit_factory() == null:
-		return
-	if _stores.has(sq.coord):
-		sq.town.restore_stores(_stores[sq.coord])
-		_stores.erase(sq.coord)
-	var game := SuitGame.new()
-	game.name = "Suits_%d_%d" % [sq.coord.x, sq.coord.y]
-	add_child(game)
-	if not game.setup(sq.town):
-		game.queue_free()
-		return
-	_games[sq.coord] = game
-	game.factory().point_mines(sq.rocks)
-	game.progressed.connect(_on_progress.bind(sq.coord))
-	game.completed.connect(_on_completed.bind(sq.coord))
-	if _done.has(sq.coord):
-		game.factory().restore({"done": true, "suits": int(_done[sq.coord])})
-		game.mark_done()
-	elif sq.coord == _active and _pending.has("factory"):
-		game.factory().restore(_pending["factory"])
-		_pending.erase("factory")
-	if sq.coord == _active and _hud != null:
-		_hud.set_goal(_title(), game.target())
-
-
-func _opens_at(sq: Square) -> bool:
-	return sq.coord == _start
+	_hud.minimap.add_square(sq.coord, sq.origin, sq.chart)
 
 
 func _open_play(sq: Square) -> void:
@@ -869,21 +635,18 @@ func _open_play(sq: Square) -> void:
 		var person := Person.new()
 		person.name = "Person%d" % (i + 1)
 		_props.add_child(person)
-		person.setup(sq.rocks, sq.forest, sq.town, _camera, sq.map, _crystal, i)
+		person.setup(sq.rocks, sq.forest, _camera, sq.map, _crystal, i)
 		person.walker.world_board = self
 		person.walker.crowd = _crowd
 		person.crowd_id = _crowd.join(person)
 		person.party = _party
-		person.use_square(sq.rocks, sq.town, sq.origin, _span())
 		_host._persons.append(person)
 		_party.members.append(person)
-		_where[person] = sq.coord
-	_place_persons(sq)
-	_add_labels(sq)
+	_ring_persons()
 	_hud = Hud.new()
 	_hud.name = "Game"
 	_host.get_node("Hint").add_child(_hud)
-	_setup_hud(sq)
+	_setup_hud()
 	_host._hud = _hud
 	_hud.minimap.setup(_camera, _host._persons, _seen, _side)
 	for key in _squares:
@@ -892,7 +655,6 @@ func _open_play(sq: Square) -> void:
 			_chart(built)
 	for person in _host._persons:
 		person.held_changed.connect(_hud.set_held.bind(person.player_index))
-		_dress(person)
 	var music := RandomNumberGenerator.new()
 	Benchmark.seed_rng(music, 1)
 	Sound.play_level_music(music)
@@ -901,9 +663,7 @@ func _open_play(sq: Square) -> void:
 	_host._map_ready = true
 	_opened = true
 	sq.walker.crowd = _crowd
-	_wake(sq)
 	_party.frame()
-	_show_task()
 	if _hunt != null:
 		_hunt.crowd = _crowd
 		_hunt.start(self, _camera, _host._persons, _props, _day.phase, sq.map.surfaces)
@@ -928,28 +688,7 @@ func _drift(delta: float) -> void:
 	_camera.position += FLY_DIR * FLY_SPEED * delta
 
 
-## Uložená hra: postavy stojí, kde stály, a nesou, co nesly. Každá používá doly a továrnu
-## čtverce, na kterém stojí.
-func _place_persons(sq: Square) -> void:
-	var saved: Array = _pending.get("persons", [])
-	_pending.erase("persons")
-	if saved.is_empty():
-		_ring_persons()
-		return
-	for i in _host._persons.size():
-		var person: Person = _host._persons[i]
-		if i >= saved.size():
-			person.position = person._free_spot(_host._persons[0].position)
-			continue
-		person.restore(saved[i])
-		var coord := _coord(person.position)
-		_where[person] = coord
-		var here := _square(coord)
-		if here != null and here.ready:
-			person.use_square(here.rocks, here.town, here.origin, _span())
-
-
-## Nová hra: první postava stojí u továrny, další v kruhu kolem ní.
+## První postava stojí uprostřed úvodního čtverce, další v kruhu kolem ní.
 func _ring_persons() -> void:
 	var first: Vector2 = _host._persons[0].position
 	var tile := float(TerrainCatalog.TILE_SIZE)
@@ -959,38 +698,17 @@ func _ring_persons() -> void:
 		person.position = person._free_spot(first + Vector2.from_angle(angle) * SPAWN_RING * tile)
 
 
-func _setup_hud(_sq: Square) -> void:
-	if _free:
-		_hud.setup(_crystal, GameSession.players)
-		if _hunt != null:
-			_hud.hunt(Hunt.SECONDS)
-		else:
-			_hud.free_roam()
+func _setup_hud() -> void:
+	_hud.setup(_crystal, GameSession.players)
+	if _hunt != null:
+		_hud.hunt(Hunt.title(), Hunt.SECONDS, GameSession.mode == GameSession.COLLECT)
 	else:
-		var game: SuitGame = _games.get(_active)
-		var target := game.target() if game != null else 1
-		_hud.setup(_crystal, GameSession.players)
-		_hud.set_goal(_title(), target)
-		if game != null:
-			_hud.set_progress(game.stored())
-		_hud.set_time(_time)
+		_hud.free_roam()
 	_hud.menu_pressed.connect(_host._to_menu)
 	_hud.pause_requested.connect(_host._open_pause)
 	_hud.pause_closed.connect(_host._close_pause)
 	_hud.main_menu_pressed.connect(_host._to_main_menu)
 	_hud.again_pressed.connect(_host._play_again)
-
-
-## Dýchací přístroj, ukradený kámen zmizí. Co postava udělá, se hlásí vesničanům čtverce,
-## na kterém stojí: kdo ji sleduje, jde za ní.
-func _dress(person: Person) -> void:
-	# Ve volném pohybu není jed, dýchací přístroj netřeba.
-	person.wear_gear(not _free)
-	person.used_store.connect(_on_used_store.bind(person))
-	person.took_gem.connect(_on_took.bind(person))
-	person.threw_gem.connect(_on_threw.bind(person))
-	person.touched_factory.connect(_on_touched.bind(person))
-	_hud.set_held(person.carried(), person.player_index)
 
 
 func _show_terrain(sq: Square) -> void:
@@ -1025,122 +743,12 @@ func _show_terrain(sq: Square) -> void:
 	)
 
 
-func _add_labels(sq: Square) -> void:
-	var spots: Array = sq.rocks.pond_spots()
-	if spots.is_empty():
-		return
-	var labels := PondLabels.new()
-	labels.name = _labels_name(sq)
-	_add_screen_labels(labels)
-	labels.setup(spots, _crystal, _host._persons, _camera)
-
-
-func _labels_name(sq: Square) -> String:
-	return "Ponds_%d_%d" % [sq.coord.x, sq.coord.y]
-
-
-## Nápisy nad doly a příšerami jsou na obrazovce ve vrstvě HUD (Hint), pod HUD a pauzou. Ve
+## Nápisy nad příšerami a kameny jsou na obrazovce ve vrstvě HUD (Hint), pod HUD a pauzou. Ve
 ## světě by se při nižším rozlišení kreslily zmenšené a rozmazané.
 func _add_screen_labels(labels: Node) -> void:
 	var layer: Node = _host.get_node("Hint")
 	layer.add_child(labels)
 	layer.move_child(labels, 0)
-
-
-func _wake(sq: Square) -> void:
-	if sq.awake or sq.layout == "empty":
-		return
-	sq.walker.crowd = _crowd
-	var rng := RandomNumberGenerator.new()
-	Benchmark.seed_rng(rng, hash(sq.coord))
-	sq.monsters.spawn(sq.rocks.pond_materials(), _crystal, sq.walker, sq.rocks, sq.forest, _host._persons, _camera, _props, rng)
-	Benchmark.seed_rng(rng, hash(sq.coord) + 1)
-	sq.villagers.spawn(sq.town, sq.rocks, _crystal, sq.walker, _host._persons, _camera, _props, sq.monsters, rng, _saved_villagers(sq))
-	if not sq.villagers.members.is_empty() and sq.villagers.get_parent() == null:
-		add_child(sq.villagers)
-	sq.awake = true
-	_woke(sq)
-
-
-## Uložená hra: stejní vesničané čtverce levelu jako při uložení.
-func _saved_villagers(sq: Square) -> Array:
-	return _pending.get("villagers", []) if sq.coord == _active else []
-
-
-func _woke(sq: Square) -> void:
-	var game: SuitGame = _games.get(sq.coord)
-	if game == null:
-		return
-	game.attach(sq.villagers, sq.monsters)
-	if sq.coord != _active:
-		return
-	if _pending.has("villagers"):
-		sq.villagers.restore(_pending["villagers"], _host._persons)
-		_pending.erase("villagers")
-	if _pending.has("monsters"):
-		sq.monsters.restore(_pending["monsters"], LOAD_CALM)
-		_pending.erase("monsters")
-	if _pending.has("stored"):
-		game.restore(int(_pending["stored"]))
-		_pending.erase("stored")
-		if _hud != null:
-			_hud.set_progress(game.stored())
-
-
-func _sleep(sq: Square) -> void:
-	for monster in sq.monsters.members:
-		_release(monster)
-	sq.monsters.members.clear()
-	for villager in sq.villagers.members:
-		_release(villager)
-	sq.villagers.members.clear()
-	if sq.villagers.get_parent() != null:
-		sq.villagers.get_parent().remove_child(sq.villagers)
-	sq.awake = false
-	var game: SuitGame = _games.get(sq.coord)
-	if game != null:
-		game.detach()
-
-
-func _release(member: Node) -> void:
-	if not is_instance_valid(member):
-		return
-	member.visible = false
-	member.process_mode = Node.PROCESS_MODE_DISABLED
-	member.queue_free()
-
-
-func _actors() -> void:
-	var near := {}
-	for person in _host._persons:
-		var coord: Vector2i = _where.get(person, _coord(person.position))
-		for y in range(-1, 2):
-			for x in range(-1, 2):
-				near[coord + Vector2i(x, y)] = true
-	for key in _squares:
-		var sq: Square = _squares[key]
-		if not sq.ready:
-			continue
-		var keep := bool(near.has(sq.coord)) and sq.layout != "empty"
-		if keep and not sq.awake:
-			_wake(sq)
-		elif sq.awake and not keep:
-			_sleep(sq)
-
-
-func _follow() -> void:
-	for person in _host._persons:
-		var coord := _coord(person.position)
-		var prev: Vector2i = _where.get(person, coord)
-		if prev == coord:
-			_where[person] = coord
-			continue
-		var sq := _square(coord)
-		if sq == null or not sq.ready:
-			continue
-		person.leave_square()
-		person.use_square(sq.rocks, sq.town, sq.origin, _span())
-		_where[person] = coord
 
 
 func _consider(pos: Vector2) -> void:
@@ -1170,31 +778,9 @@ func _consider(pos: Vector2) -> void:
 		_enqueue(coord + Vector2i(1, 1))
 
 
-## Šipka ukazuje na továrnu levelu. Než je její čtverec hotový, na jeho střed.
-func _show_task() -> void:
-	if _free or _hud == null or _host._persons.is_empty():
-		return
-	var sq := _square(_active)
-	var aim := _origin_of(_active) + Vector2(_span(), _span()) * 0.5
-	if sq != null and sq.ready and sq.town.center() != Vector2.INF:
-		aim = sq.town.center()
-	var to_screen := (_host.get_viewport() as Viewport).get_canvas_transform()
-	_hud.point_factory(to_screen * _camera.get_screen_center_position(), to_screen * aim)
-	_hud.set_edge_alarm(_alarm())
-
-
-## Hraje hudba při honičce? Dokud kdokoli nese kámen: hráč nebo vesničan na probuzeném čtverci.
-## V Chytej příšery, dokud na obrazovce některá příšera utíká.
+## Hraje hudba honičky? Když na obrazovce některá příšera utíká nebo honí (Hunt).
 func _chase_music() -> bool:
-	if _hunt != null:
-		return _hunt.any_fleeing()
-	if Monsters.anyone_carrying(_host._persons, []):
-		return true
-	for key in _squares:
-		var sq: Square = _squares[key]
-		if sq.awake and not sq.monsters.carriers.is_empty():
-			return true
-	return false
+	return _hunt != null and _hunt.any_chase()
 
 
 func _sound(_delta: float) -> void:
@@ -1223,7 +809,7 @@ func _water_near(pos: Vector2) -> float:
 	return 1.0 - meters / WATER_HEAR
 
 
-## Volný pohyb: uvolní čtverce daleko od hráčů. Čtverec, vedle kterého se ještě něco tvoří,
+## Uvolní čtverce daleko od hráčů. Čtverec, vedle kterého se ještě něco tvoří,
 ## zůstane, nový soused z něj bere kraj. Čtverec (0, 0) má terén ve scéně hry, zůstane taky.
 func _park_far() -> void:
 	var homes: Array[Vector2i] = []
@@ -1271,13 +857,7 @@ func _park(sq: Square) -> void:
 		sq.ground.queue_free()
 	if sq.air != null:
 		sq.air.queue_free()
-	# Nápisy dolů čtverce. Po návratu se přidají znovu, jinak by jich tam bylo víc přes sebe.
-	var labels: Node = _host.get_node_or_null(NodePath("Hint/" + _labels_name(sq)))
-	if labels != null:
-		# Hned ze stromu, ať jméno neblokuje nápisy, kdyby se čtverec vrátil ještě v tomhle snímku.
-		labels.get_parent().remove_child(labels)
-		labels.queue_free()
-	for node: Node in [sq.rocks, sq.forest, sq.town, sq.monsters, sq.villagers]:
+	for node: Node in [sq.rocks, sq.forest]:
 		if node.get_parent() != null:
 			node.get_parent().remove_child(node)
 		node.queue_free()
@@ -1301,16 +881,6 @@ func _square(coord: Vector2i) -> Square:
 	return _squares.get(coord) as Square
 
 
-## Jed čtverce pod středem kamery obarví svět.
-func _follow_tint(delta: float) -> void:
-	var sq := _square(_coord(_camera.get_screen_center_position()))
-	var target: float = sq.air.poison() if sq != null and sq.air != null else 0.0
-	_tint_amount = move_toward(_tint_amount, target, delta / TINT_FADE)
-	_tint_time += delta
-	var color := SquareAir.tint(_tint_amount, _tint_time)
-	_tint.color = color
-
-
 func _coord(pos: Vector2) -> Vector2i:
 	var span := _span()
 	return Vector2i(floori(pos.x / span), floori(pos.y / span))
@@ -1322,13 +892,6 @@ func _origin_of(coord: Vector2i) -> Vector2:
 
 func _span() -> float:
 	return float(_side * TerrainCatalog.TILE_SIZE)
-
-
-func _edge_meters(pos: Vector2) -> float:
-	var span := _span()
-	var local := pos - _origin_of(_coord(pos))
-	var edge := minf(minf(local.x, local.y), minf(span - local.x, span - local.y))
-	return edge / float(TerrainCatalog.TILE_SIZE)
 
 
 func _water_map(map: MapData) -> Dictionary:
@@ -1368,264 +931,21 @@ func _water_map(map: MapData) -> Dictionary:
 	return {"side": side, "far": far}
 
 
-## Pokračování uložené hry. Čtverce se staví z uložených map, nejdřív ty nejblíž hráčům.
-func _load(data: Dictionary) -> void:
-	_level = int(data.get("level", 1))
-	_time = float(data.get("time", 0.0))
-	_level_time = float(data.get("level_time", 0.0))
-	_day.phase = float(data.get("day", DayNight.START))
-	_day.days = int(data.get("days", 0))
-	_active = data.get("active", Vector2i.ZERO)
-	_locked = bool(data.get("locked", true))
-	_levels = data.get("levels", {Vector2i.ZERO: 1})
-	_done = data.get("done", {})
-	_world_rng.state = int(data.get("rng", _world_rng.state))
-	_pending = data.get("state", {})
-	_stores = data.get("stores", {})
-	var seen: Dictionary = data.get("seen", {})
-	for coord: Vector2i in seen:
-		_seen[coord] = (seen[coord] as PackedByteArray).decompress(_side * _side, FileAccess.COMPRESSION_ZSTD)
-	var persons: Array = _pending.get("persons", [])
-	var first: Vector2 = _origin_of(_active) + Vector2(_span(), _span()) * 0.5
-	if not persons.is_empty():
-		first = (persons[0] as Dictionary).get("pos", first)
-	_start = _coord(first)
-	_camera.position = first
-	var squares: Array = data.get("squares", [])
-	squares.sort_custom(_nearer_start)
-	var remap := _terrain_remap(data.get("terrains", PackedStringArray()))
-	for entry: Dictionary in squares:
-		var blob: PackedByteArray = entry["data"]
-		var record: Variant = bytes_to_var(blob.decompress(int(entry["size"]), FileAccess.COMPRESSION_ZSTD))
-		if typeof(record) != TYPE_DICTIONARY:
-			push_warning("Čtverec %s uložené hry nejde přečíst." % entry["coord"])
-			continue
-		var coord: Vector2i = entry["coord"]
-		if not remap.is_empty():
-			_remap_record(record, remap)
-		_enqueue(coord, record)
-		var sq := _square(coord)
-		# Přemapovaný čtverec se při dalším uložení zabalí znovu.
-		if sq != null and remap.is_empty():
-			sq.blob = blob
-			sq.blob_size = int(entry["size"])
-	# Čtverec levelu ani čtverec hráčů nemusí být uložený, když se zrovna tvořil.
-	_enqueue(_start)
-	_enqueue(_active)
-	# Mapy už jsou ve čtvercích, velký slovník se nemusí držet.
-	GameSession.suit_resume = {}
+# --- Konec hry ---
 
 
-## Uložená hra drží terén jako čísla do seznamu jmen v době uložení. Když se seznam od té
-## doby změnil (přibyl terén), vrátí převod starého čísla na nové. Prázdný, když se nezměnil.
-## Terén, který už v katalogu není, se změní na trávu.
-func _terrain_remap(saved_names: PackedStringArray) -> PackedByteArray:
-	if saved_names == _catalog.names:
-		return PackedByteArray()
-	var remap := PackedByteArray()
-	remap.resize(256)
-	for id in 256:
-		remap[id] = id
-	var fallback := maxi(_catalog.names.find("grass"), 0)
-	for id in saved_names.size():
-		var now := _catalog.names.find(saved_names[id])
-		remap[id] = now if now >= 0 else fallback
-	return remap
-
-
-func _remap_record(record: Dictionary, remap: PackedByteArray) -> void:
-	for key in ["terrain", "vertex"]:
-		record[key] = _remapped(record[key], remap)
-	var halo: Array = record["halo"]
-	for i in halo.size():
-		halo[i] = _remapped(halo[i], remap)
-
-
-## MapData.UNCLAIMED_TERRAIN zůstane, jak je.
-func _remapped(bytes: PackedByteArray, remap: PackedByteArray) -> PackedByteArray:
-	var out := bytes.duplicate()
-	for i in out.size():
-		if out[i] != MapData.UNCLAIMED_TERRAIN:
-			out[i] = remap[out[i]]
-	return out
-
-
-func _nearer_start(a: Dictionary, b: Dictionary) -> bool:
-	var to_a: Vector2i = a["coord"] - _start
-	var to_b: Vector2i = b["coord"] - _start
-	return Vector2(to_a).length_squared() < Vector2(to_b).length_squared()
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST and not _closed_saved:
-		_save()
-		_closed_saved = true
-
-
-func _villagers_of(person: Person) -> Villagers:
-	var sq := _square(_where.get(person, _coord(person.position)))
-	return sq.villagers if sq != null and sq.awake else null
-
-
-func _on_took(slot: int, mat: int, person: Person) -> void:
-	var villagers := _villagers_of(person)
-	if villagers != null:
-		villagers.leader_took(slot, mat, person)
-
-
-func _on_threw(person: Person) -> void:
-	var villagers := _villagers_of(person)
-	if villagers != null:
-		villagers.leader_threw(person)
-
-
-func _on_used_store(bay: int, left: int, took: int, person: Person) -> void:
-	var villagers := _villagers_of(person)
-	if villagers != null:
-		villagers.leader_used_store(bay, left, took, person)
-
-
-func _on_touched(person: Person) -> void:
-	var villagers := _villagers_of(person)
-	if villagers != null:
-		villagers.leader_touched(person)
-
-
-## Ohrada: postava ve čtverci levelu z něj nevyjde. Kraj ji zastaví FENCE_M metrů před sebou.
-## Kdo do čtverce teprve vešel, má ohradu tam, kde stojí, a ta se s každým krokem dovnitř
-## posune, až je FENCE_M od kraje.
-func _update_fence() -> void:
-	var rect := Rect2(_origin_of(_active), Vector2(_span(), _span()))
-	var full := FENCE_M * float(TerrainCatalog.TILE_SIZE)
-	for person: Person in _host._persons:
-		if not _locked or not rect.has_point(person.position):
-			person.walker.fence = Rect2()
-			_insets.erase(person)
-			continue
-		var local := person.position - rect.position
-		var edge := minf(minf(local.x, local.y), minf(rect.size.x - local.x, rect.size.y - local.y))
-		var inset := clampf(edge, float(_insets.get(person, 0.0)), full)
-		_insets[person] = inset
-		person.walker.fence = rect.grow(-inset)
-
-
-## Po splnění levelu: kdo se přiblíží k nové továrně na LOCK_M metrů, zavře hráče v jejím čtverci.
-func _check_lock() -> void:
-	if _locked:
-		return
-	var sq := _square(_active)
-	if sq == null or not sq.ready or sq.town.center() == Vector2.INF:
-		return
-	var reach := LOCK_M * float(TerrainCatalog.TILE_SIZE)
-	for person: Person in _host._persons:
-		if person.position.distance_to(sq.town.center()) <= reach:
-			_locked = true
-			return
-
-
-# --- Úkol ---
-
-func _title() -> String:
-	return "Level %d / %d" % [_level, GameSession.last_level()]
-
-
-## Jak moc šipka bliká: podle postavy nejblíž kraji čtverce levelu.
-func _alarm() -> int:
-	if not _locked:
-		return 0
-	var rect := Rect2(_origin_of(_active), Vector2(_span(), _span()))
-	var nearest := INF
-	for person: Person in _host._persons:
-		if rect.has_point(person.position):
-			nearest = minf(nearest, _edge_meters(person.position))
-	if nearest <= ALARM_M:
-		return 2
-	return 1 if nearest <= BLINK_M else 0
-
-
-func _on_progress(done: int, coord: Vector2i) -> void:
-	if coord == _active and _hud != null:
-		_hud.set_progress(done)
-
-
-func _on_completed(coord: Vector2i) -> void:
-	if coord != _active or _finished:
-		return
-	_done[coord] = 0
-	var cleared := _square(coord)
-	if cleared != null and cleared.air != null:
-		cleared.air.clear_poison()
-	var took := _level_time
-	if _level >= GameSession.last_level():
-		_finish_game()
-		return
-	var finished := _level
-	_level += 1
-	_level_time = 0.0
-	_active = _next_square(coord)
-	_levels[_active] = _level
-	_locked = false
-	_enqueue(_active)
-	Sound.ui("win")
-	_hud.set_goal(_title(), 1)
-	_hud.show_notice("Level %d splněn za %s. Šipka ukazuje k nové továrně." % [finished, GameSession.clock(took)], LEVEL_NOTICE)
-	_save()
-
-
-## Nejbližší čtverec od from, kde ještě nic není. Z několika stejně blízkých náhodně.
-func _next_square(from: Vector2i) -> Vector2i:
-	var radius := 1
-	var best := INF
-	var picks: Array[Vector2i] = []
-	while true:
-		for y in range(-radius, radius + 1):
-			for x in range(-radius, radius + 1):
-				if maxi(absi(x), absi(y)) != radius:
-					continue
-				var coord := from + Vector2i(x, y)
-				if _squares.has(coord):
-					continue
-				var dist := Vector2(x, y).length()
-				if dist < best - 0.001:
-					best = dist
-					picks.clear()
-				if dist <= best + 0.001:
-					picks.append(coord)
-		# Šikmé místo na tomhle kruhu může být dál než rovné na dalším. Hledá se tedy, dokud
-		# nejbližší nalezené není nejvýš tak daleko jako další kruh.
-		if not picks.is_empty() and best <= float(radius + 1):
-			return picks[_world_rng.randi_range(0, picks.size() - 1)]
-		radius += 1
-	return from
-
-
-func _finish_game() -> void:
-	_finished = true
-	Sound.duck_music()
-	Sound.stop_ambient()
-	Sound.ui("win")
-	get_tree().paused = true
-	SuitSaves.finish_game(_header())
-	var note := "Všech %d levelů splněno · čas %s" % [GameSession.last_level(), GameSession.clock(_time)]
-	var rank := _rank()
-	if rank > 0:
-		note += " · %d. místo ve výkonech" % rank
-	_hud.show_result("Konec hry", note)
-
-
-## Chytej příšery: čas vypršel. Hra stojí. Vejde-li se výkon do tabulky, nabídne se jméno
+## Čas vypršel. Hra stojí. Vejde-li se výkon do tabulky, nabídne se jméno
 ## (předvyplněné posledním pro tolik hráčů), pak se zapíše a ukáže tabulka.
 func _finish_hunt(points: int, caught: int) -> void:
-	_finished = true
 	Sound.duck_music()
 	Sound.stop_ambient()
 	Sound.ui("win")
 	get_tree().paused = true
 	var players := GameSession.players.size()
-	var note := "%d bodů · chyceno %s" % [points, Hunt.creatures_text(caught)]
+	var note := "%d bodů · %s" % [points, Hunt.count_text(caught)]
 	if not Hunt.qualifies(players, points):
 		_hud.show_records("Čas vypršel", note + "\nDo tabulky %s se výkon nevešel." % _players_of(players),
-			Hunt.records(players), -1)
+			Hunt.records(players), -1, Hunt.count_caption())
 		return
 	_hud.name_entered.connect(_save_hunt.bind(points, caught, note), CONNECT_ONE_SHOT)
 	_hud.ask_name("Čas vypršel", note, Hunt.last_name(players))
@@ -1638,98 +958,9 @@ func _save_hunt(name: String, points: int, caught: int, note: String) -> void:
 		note += "\nNový rekord %s!" % _players_of(players)
 	elif rank > 0:
 		note += "\n%d. místo %s" % [rank, _players_of(players)]
-	_hud.show_records("Čas vypršel", note, Hunt.records(players), rank - 1)
+	_hud.show_records("Čas vypršel", note, Hunt.records(players), rank - 1, Hunt.count_caption())
 
 
 ## „pro 1 hráče“, „pro 3 hráče“.
 static func _players_of(count: int) -> String:
 	return "pro %d hráče" % count if count <= 4 else "pro %d hráčů" % count
-
-
-## Kolikátá je tahle hra ve výkonech pro stejný počet hráčů. 0 když tam není.
-func _rank() -> int:
-	var rows := SuitSaves.results(GameSession.players.size())
-	for i in rows.size():
-		if str(rows[i]["id"]) == GameSession.suit_id:
-			return i + 1
-	return 0
-
-
-# --- Uložení ---
-
-func _save() -> void:
-	_save_left = SAVE_EVERY
-	# Průlet v menu nesmí přepsat uloženou hru, i když v relaci ještě je její id.
-	if _flyover or not _opened or _finished or GameSession.suit_id.is_empty():
-		return
-	SuitSaves.save_game(_header(), _snapshot())
-
-
-func _header() -> Dictionary:
-	return {
-		"id": GameSession.suit_id,
-		"name": GameSession.suit_name,
-		"players": SuitSaves.outfits(GameSession.players),
-		"level": _level,
-		"time": _time,
-	}
-
-
-## Celá hra k uložení. Rozpracované čtverce se neukládají, po načtení se vytvoří znovu.
-func _snapshot() -> Dictionary:
-	var squares: Array = []
-	for coord: Vector2i in _squares:
-		var sq: Square = _squares[coord]
-		if sq.map == null or sq.task >= 0:
-			continue
-		if sq.blob.is_empty():
-			var raw := var_to_bytes(_record(sq))
-			sq.blob = raw.compress(FileAccess.COMPRESSION_ZSTD)
-			sq.blob_size = raw.size()
-		squares.append({"coord": coord, "size": sq.blob_size, "data": sq.blob})
-	var seen := {}
-	for coord: Vector2i in _seen:
-		seen[coord] = (_seen[coord] as PackedByteArray).compress(FileAccess.COMPRESSION_ZSTD)
-	var done := {}
-	for coord: Vector2i in _done:
-		var finished: SuitGame = _games.get(coord)
-		done[coord] = int(finished.factory().snapshot()["suits"]) if finished != null else int(_done[coord])
-	# Sklady čtverců, které po načtení ještě nevznikly, se uloží znovu, jak byly.
-	var stores := _stores.duplicate()
-	for coord: Vector2i in _squares:
-		var built: Square = _squares[coord]
-		if built.ready and built.town.store_count() > 0:
-			stores[coord] = built.town.store_snapshot()
-	var persons: Array = []
-	for person: Person in _host._persons:
-		persons.append(person.snapshot())
-	# Co z uložené hry ještě nedošlo na řadu, se uloží znovu, jak bylo.
-	var state := _pending.duplicate()
-	state["persons"] = persons
-	var game: SuitGame = _games.get(_active)
-	if game != null:
-		state["factory"] = game.factory().snapshot()
-		# Dokud vesničané čtverce po načtení nevznikli, postup čeká v _pending.
-		if not _pending.has("stored"):
-			state["stored"] = game.stored()
-	var sq := _square(_active)
-	if sq != null and sq.awake:
-		state["villagers"] = sq.villagers.snapshot(_host._persons)
-		state["monsters"] = sq.monsters.snapshot()
-	return {
-		"level": _level,
-		"time": _time,
-		"level_time": _level_time,
-		"day": _day.phase,
-		"days": _day.days,
-		"active": _active,
-		"locked": _locked,
-		"levels": _levels,
-		"done": done,
-		"rng": _world_rng.state,
-		"terrains": _catalog.names,
-		"squares": squares,
-		"seen": seen,
-		"stores": stores,
-		"state": state,
-	}

@@ -2,8 +2,8 @@ extends Control
 
 ## Údaje hry v horních rozích a okno na konci hry. Sám nic nepočítá, svět mu říká, co ukázat.
 ## Vlevo mapa objeveného světa (MiniMap), vždy vidět. Vpravo obzor se sluncem nebo měsícem
-## (SkyDial, vždy vidět), level, kolik kamenů je v zásobnících továrny a malým písmem čas hry,
-## vedle logo „MM“, tlačítko menu. Pod nimi co nese každý hráč (kroužek v barvě jeho trika).
+## (SkyDial, vždy vidět), název režimu, body a malým písmem zbývající čas, vedle logo „MM“,
+## tlačítko menu. Ve Sbírání materiálů pod nimi co nese každý hráč (kroužek v barvě jeho trika).
 ## Panely mají styl panelů menu. Okno konce hry běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
@@ -13,25 +13,18 @@ const MENU_ICON := preload("res://graphics/menu/logo_mm.png")
 const MaterialTitle := preload("res://scripts/material_title.gd")
 const MiniMap := preload("res://scripts/minimap.gd")
 const DayNight := preload("res://scripts/day_night.gd")
-const SuitSaves := preload("res://scripts/suit_saves.gd")
 const SoftKeyboard := preload("res://scripts/soft_keyboard.gd")
 const ButtonGem := preload("res://scripts/button_gem.gd")
 
-## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře drží ARROW_BELOW pod
-## panely v rozích, nejméně ARROW_TOP.
-const ARROW_EDGE := 44.0
-const ARROW_TOP := 96.0
-const ARROW_BELOW := 24.0
-## Panel mapy je MAP_SHARE šířky panelu levelu. Než se panel levelu rozměří, počítá se
+## Panel mapy je MAP_SHARE šířky panelu bodů. Než se panel levelu rozměří, počítá se
 ## s šířkou MAP_WIDTH.
 const MAP_WIDTH := 200.0
 const MAP_SHARE := 0.8
 const MAP_MARGIN := 6.0
-## Blikání šipky u kraje čtverce za sekundu, výrazné je rychlejší.
-const BLINK_HZ := 2.0
-const BLINK_STRONG_HZ := 4.5
 const EDGE := 20.0
-## Výška horní lišty: panel nesených kamenů, panel postupu i čtvercové tlačítko menu.
+## Ukázat ve Sbírání materiálů panel s tím, co kdo nese? Vypnuté, hunt ho pak nezapne.
+const SHOW_HELD := false
+## Výška horní lišty: panel nesených kamenů, panel bodů i čtvercové tlačítko menu.
 const BAR_HEIGHT := 52.0
 ## Kroužek s neseným kamenem a měřítko kamene v něm.
 const SLOT := 38.0
@@ -41,10 +34,8 @@ const DIM := Color(0.95, 0.93, 0.88, 0.55)
 const ACCENT := Color(0.86, 0.66, 0.3)
 ## Tabulka výkonů v okně konce ukáže tolik řádků, další se posouvají.
 const RECORDS_VISIBLE := 8
-## Šířky sloupců tabulky výkonů: pořadí, jméno, body, chyceno, datum.
+## Šířky sloupců tabulky výkonů: pořadí, jméno, body, chyceno (sebráno), datum.
 const RECORD_COLUMNS: Array[float] = [36.0, 220.0, 56.0, 76.0, 190.0]
-## Výrazně blikající šipka je červená.
-const ALARM_COLOR := Color(0.94, 0.4, 0.32)
 
 signal menu_pressed
 ## Tlačítko Menu nebo Esc / Start. Otevření pauzy řeší svět.
@@ -53,9 +44,9 @@ signal pause_requested
 signal pause_closed
 ## Pauza chce zpátky na hlavní menu.
 signal main_menu_pressed
-## Okno konce Chytej příšery: hrát znovu se stejnými hráči.
+## Okno konce hry: hrát znovu se stejnými hráči.
 signal again_pressed
-## Okno konce Chytej příšery: jméno k zápisu výkonu, oříznuté a nikdy prázdné.
+## Okno konce hry: jméno k zápisu výkonu, oříznuté a nikdy prázdné.
 signal name_entered(name: String)
 
 var _crystal: Crystal
@@ -69,20 +60,15 @@ var _held_names: Array[Label] = []
 var _gem_offsets := {}
 ## Víc hráčů než tolik: víceslovný název kamene se zkrátí (Lávový k.), ať je panel úzký.
 const SHORT_NAMES_FROM := 4
-var _level: Label
+var _mode_title: Label
 var _score: Label
 var _unit: Label
 var _bar: ProgressBar
 var _time: Label
-var _target := 1
 var _shown_seconds := -1
-var _arrow: FactoryArrow
 var _notice: PanelContainer
 var _notice_text: Label
 var _notice_left := 0.0
-## U kraje čtverce šipka na továrnu bliká: 1 bliká, 2 bliká rychle, větší a červeně.
-var _blink := 0
-var _blink_age := 0.0
 var _result: Control
 var _result_title: MaterialTitle
 var _result_note: Label
@@ -110,17 +96,13 @@ func _ready() -> void:
 	_build_right()
 	_build_held()
 	_build_map()
-	_arrow = FactoryArrow.new()
-	_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_arrow.visible = false
-	add_child(_arrow)
 	_build_notice()
 	_build_result()
 	_build_pause()
 
 
 ## players jsou záznamy z GameSession.players. Každý dostane kroužek v barvě trika.
-## Nadpis a cíl vpravo nahoře nastaví set_goal.
+## Nadpis a čas vpravo nahoře nastaví hunt.
 func setup(crystal: Crystal, players: Array[Dictionary]) -> void:
 	_crystal = crystal
 	# Vždy v jedné řadě, ať je panel stejně vysoký jako zbytek lišty. Šest hráčů se vejde
@@ -128,13 +110,13 @@ func setup(crystal: Crystal, players: Array[Dictionary]) -> void:
 	_held_rows.columns = clampi(players.size(), 1, GameSession.MAX_PLAYERS)
 	for player: Dictionary in players:
 		_add_held_row(Color.html(str(player.get("shirt", "E8E2D2"))))
-	_unit.text = "kamenů"
 	for i in _gems.size():
-		set_held(-1, i)
+		set_held(-1, 0, i)
 
 
-## mat je číslo materiálu, -1 prázdná ruka. player je pořadí hráče.
-func set_held(mat: int, player: int = 0) -> void:
+## mat je číslo materiálu, -1 prázdná ruka, points body, které za kámen hráči dostali.
+## player je pořadí hráče.
+func set_held(mat: int, points: int, player: int = 0) -> void:
 	if player < 0 or player >= _gems.size():
 		return
 	_slots[player].queue_redraw()
@@ -146,17 +128,9 @@ func set_held(mat: int, player: int = 0) -> void:
 	_crystal.paint(_gems[player], mat, 0.0, 0.0)
 	_center_gem(_gems[player])
 	_gems[player].visible = true
-	_held_points[player].text = "+%d" % _crystal.points_of(mat)
+	_held_points[player].text = "+%d" % points
 	_held_names[player].text = _short(_crystal.title_of(mat)) if _gems.size() >= SHORT_NAMES_FROM else _crystal.title_of(mat)
 	_pop(_held_points[player])
-
-
-## Postup k cíli: kolik kamenů je v zásobnících.
-func set_progress(done: int) -> void:
-	_score.text = "%d / %d" % [done, _target]
-	_bar.value = mini(done, _target)
-	if done > 0:
-		_pop(_score)
 
 
 ## Den a noc: phase jako DayNight.phase, 0 východ slunce, 0.5 východ měsíce. moon je pořadí
@@ -165,7 +139,7 @@ func set_sky(phase: float, moon: int) -> void:
 	_sky.set_phase(phase, moon)
 
 
-## Uběhlý čas hry.
+## Čas vpravo nahoře v celých sekundách.
 func set_time(seconds: float) -> void:
 	var whole := maxi(floori(seconds), 0)
 	if whole == _shown_seconds:
@@ -174,61 +148,31 @@ func set_time(seconds: float) -> void:
 	_time.text = "%d:%02d" % [whole / 60, whole % 60]
 
 
-## Šipka na kraji obrazovky na spojnici postava (from) – továrna (to), obojí v souřadnicích
-## obrazovky. Když je střed továrny vidět, šipka zmizí.
-func point_factory(from: Vector2, to: Vector2) -> void:
-	var view := Rect2(Vector2.ZERO, size)
-	if to == Vector2.INF or view.has_point(to) or from.distance_squared_to(to) < 1.0:
-		_arrow.visible = false
-		return
-	var top := maxf(ARROW_TOP, maxf(_map_panel.get_rect().end.y, _right_column.get_rect().end.y) + ARROW_BELOW)
-	var inner := Rect2(Vector2(ARROW_EDGE, top), size - Vector2(ARROW_EDGE * 2.0, top + ARROW_EDGE))
-	var start := Vector2(clampf(from.x, inner.position.x, inner.end.x), clampf(from.y, inner.position.y, inner.end.y))
-	var dir := (to - start).normalized()
-	var reach := INF
-	if dir.x > 0.0001:
-		reach = minf(reach, (inner.end.x - start.x) / dir.x)
-	elif dir.x < -0.0001:
-		reach = minf(reach, (inner.position.x - start.x) / dir.x)
-	if dir.y > 0.0001:
-		reach = minf(reach, (inner.end.y - start.y) / dir.y)
-	elif dir.y < -0.0001:
-		reach = minf(reach, (inner.position.y - start.y) / dir.y)
-	if reach == INF:
-		_arrow.visible = false
-		return
-	_arrow.position = start + dir * reach
-	_arrow.rotation = dir.angle()
-	_arrow.visible = true
-
-
-## Volný pohyb: bez nesených kamenů, času, levelu a šipky. Zůstanou mapa a hlášky.
+## Volný pohyb: bez nesených kamenů, bodů a času. Zůstanou mapa a hlášky.
 func free_roam() -> void:
 	for panel in _corners:
 		panel.visible = false
-	_arrow.visible = false
 
 
-## Chytej příšery: bez nesených kamenů a šipky. Vpravo nahoře zbývající čas ze seconds
-## a body, pruh ukazuje zbývající čas.
-func hunt(seconds: float) -> void:
-	_held_panel.visible = false
-	_arrow.visible = false
-	_level.text = "Chytej příšery"
+## Hra na čas (Hunt): vpravo nahoře název režimu title, zbývající čas ze seconds a body, pruh
+## ukazuje zbývající čas. held ukáže pod tím, co nese každý hráč (Sbírání materiálů).
+func hunt(title: String, seconds: float, held: bool) -> void:
+	_held_panel.visible = held and SHOW_HELD
+	_mode_title.text = title
 	_unit.text = "bodů"
 	_score.text = "0"
 	_bar.max_value = seconds
 	set_countdown(seconds, seconds)
 
 
-## Zbývající čas Chytej příšery. Celé sekundy se zaokrouhlují nahoru, 0:00 je až konec.
+## Zbývající čas hry. Celé sekundy se zaokrouhlují nahoru, 0:00 je až konec.
 func set_countdown(left: float, total: float) -> void:
 	_bar.max_value = total
 	_bar.value = left
 	set_time(ceilf(left))
 
 
-## Body Chytej příšery. caught je počet chycených, ukazují se body.
+## Body hry. caught je počet chycených (sebraných), ukazují se body.
 func set_hunt_score(points: int, _caught: int) -> void:
 	_score.text = str(points)
 	_pop(_score)
@@ -245,7 +189,7 @@ func show_result(title: String, note: String, again := false) -> void:
 		_result_button("Návrat do menu", ButtonGem.BACK, menu_pressed).grab_focus()
 
 
-## Okno konce Chytej příšery, než se výkon zapíše: softwarová klávesnice s předvyplněným
+## Okno konce hry, než se výkon zapíše: softwarová klávesnice s předvyplněným
 ## jménem name. Po potvrzení name_entered (oříznuté, nikdy prázdné).
 func ask_name(title: String, note: String, name: String) -> void:
 	_open_result(title, note)
@@ -258,16 +202,17 @@ func ask_name(title: String, note: String, name: String) -> void:
 	keys.focus_start()
 
 
-## Okno konce Chytej příšery po zápisu: tabulka výkonů rows (Hunt.records), řádek mark
-## (od 0, -1 žádný) je zvýrazněný a posune se do výhledu. Pod ní Hrát znovu a menu.
-func show_records(title: String, note: String, rows: Array[Dictionary], mark: int) -> void:
+## Okno konce hry po zápisu: tabulka výkonů rows (Hunt.records), řádek mark (od 0, -1 žádný)
+## je zvýrazněný a posune se do výhledu. count je nadpis sloupce počtu (Chyceno, Sebráno).
+## Pod ní Hrát znovu a menu.
+func show_records(title: String, note: String, rows: Array[Dictionary], mark: int, count: String) -> void:
 	show_result(title, note, true)
 	if rows.is_empty():
 		return
 	# Záhlaví leží nad posuvnou částí, sloupce obou mřížek drží stejné šířky.
 	var head := _records_grid()
 	_result_body.add_child(head)
-	for caption in ["", "Jméno", "Body", "Chyceno", "Datum"]:
+	for caption in ["", "Jméno", "Body", count, "Datum"]:
 		head.add_child(_record_cell(caption, DIM, head.get_child_count()))
 	var grid := _records_grid()
 	var scroll := ScrollContainer.new()
@@ -281,7 +226,7 @@ func show_records(title: String, note: String, rows: Array[Dictionary], mark: in
 		var color := ACCENT if i == mark else TEXT
 		var name := str(row["name"])
 		var cells := ["%d." % (i + 1), name if not name.is_empty() else "Bez jména", str(row["points"]),
-			str(row["caught"]), SuitSaves.date_text(int(row["date"]))]
+			str(row["caught"]), _date_text(int(row["date"]))]
 		for column in cells.size():
 			var dim := column == 0 or column == 4
 			var cell := _record_cell(cells[column], color if i == mark or not dim else DIM, column)
@@ -291,6 +236,13 @@ func show_records(title: String, note: String, rows: Array[Dictionary], mark: in
 	if marked != null:
 		# Až se tabulka rozměří, ať je zapsaný výkon vidět i dole v delší tabulce.
 		_reveal(scroll, marked)
+
+
+## Datum a čas ve tvaru 7. 11. 2026 14:05, v místním čase.
+static func _date_text(unix: int) -> String:
+	var bias := int(Time.get_time_zone_from_system().get("bias", 0))
+	var at := Time.get_datetime_dict_from_unix_time(unix + bias * 60)
+	return "%d. %d. %d %d:%02d" % [at["day"], at["month"], at["year"], at["hour"], at["minute"]]
 
 
 func _reveal(scroll: ScrollContainer, marked: Control) -> void:
@@ -307,7 +259,6 @@ func _open_result(title: String, note: String) -> void:
 	_result_title.title = title
 	_result_note.text = note
 	_menu_button.visible = false
-	_arrow.visible = false
 	hide_notice()
 	_result.visible = true
 
@@ -437,7 +388,7 @@ func _build_right() -> void:
 	_build_menu_button()
 
 
-## Čtvercová mapa vlevo nahoře, o pětinu užší než panel levelu. Volný pohyb ji neskryje.
+## Čtvercová mapa vlevo nahoře, o pětinu užší než panel bodů. Volný pohyb ji neskryje.
 func _build_map() -> void:
 	_map_panel = PanelContainer.new()
 	_map_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -455,7 +406,7 @@ func _fit_map() -> void:
 	minimap.custom_minimum_size = Vector2.ONE * roundf(width * MAP_SHARE - MAP_MARGIN * 2.0)
 
 
-## Nahoře level a malý čas hry, pod nimi kameny v zásobnících a tenký pruh postupu.
+## Nahoře název režimu a malý zbývající čas, pod nimi body a tenký pruh zbývajícího času.
 func _build_score(panel: PanelContainer) -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", -2)
@@ -464,10 +415,10 @@ func _build_score(panel: PanelContainer) -> void:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 5)
 	column.add_child(top)
-	_level = _label(12, DIM)
-	_level.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(_level)
-	# Čas je vedlejší údaj, jen malým písmem vedle levelu.
+	_mode_title = _label(12, DIM)
+	_mode_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(_mode_title)
+	# Čas je vedlejší údaj, jen malým písmem vedle názvu.
 	var clock := ClockIcon.new()
 	clock.custom_minimum_size = Vector2(11, 11)
 	clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -504,36 +455,11 @@ func hide_notice() -> void:
 	_notice_left = 0.0
 
 
-## Nový cíl: nadpis vpravo nahoře a kolik je potřeba. Postup začne od nuly.
-func set_goal(title: String, target: int) -> void:
-	_level.text = title
-	_target = maxi(target, 1)
-	_bar.max_value = _target
-	set_progress(0)
-
-
-## 0 šipka nebliká, 1 bliká, 2 bliká výrazně: rychleji, je větší a červená.
-func set_edge_alarm(level: int) -> void:
-	_blink = level
-
-
 func _process(delta: float) -> void:
 	if _notice_left > 0.0:
 		_notice_left -= delta
 		if _notice_left <= 0.0:
 			_notice.visible = false
-	if _arrow == null:
-		return
-	if _blink > 0 and _arrow.visible:
-		var strong := _blink >= 2
-		_blink_age += delta
-		var wave := 0.5 + 0.5 * sin(_blink_age * TAU * (BLINK_STRONG_HZ if strong else BLINK_HZ))
-		_arrow.modulate = ALARM_COLOR if strong else Color.WHITE
-		_arrow.modulate.a = lerpf(0.1 if strong else 0.25, 1.0, wave)
-		_arrow.scale = Vector2.ONE * (lerpf(1.2, 1.6, wave) if strong else 1.0)
-	else:
-		_arrow.modulate = Color.WHITE
-		_arrow.scale = Vector2.ONE
 
 
 func _build_notice() -> void:
@@ -695,33 +621,6 @@ func _pop(control: Control) -> void:
 	var tween := control.create_tween()
 	control.scale = Vector2(1.18, 1.18)
 	tween.tween_property(control, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-
-## Šipka k továrně. Hrot míří po ose x, uzel natáčí HUD. Jemně pulzuje ve směru hrotu.
-class FactoryArrow:
-	extends Control
-
-	const LENGTH := 30.0
-	const WIDTH := 26.0
-	const PULSE := 5.0
-
-	var _time := 0.0
-
-	func _process(delta: float) -> void:
-		if not visible:
-			return
-		_time += delta
-		queue_redraw()
-
-	func _draw() -> void:
-		var shift := sin(_time * 5.0) * PULSE
-		var tip := Vector2(LENGTH * 0.5 + shift, 0.0)
-		var back := Vector2(-LENGTH * 0.5 + shift, 0.0)
-		var points := PackedVector2Array([tip, back + Vector2(0.0, -WIDTH * 0.5), back + Vector2(LENGTH * 0.25, 0.0), back + Vector2(0.0, WIDTH * 0.5)])
-		var outline := PackedVector2Array(points)
-		outline.append(points[0])
-		draw_colored_polygon(points, Color(0.86, 0.66, 0.3, 0.95))
-		draw_polyline(outline, Color(0.1, 0.092, 0.082, 0.9), 3.0, true)
 
 
 ## Malé hodiny před časem hry.

@@ -28,29 +28,24 @@ func _ready() -> void:
 	hunt.grab_focus()
 
 
+## Sbírání materiálů: kameny hlídané příšerami, čas a body.
 func _on_play() -> void:
-	GameSession.free_roam = false
-	GameSession.hunt = false
-	get_tree().change_scene_to_file("res://scenes/suit_menu.tscn")
+	_start(GameSession.COLLECT)
 
 
 ## Volný pohyb: rovnou výběr hráčů, pak pokaždé nový svět bez ukládání.
 func _on_free_roam() -> void:
-	_roam(false)
+	_start(GameSession.ROAM)
 
 
-## Chytej příšery: volný pohyb s příšerami, časem a body.
+## Chytej příšery: příšery utíkají, čas a body.
 func _on_hunt() -> void:
-	_roam(true)
+	_start(GameSession.HUNT)
 
 
-func _roam(hunt: bool) -> void:
-	GameSession.free_roam = true
-	GameSession.hunt = hunt
-	GameSession.suit_id = ""
-	GameSession.suit_name = ""
-	GameSession.suit_resume = {}
-	GameSession.suit_outfits = []
+## Každý režim začíná výběrem hráčů a novým světem.
+func _start(mode: String) -> void:
+	GameSession.mode = mode
 	get_tree().change_scene_to_file("res://scenes/character_menu.tscn")
 
 

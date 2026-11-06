@@ -18,7 +18,7 @@ extends Node2D
 ## a pod obzorem zmizí. Měsíc vrhá slabší stín.
 ##
 ## Světlo se kreslí závojem nad objekty i mlhou a pod HUD (night_veil.gdshader), svět se jím
-## vynásobí. Obarvení světa jedem (CanvasModulate) se závoje netýká. Den je bílý. Když slunce klesne pod DUSK.y (stíny už jsou dlouhé), světlo slábne
+## vynásobí. Den je bílý. Když slunce klesne pod DUSK.y (stíny už jsou dlouhé), světlo slábne
 ## a teplá, až je slunce celé pod obzorem (DUSK.x), je noc tmavá do modra. Ráno obráceně.
 ## Měsíc stejně přidává světlo noci podle své výšky. Za soumraku se hráčům rozsvítí
 ## čelovky: kužel před postavou a slabá záře kolem ní, objekty do výšky čelovky jí stíní.
@@ -69,7 +69,7 @@ const LAMP_GLOW := 96.0
 const LAMP_MARGIN := 48.0
 ## Závoj je o tolik větší než záběr, ať při rychlém pohybu kamery nevykoukne kraj.
 const VEIL_PAD := 0.15
-## Nad mlhou a sněhem (SquareAir.Z), pod jmény dolů (PondLabels).
+## Nad mlhou a sněhem (SquareAir.Z).
 const VEIL_Z := 10
 
 ## 0 až 1 přes celý den, viz START.

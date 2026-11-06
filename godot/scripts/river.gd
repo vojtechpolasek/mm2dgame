@@ -4,13 +4,12 @@ extends RefCounted
 ## sebe aspoň MOUTH_GAP. Řeka pramení kousek od kraje čtverce, nebo (EDGE_CHANCE) přitéká
 ## přes kraj od souseda, který ještě nemá mapu. Na kraji pak zůstane vtok (exits) a soused,
 ## až vznikne, k němu dovede řeku od vlastního pramene (inlets). Řeka tak vede nejvýš přes dva
-## čtverce, soused ji dál neposílá. Trasu hledá A* po dlaždicích: skály a místo pro vesnici
-## (reserve) jsou neprůchodné, voda taky (do jezera řeka vteče z dlaždice na břehu), šum
+## čtverce, soused ji dál neposílá. Trasu hledá A* po dlaždicích: skály jsou neprůchodné,
+## voda taky (do jezera řeka vteče z dlaždice na břehu), šum
 ## v ceně řeku vlní. Z dlaždic se vezme každá několikátá a proloží se křivkou, řeka proto
 ## není hranatá. U pramene je úzká, k ústí se rozšiřuje na WIDTH_MOUTH.
 ##
-## Řeka vzniká po přírodních skalách a před vesnicí. Domy, sklady a doly se řece a jejím
-## prameništím vyhnou (near), cesta ji přejde kdekoli a na přechodu je most (place_bridges).
+## Řeka vzniká po přírodních skalách. Stromy se řece a jejím prameništím vyhnou (near).
 ##
 ## Ramena (lines): řeky a jejich přítoky. Ke každé řece se kdekoli po proudu připojí 0 až 3
 ## přítoky (BRANCH_WEIGHTS), pramení ve čtverci, nebo přitékají přes kraj od souseda stejně
@@ -24,19 +23,17 @@ extends RefCounted
 ## Břehy se předpečou do terénu (terrain_bake, stejně jako břehy jezer): plan ve vlákně
 ## sestaví pole koryta (_field), chunky z něj při pečení vezmou barvu a výšku svahu. Runtime
 ## kreslí jen vodu (river.gdshader) — pásy trojúhelníků podél ramen. Pás je o svah
-## (BANK_PAD * BANK_REACH) širší než rameno. Most přes cestu je sprite. Shader dostane masku
+## (BANK_PAD * BANK_REACH) širší než rameno. Shader dostane masku
 ## vody čtverce (water_mask): voda řeky se kousek za břehem jezera ztratí v jeho mělčině.
-## Postava i příšery řekou projdou, ale zpomalí (water_at), most je cesta a nezpomalí.
+## Postava i příšery řekou projdou, ale zpomalí (water_at).
 ##
-## Průběh: plan a place_bridges ve vlákně (nesahá na scénu), spawn na hlavním.
+## Průběh: plan ve vlákně (nesahá na scénu), spawn na hlavním.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapData := preload("res://scripts/map_data.gd")
-const Town := preload("res://scripts/town.gd")
 const Rocks := preload("res://scripts/rocks.gd")
 
 const SHADER := "res://shaders/river.gdshader"
-const BRIDGE := "res://graphics/objects/bridge/most.png"
 ## Strany čtverce. Index je strana ve vtocích (exits, inlets), vektor míří k sousedovi.
 const SIDES: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 ## Šance na jednu a dvě řeky do jezera.
@@ -151,10 +148,6 @@ const BEND_FULL := 0.011
 const BEND_SPAN := 3
 ## Pás na vnitřní straně zákruty sahá nejvýš na takový podíl jejího poloměru.
 const FOLD_ROOM := 0.85
-## Délka mostu navíc k šířce řeky, v pixelech. Šikmý most se prodlouží, nejvýš jako most
-## pod úhlem asin(BRIDGE_SKEW).
-const BRIDGE_OVERHANG := 72.0
-const BRIDGE_SKEW := 0.2
 
 ## Ramena: {points, widths, length (px), spring (druh prameniště, "" u ramene od kraje),
 ## mouth (končí v jezeře), main (řeka, ne přítok), flow (UV.x prvního bodu)}.
@@ -162,8 +155,6 @@ var lines: Array[Dictionary] = []
 ## Vtoky na krajích, kudy přitéká rameno od souseda bez mapy: {side (index do SIDES),
 ## at (dlaždice podél kraje), width (šířka na kraji v px)}. Soused je dostane jako inlets.
 var exits: Array[Dictionary] = []
-## Mosty: střed, natočení a délka v pixelech.
-var bridges: Array[Dictionary] = []
 ## Prameniště ramen: střed x, y a dosah paty v px.
 var _spring_rocks := PackedVector3Array()
 ## Dlaždice -> úseky ramen, které jí vedou (viz LINE_STRIDE).
@@ -171,7 +162,7 @@ var _cells := {}
 var _size := 0
 ## Posun čtverce ve světě. Dotazy berou světové souřadnice.
 var _origin := Vector2.ZERO
-## Uzly ve scéně (síť a mosty), pro despawn.
+## Uzly ve scéně (síť vody), pro despawn.
 var _nodes: Array[Node] = []
 ## Síť řeky z prepare_mesh, čeká na spawn.
 var _arrays: Array = []
@@ -201,9 +192,8 @@ func exists() -> bool:
 	return not lines.is_empty()
 
 
-## Najde trasy. Přírodní skály (rocks) už stojí, vesnice ještě ne: reserve je kruh pro ni
-## (střed x, y a poloměr v px, poloměr 0 bez vesnice), tam řeka nevede. seed drží řeky stejné
-## i po načtení hry. vertex je terén rohů dlaždic ((size + 1)², viz MapGenerator.corner_data).
+## Najde trasy. Přírodní skály (rocks) už stojí. seed drží řeky stejné i po návratu do
+## uvolněného čtverce. vertex je terén rohů dlaždic ((size + 1)², viz MapGenerator.corner_data).
 ## Z něj je maska vody pro shader, ať ústí sedí na břeh, jak ho kreslí terén.
 ## open: bity stran (1 << index v SIDES), za kterými ještě není mapa, odtud smí rameno
 ## přitékat. inlets: vtoky hotových sousedů na krajích tohoto čtverce ({side, at, width}
@@ -211,7 +201,6 @@ func exists() -> bool:
 func plan(
 	map: MapData,
 	rocks: Rocks,
-	reserve: Vector3,
 	seed: int,
 	vertex := PackedByteArray(),
 	open := 0,
@@ -219,7 +208,6 @@ func plan(
 ) -> void:
 	lines.clear()
 	exits.clear()
-	bridges.clear()
 	_spring_rocks = PackedVector3Array()
 	_cells.clear()
 	_field = null
@@ -232,7 +220,7 @@ func plan(
 	_rocks = rocks
 	_rng = RandomNumberGenerator.new()
 	_rng.seed = seed
-	_grid = _make_grid(water, reserve)
+	_grid = _make_grid(water)
 	_taken = {}
 	_spring_spots.clear()
 	_mouths.clear()
@@ -304,18 +292,9 @@ func relocate(delta: Vector2) -> void:
 	_origin = delta
 
 
-## Je bod (ve světě) ve vodě řeky? Most přes cestu tu nepočítá, ten hlídá chodec.
+## Je bod (ve světě) ve vodě řeky?
 func water_at(pos: Vector2) -> bool:
 	return _reach_at(pos - _origin, 0.0, WATER_SHARE)
-
-
-## Je bod blíž než margin px k mostu? Most je obdélník podél cesty, bere se jako kruh.
-func near_bridge(pos: Vector2, margin: float) -> bool:
-	var local := pos - _origin
-	for bridge in bridges:
-		if local.distance_to(bridge["pos"]) < float(bridge["length"]) * 0.5 + margin:
-			return true
-	return false
 
 
 ## Je bod blíž než margin px k řece i se svahem břehu, nebo k prameništi? Pro sázení stromů,
@@ -440,8 +419,8 @@ func _largest_water(map: MapData, water: int) -> PackedVector2Array:
 	return best
 
 
-## Mřížka pro A*: cena dlaždice s vlněním, neprůchodné skály, místo pro vesnici a všechna voda.
-func _make_grid(water: int, reserve: Vector3) -> AStarGrid2D:
+## Mřížka pro A*: cena dlaždice s vlněním, neprůchodné skály a všechna voda.
+func _make_grid(water: int) -> AStarGrid2D:
 	var size := _size
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var grid := AStarGrid2D.new()
@@ -459,9 +438,6 @@ func _make_grid(water: int, reserve: Vector3) -> AStarGrid2D:
 		for x in size:
 			var at := Vector2i(x, y)
 			if _map.terrain[y * size + x] == water:
-				grid.set_point_solid(at)
-				continue
-			if reserve.z > 0.0 and _center(at).distance_to(Vector2(reserve.x, reserve.y)) < reserve.z:
 				grid.set_point_solid(at)
 				continue
 			var weight := 1.0 + MEANDER * (noise.get_noise_2d(float(x), float(y)) * 0.5 + 0.5)
@@ -1201,34 +1177,9 @@ static func _field_hash(p: Vector2) -> float:
 	return v - floorf(v)
 
 
-## Mosty tam, kde řeka překročí cestu: podél cesty přes řeku, dlouhé jako řeka napříč cestou
-## a kus navíc. Volá se po town.plan, před relocate.
-func place_bridges(town: Town) -> void:
-	bridges.clear()
-	if town == null:
-		return
-	for line in lines:
-		var line_points: PackedVector2Array = line["points"]
-		var line_widths: PackedFloat32Array = line["widths"]
-		var inside := false
-		var first := 0
-		for i in line_points.size():
-			var on := town.on_road(line_points[i])
-			if on and not inside:
-				first = i
-			if inside and (not on or i == line_points.size() - 1):
-				var middle := (first + i) / 2
-				var heading := town.road_heading(line_points[middle])
-				var along := line_points[mini(middle + 1, line_points.size() - 1)] - line_points[maxi(middle - 1, 0)]
-				var across := absf(sin(heading - along.angle()))
-				var span := line_widths[middle] / maxf(across, BRIDGE_SKEW) + BRIDGE_OVERHANG
-				bridges.append({"pos": line_points[middle], "turn": heading, "length": span})
-			inside = on
-
-
 # --- Scéna ---
 
-## Voda řeky a mosty pod host. Břehy jsou v terénu (terrain_bake). origin je levý horní roh
+## Voda řeky pod host. Břehy jsou v terénu (terrain_bake). origin je levý horní roh
 ## čtverce ve světě. look je materiál vody jezer z katalogu terénu. bank a painted už břehy
 ## nepotřebují (zůstávají kvůli volání ze world_board).
 func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null, _bank := {}, _painted := {}) -> void:
@@ -1262,18 +1213,6 @@ func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null, _bank := 
 	node.material = material
 	host.add_child(node)
 	_nodes.append(node)
-	var texture := load(BRIDGE) as Texture2D
-	if texture == null:
-		return
-	for bridge in bridges:
-		var sprite := Sprite2D.new()
-		sprite.texture = texture
-		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		sprite.position = origin + (bridge["pos"] as Vector2)
-		sprite.rotation = float(bridge["turn"])
-		sprite.scale = Vector2(float(bridge["length"]) / float(texture.get_width()), 1.0)
-		host.add_child(sprite)
-		_nodes.append(sprite)
 
 
 func despawn() -> void:

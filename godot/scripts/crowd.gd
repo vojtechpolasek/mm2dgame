@@ -1,7 +1,7 @@
 extends RefCounted
 
-## Tvorové, kteří nechodí přes sebe: postava, vesničané a chodící příšery. Každý je kruh
-## o poloměru těla. Neviditelný tvor (vesničan v domě) se nepočítá.
+## Tvorové, kteří nechodí přes sebe: postavy a chodící příšery. Každý je kruh
+## o poloměru těla. Neviditelný tvor (příšera v zásobě) se nepočítá.
 ## Létající se nepočítá, letí nad ostatními. Kdo je ve skoku, přeskočí každého, kdo není vyšší
 ## než výška jeho skoku, a ten ho naopak podběhne.
 ## Člen má metody crowd_body() (poloměr v px), crowd_height() (výška v metrech),

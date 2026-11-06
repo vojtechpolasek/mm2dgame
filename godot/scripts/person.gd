@@ -9,7 +9,6 @@ const ObjectLayers := preload("res://scripts/object_layers.gd")
 const Rocks := preload("res://scripts/rocks.gd")
 const Crystal := preload("res://scripts/crystal.gd")
 const Forest := preload("res://scripts/forest.gd")
-const Town := preload("res://scripts/town.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const MapData := preload("res://scripts/map_data.gd")
 const Walker := preload("res://scripts/walker.gd")
@@ -18,22 +17,11 @@ const Figure := preload("res://scripts/figure.gd")
 const Splashes := preload("res://scripts/splashes.gd")
 const Benchmark := preload("res://scripts/benchmark.gd")
 
-## Co postava drží. -1 je prázdná ruka.
-signal held_changed(mat: int)
-## Postava vzala kámen mat z dolu slot.
-signal took_gem(slot: int, mat: int)
-## Postava hodila kámen do továrny.
-signal threw_gem
-## Postava se dotkla továrny, ať nese cokoli.
-signal touched_factory
-## Postava použila plochu skladu bay: left je kámen, který tam nechala, took ten, který si
-## vzala, -1 nic.
-signal used_store(bay: int, left: int, took: int)
+## Co postava drží a kolik bodů za to hráči dostali. mat -1 je prázdná ruka.
+signal held_changed(mat: int, points: int)
 
 ## Běh, v metrech za sekundu. Dlaždice je jeden metr.
 const RUN_METERS := 4.5
-## Na vyšlapaném středu cesty běží postava o tolik rychleji. Příšer se to netýká.
-const ROAD_BOOST := 1.2
 ## Skok je stejně rychlý jako běh po terénu pod postavou a přehraje jen první polovinu snímků.
 const JUMP_TIME := 0.7
 ## Přes tohle se ve skoku přenese. Balvan má 1,1 m, keř 1,2 m. Skály od 6 m a stromy ne.
@@ -61,13 +49,9 @@ const ESCAPE_STEP := 6.0
 const IDLE_CHECK := 0.2
 ## Dlaň z tools/gen_person.py, HOLD_PALM. Záporné Y je dopředu, jako v atlasu.
 const PALM := Vector2(16.0, -16.0)
-const THROW_TIME := 0.45
-## Kámen ukradený z ruky odletí za tolik sekund zpátky na plochu skladu, ze které ho postava vzala.
-const RETURN_TIME := 0.7
-## Dotek dolu nebo skladu vymění kámen hned. Znovu u téhož až poté, co postava odejde aspoň tolik
-## metrů od jeho okraje.
-const REARM_METERS := 1.0
-const RETURN_ARC := 48.0
+## Ukázat nesený kámen v natažené ruce? Vypnuté: postava kámen nese neviditelně, bez natažené ruky,
+## carried() a held_changed platí dál.
+const SHOW_HELD := false
 ## Krok zazní dvakrát za cyklus chůze, při každém dosednutí nohy. Povrchy se zvukem kroků.
 ## Zvuk kroků podle povrchu. Nové povrchy si půjčují zvuk podobného.
 const STEP_SOUNDS := {
@@ -79,11 +63,9 @@ const WADE_SOUND := "steps/water"
 const WADE_DB := 2.0
 const STEP_VARIANTS := 4
 const STEP_DB := -6.0
-const THROW_ARC := 36.0
 
 var _rocks: Rocks
 var _forest: Forest
-var _town: Town
 var _camera: MapCamera
 var _jumping := false
 var _jump_time := 0.0
@@ -111,47 +93,20 @@ var _fitted := Vector2.ZERO
 var _crystal: Crystal
 var _rng := RandomNumberGenerator.new()
 var _hand_height := 1.2
+## Kámen v ruce (Sbírání materiálů) a jeho materiál, -1 prázdná ruka.
 var _held: Sprite2D
 var _held_mat := -1
-## Plocha skladu (Town.store_bay), ze které je kámen v ruce, nebo -1. Tam se vrátí po krádeži.
-var _held_bay := -1
-## Důl a plocha skladu, u kterých postava naposledy měnila. Dokud od nich neodejde na REARM_METERS,
-## znovu nemění.
-var _touch_slot := -1
-var _touch_bay := -1
-var _flyer: Sprite2D
-var _fly_from := Vector2.ZERO
-var _fly_to := Vector2.ZERO
-var _fly_rot := 0.0
-var _fly_spin := 0.0
-var _fly_age := 0.0
-var _fly_height := 0.0
-## Výška, kam kámen dopadne: plošina továrny.
-var _fly_floor := 0.0
-var _fly_mat := -1
-## Zásobník továrny Skafandrů, kam kámen letí, -1 obyčejný pás.
-var _fly_lane := -1
-## Kámen se do továrny nikam nevejde, po dopadu se rozplyne.
-var _fly_discard := false
-## Továrna, do které kámen letí. Přechod na jiný čtverec ji nezmění.
-var _fly_town: Town
-## Čtverec, ve kterém postava bere a odkládá kameny. Nula znamená jednu mapu bez světa.
-var _square_origin := Vector2.ZERO
-var _square_span := 0.0
-## Dotýkala se postava v minulém snímku továrny? Dotyk se ohlásí jen na začátku.
-var _at_factory := false
 
 
-func setup(rocks: Rocks, forest: Forest, town: Town, camera: MapCamera, map: MapData, crystal: Crystal, player: int = 0) -> void:
+func setup(rocks: Rocks, forest: Forest, camera: MapCamera, map: MapData, crystal: Crystal, player: int = 0) -> void:
 	player_index = player
 	_device = int(GameSession.player_colors(player).get("device", 0))
 	_rocks = rocks
 	_forest = forest
-	_town = town
 	_camera = camera
 	_crystal = crystal
 	Benchmark.seed_rng(_rng, 10 + player)
-	walker = Walker.new(rocks, forest, town, map)
+	walker = Walker.new(rocks, forest, map)
 	if not _build():
 		return
 	_attach_hand()
@@ -175,13 +130,6 @@ func _process(delta: float) -> void:
 		_step_escape(delta)
 	else:
 		_step_run(delta, direction)
-	if _flyer != null:
-		_advance_throw(delta)
-	_carry()
-	var touching := _town != null and _town.touches_factory(position, BODY)
-	if touching and not _at_factory:
-		touched_factory.emit()
-	_at_factory = touching
 
 
 func _begin_jump(direction: Vector2) -> void:
@@ -216,12 +164,9 @@ func _step_jump(delta: float) -> void:
 		Sound.at("sfx/land", global_position, -3.0)
 
 
-## Rychlost běhu v pixelech za sekundu na terénu pod postavou: cesta zrychlí, močál a řeka zpomalí.
+## Rychlost běhu v pixelech za sekundu na terénu pod postavou: močál a řeka zpomalí.
 func _run_speed() -> float:
-	var speed := RUN_METERS * float(TerrainCatalog.TILE_SIZE)
-	if _town != null and _town.on_road(position):
-		speed *= ROAD_BOOST
-	return speed * walker.pace(position)
+	return RUN_METERS * float(TerrainCatalog.TILE_SIZE) * walker.pace(position)
 
 
 func _step_run(delta: float, direction: Vector2) -> void:
@@ -324,7 +269,7 @@ func _free_spot(from: Vector2) -> Vector2:
 	return _spawn_at() if spot == Vector2.INF else spot
 
 
-## Nejbližší suché místo k začátku (před továrnou), které není v překážce ani ve vodě.
+## Nejbližší suché místo k začátku (střed mapy), které není v překážce ani ve vodě.
 func _spawn_at() -> Vector2:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var tiles := int(walker.world().x / tile)
@@ -368,8 +313,6 @@ func _fit(view: Vector2) -> void:
 	_figure.fit(view)
 	if _held != null and _held.visible:
 		_pad_gem(_held, _hand_height)
-	if _flyer != null:
-		_pad_gem(_flyer, _fly_height)
 
 
 func _attach_hand() -> void:
@@ -379,94 +322,6 @@ func _attach_hand() -> void:
 	_held.visible = false
 	_held.position = PALM
 	add_child(_held)
-
-
-## Továrna vezme nesený kámen do zásobníku. Důl dá svůj materiál, když v ruce není stejný
-## nebo dražší kámen. U dolu i skladu jednou za příchod, viz REARM_METERS.
-func _carry() -> void:
-	if _flyer != null or _crystal == null or _crystal.count() == 0 or _held == null:
-		return
-	if not _inside_square():
-		return
-	_rearm()
-	if _held_mat >= 0 and _town != null and _town.touches_factory(position, BODY):
-		# Zásobník na straně, u které postava stojí. Když tu kámen nikdo nechce, zůstane v ruce,
-		# ať ho postava donese na správnou stranu. Když ho nechce nikdo v celé továrně, odletí
-		# na nejbližší zásobník a rozplyne se.
-		var lane := _town.claim_lane(position, _held_mat)
-		if lane >= 0:
-			_throw(lane)
-		elif not _town.suit_factory().wanted(_held_mat):
-			_throw(_town.suit_factory().nearest_lane(position), true)
-		return
-	if _touch_store():
-		return
-	var slot := _rocks.pond_at(position, BODY)
-	if slot < 0 or slot == _touch_slot:
-		return
-	_touch_slot = slot
-	_take(slot, _rocks.swap_gem(slot, _held_mat))
-
-
-## Důl a plocha, od kterých postava odešla na REARM_METERS, zase vymění.
-func _rearm() -> void:
-	var far := BODY + REARM_METERS * float(TerrainCatalog.TILE_SIZE)
-	if _touch_slot >= 0 and not _rocks.near_pond(_touch_slot, position, far):
-		_touch_slot = -1
-	if _touch_bay >= 0 and (_town == null or not _town.near_bay(_touch_bay, position, far)):
-		_touch_bay = -1
-
-
-## Plocha skladu drží jediný kámen: prázdná si nesený vezme, plná ho vymění. Vrátí true, když se postava
-## nějaké plochy dotýká.
-func _touch_store() -> bool:
-	var bay := _town.store_bay(position, BODY) if _town != null else -1
-	if bay < 0:
-		return false
-	if bay == _touch_bay:
-		return true
-	_touch_bay = bay
-	var held := _held_mat
-	var mat := _town.swap_store(bay, held)
-	if mat >= 0:
-		_take(-1, mat)
-		_held_bay = bay
-	elif held >= 0:
-		_put_down()
-	if mat >= 0 or held >= 0:
-		used_store.emit(bay, held, mat)
-	return true
-
-
-## Stav k uložení: kde stojí a co nese. Kámen v letu už patří továrně.
-func snapshot() -> Dictionary:
-	return {"pos": position, "rot": rotation, "held": _held_mat, "bay": _held_bay}
-
-
-## Obnoví stav ze snapshot.
-func restore(data: Dictionary) -> void:
-	position = data.get("pos", position)
-	rotation = float(data.get("rot", rotation))
-	var held := int(data.get("held", -1))
-	if held >= 0:
-		_take(-1, held)
-		_held_bay = int(data.get("bay", -1))
-
-
-## Dýchací přístroj na zádech postavy.
-func wear_gear(on: bool) -> void:
-	_figure.set_gear(on)
-	_fit(_fitted)
-
-
-## Kámen zůstal na prázdné ploše skladu, ruka je prázdná.
-func _put_down() -> void:
-	_held.visible = false
-	_held_mat = -1
-	_held_bay = -1
-	_set_hold(false)
-	held_changed.emit(-1)
-	Sound.at("sfx/pickup", global_position, -3.0)
 
 
 ## Pro crowd: postava je kruh o poloměru trupu, ve skoku přeskočí tvory do JUMP_CLEAR metrů.
@@ -491,170 +346,29 @@ func carried() -> int:
 	return _held_mat
 
 
-## Příšera kámen sebrala, ruka je prázdná. Kámen z dolu zmizí, kámen ze skladu odletí zpátky.
+## Kámen materiálu mat do ruky, hráči za něj dostali points bodů.
+func hold(mat: int, points: int) -> void:
+	if _held == null:
+		return
+	_held_mat = mat
+	if SHOW_HELD:
+		_held.position = PALM
+		_held.rotation = 0.0
+		_held.visible = true
+		_crystal.paint(_held, mat, _hand_height, 0.4)
+		_set_hold(true)
+	held_changed.emit(mat, points)
+
+
+## Prázdná ruka: příšera kámen vzala, nebo už nehoní a kámen je hráčův.
 func drop_held() -> void:
 	if _held_mat < 0:
 		return
-	Sound.at("sfx/steal", global_position)
-	_send_back()
-
-
-## Kámen z ruky odletí obloukem na plochu skladu, odkud ho postava vzala, a plocha ho zase
-## drží. Kámen z dolu jen zmizí, důl si nic nenechá.
-func _send_back() -> void:
-	var mat := _held_mat
-	var bay := _held_bay
-	var town := _town
-	var start := _held.global_position
-	_held.visible = false
 	_held_mat = -1
-	_held_bay = -1
-	_set_hold(false)
-	held_changed.emit(-1)
-	if bay < 0 or town == null:
-		return
-	var host := get_parent() as Node2D
-	if host == null:
-		_land_home(null, mat, bay, town)
-		return
-	var gem := _crystal.make_sprite()
-	host.add_child(gem)
-	gem.global_position = start
-	gem.z_index = 3
-	_crystal.paint(gem, mat, _hand_height, 0.0)
-	_pad_gem(gem, _hand_height)
-	var spin := (-1.0 if _rng.randf() < 0.5 else 1.0) * TAU * _rng.randf_range(0.75, 1.6)
-	var tween := gem.create_tween()
-	tween.tween_method(_fly_home.bind(gem, gem.position, town.bay_home(bay), spin), 0.0, 1.0, RETURN_TIME)
-	tween.tween_callback(_land_home.bind(gem, mat, bay, town))
-
-
-func _fly_home(t: float, gem: Sprite2D, from: Vector2, to: Vector2, spin: float) -> void:
-	var eased := 1.0 - pow(1.0 - t, 2.0)
-	var way := to - from
-	var pos := from.lerp(to, eased)
-	if way.length_squared() > 1.0:
-		pos += way.orthogonal().normalized() * sin(t * PI) * signf(spin) * minf(RETURN_ARC, way.length() * 0.25)
-	gem.position = pos
-	gem.rotation = spin * eased
-	_pad_gem(gem, lerpf(_hand_height, 0.0, eased))
-
-
-func _land_home(gem: Sprite2D, mat: int, bay: int, town: Town) -> void:
-	if gem != null:
-		gem.queue_free()
-	if is_instance_valid(town):
-		town.store_gem(bay, mat)
-
-
-## V ruce je kámen mat z dolu slot, -1 je ze skladu. Stejný kámen jako předtím nezazní.
-func _take(slot: int, mat: int) -> void:
-	_held_bay = -1
-	if mat == _held_mat:
-		return
-	_held_mat = mat
-	_held.position = PALM
-	_held.rotation = 0.0
-	_held.visible = true
-	_crystal.paint(_held, mat, _hand_height, 0.4)
-	_set_hold(true)
-	held_changed.emit(mat)
-	Sound.at("sfx/pickup", global_position, -3.0)
-	if slot >= 0:
-		took_gem.emit(slot, mat)
-
-
-func leave_square() -> void:
-	if _held_mat >= 0 and _held_bay >= 0 and _town != null:
-		_town.store_gem(_held_bay, _held_mat)
-	if _held_mat >= 0:
-		if _held != null:
-			_held.visible = false
-		_held_mat = -1
-		_held_bay = -1
+	if SHOW_HELD:
+		_held.visible = false
 		_set_hold(false)
-		held_changed.emit(-1)
-	_touch_slot = -1
-	_touch_bay = -1
-
-
-## Doly a továrna čtverce, na který postava právě přišla.
-func use_square(rocks: Rocks, town: Town, origin: Vector2, span: float) -> void:
-	_rocks = rocks
-	_town = town
-	_square_origin = origin
-	_square_span = span
-
-
-func _inside_square() -> bool:
-	if _square_span <= 0.0:
-		return true
-	var local := position - _square_origin
-	return local.x >= 0.0 and local.y >= 0.0 and local.x < _square_span and local.y < _square_span
-
-
-## Hod kamene do zásobníku lane. S discard se kámen nikam nevejde a rozplyne se.
-func _throw(lane: int, discard: bool = false) -> void:
-	var host := get_parent() as Node2D
-	if host == null or _held == null or _held_mat < 0 or _town == null or _town.center() == Vector2.INF:
-		return
-	var mat := _held_mat
-	var start := _held.global_position
-	var rot := _held.global_rotation
-	_held.visible = false
-	_held_mat = -1
-	_held_bay = -1
-	_set_hold(false)
-	held_changed.emit(-1)
-	var flyer := _crystal.make_sprite()
-	host.add_child(flyer)
-	flyer.global_position = start
-	flyer.global_rotation = rot
-	flyer.z_index = 3
-	_crystal.paint(flyer, mat, _hand_height, rot)
-	var sign := -1.0 if _rng.randf() < 0.5 else 1.0
-	_flyer = flyer
-	_fly_from = flyer.position
-	_fly_town = _town
-	_fly_lane = lane
-	_fly_discard = discard
-	_fly_to = _fly_town.lane_drop(lane, _rng)
-	_fly_rot = flyer.rotation
-	_fly_spin = sign * TAU * _rng.randf_range(0.75, 1.6)
-	_fly_age = 0.0
-	_fly_height = _hand_height
-	_fly_floor = _town.deck_height()
-	_fly_mat = mat
-	_pad_gem(flyer, _hand_height)
-	threw_gem.emit()
-
-
-func _advance_throw(delta: float) -> void:
-	_fly_age += delta
-	var t := clampf(_fly_age / THROW_TIME, 0.0, 1.0)
-	var eased := 1.0 - pow(1.0 - t, 3.0)
-	var pos := _fly_from.lerp(_fly_to, eased)
-	var delta_pos := _fly_to - _fly_from
-	if delta_pos.length_squared() > 1.0:
-		var bend := 1.0 if _fly_spin >= 0.0 else -1.0
-		pos += delta_pos.orthogonal().normalized() * sin(t * PI) * bend * minf(THROW_ARC, delta_pos.length() * 0.22)
-	_flyer.position = pos
-	_flyer.rotation = _fly_rot + _fly_spin * eased
-	_fly_height = lerpf(_hand_height, _fly_floor, eased)
-	_pad_gem(_flyer, _fly_height)
-	if t < 1.0:
-		return
-	var mat := _fly_mat
-	var rot := _flyer.rotation
-	var landed := _fly_to
-	_flyer.visible = false
-	_flyer.queue_free()
-	_flyer = null
-	var town := _fly_town if _fly_town != null else _town
-	if town != null and _fly_discard:
-		town.discard(mat, landed, rot)
-	elif town != null:
-		town.receive(mat, landed, rot, _fly_lane)
+	held_changed.emit(-1, 0)
 
 
 func _set_hold(on: bool) -> void:

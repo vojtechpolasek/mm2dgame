@@ -1,7 +1,7 @@
 extends RefCounted
 
 ## Mřížka průchodnosti pro honičku. Buňka je jedna dlaždice. Neprůchodná je voda, paty skal
-## a dolů podle obrysu, keře a kmeny, továrna a domy, vše rozšířené o tělo příšery, ať cesta nevede
+## podle obrysu, keře a kmeny, vše rozšířené o tělo, ať cesta nevede
 ## škvírou, kterou neprojde. Příšera se podle ní řídí, když se přímá honička zasekne.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
@@ -39,8 +39,6 @@ func build(walker: Walker, rocks: Rocks, forest: Forest, body: float, clearance:
 	walker.block_water(_astar)
 	rocks.block_cells(_astar, body, MARGIN, clearance)
 	forest.block_cells(_astar, body, MARGIN, clearance)
-	if walker.town != null:
-		walker.town.block_cells(_astar, body, MARGIN)
 	_label_regions()
 
 

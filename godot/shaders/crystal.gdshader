@@ -1,5 +1,4 @@
 shader_type canvas_item;
-// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
 render_mode blend_mix;
 
 // Každý kámen má svůj materiál. Instanční uniformy by v renderu Compatibility

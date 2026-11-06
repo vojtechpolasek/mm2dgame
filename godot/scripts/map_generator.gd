@@ -10,7 +10,7 @@ const COST_BUCKET := 250
 ## Posun hranice šumem, v násobcích šířky oblasti.
 const WARP := 0.5
 ## Voda nemá počátek blíž ke středu mapy než tohle: podíl strany mapy, nejméně CENTER_DRY_MIN
-## dlaždic. Továrna stojí u středu a jezero by k ní zatarasilo cestu.
+## dlaždic. Hráči začínají u středu a jezero by jim zatarasilo cestu.
 const CENTER_DRY_SHARE := 0.2
 const CENTER_DRY_MIN := 12.0
 ## Pojistka: voda, která k středu přesto doroste z dálky, se v tomto poloměru v dlaždicích
@@ -543,13 +543,6 @@ static func _clear_center(terrain: PackedByteArray, cost: PackedInt32Array, size
 			pending.append(index)
 	if not pending.is_empty():
 		_resolve_unclaimed(terrain, cost, size, pending, liquid, fallback)
-
-
-## Voda v kruhu kolem středu hotové mapy se změní na souš. Pro továrnu ve světě,
-## ať nestojí v jezeře. Kraj mapy se nemění, když je poloměr menší než půlka strany.
-static func clear_disk(map: MapData, radius: float) -> void:
-	var land := map.land if map.land >= 0 else maxi(map.names.find("grass"), 0)
-	_clear_center(map.terrain, map.cost, map.size, map.names.find("water"), land, radius)
 
 
 ## Voda v kruhu kolem center (v dlaždicích) se změní na souš. Pro vtok řeky od souseda,

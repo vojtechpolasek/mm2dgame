@@ -47,7 +47,7 @@ stretch_mode = 5
 [node name="Body" type="Label" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(460, 0)
 layout_mode = 2
-text = "Venku je jedovatý vzduch. Noste kameny z dolů do továrny, ať vzduch vyčistí, a vyrobte skafandry pro vesničany. Každý splněný level otevře cestu k další továrně, cílem je 15. level."
+text = "Chytej příšery: příšery z kamenů a krystalů utíkají, chytněte jich za devět minut co nejvíc. Sbírání materiálů: seberte kameny, které příšery hlídají, a utečte jim. Volný pohyb: svět bez příšer a bez času."
 autowrap_mode = 3
 horizontal_alignment = 1
 

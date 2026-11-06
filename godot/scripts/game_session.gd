@@ -1,56 +1,20 @@
 extends Node
 
-## Postup z dob, kdy hra měla víc typů. Hra se teď ukládá jen přes SuitSaves, soubor se smaže.
+## Data odstraněných režimů. Při startu se smažou, pokud ještě na disku jsou.
 const OLD_PROGRESS := "user://progress.cfg"
-
-## Pás dolů každého materiálu je kolem továrny široký nejvýš SUIT_BAND_M metrů, ať levné
-## materiály jsou blízko.
-const SUIT_BAND_M := 8.0
-## Zásobníky levelů. Dvojice [pořadí materiálu od nejlevnějšího, počet kamenů].
-## Celkem nejvýš 25 kamenů a každého materiálu nejvýš 3. Level je těžší tím, že chce víc
-## různých a dražších materiálů, ne hodně kusů jednoho. Materiál, který přibyl, chce level
-## jen jednou, víc až v dalších levelech. Nejlevnější materiál zásobníků s levelem jen
-## stoupá, levnější se už nevrátí. Od pořadí 4 (magnetit) chce každý materiál až po
-## nejdražší aspoň jednou.
-## Na mapě jsou jen materiály ze zásobníků, každý s jedním dolem. Recept skafandru chce tři
-## nejlevnější z nich. Poslední, patnáctý level je výjimka: limity překračuje,
-## chce 26 kamenů a nejdražší materiály po čtyřech. Po něm hra končí.
-const SUIT_LEVELS: Array = [
-	[[0, 1], [1, 1]],
-	[[0, 2], [1, 2], [2, 1]],
-	[[0, 2], [1, 2], [2, 2], [3, 1]],
-	[[0, 1], [1, 2], [2, 2], [3, 2], [4, 1]],
-	[[0, 1], [1, 2], [2, 2], [3, 2], [4, 2], [5, 1]],
-	[[1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 1]],
-	[[1, 1], [2, 2], [3, 2], [4, 2], [5, 3], [6, 2], [7, 1]],
-	[[2, 2], [3, 2], [4, 2], [5, 3], [6, 3], [7, 2], [8, 1]],
-	[[2, 1], [3, 2], [4, 2], [5, 2], [6, 3], [7, 3], [8, 2], [9, 1]],
-	[[3, 2], [4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 2], [10, 1]],
-	[[3, 1], [4, 2], [5, 2], [6, 2], [7, 3], [8, 3], [9, 3], [10, 2], [11, 1]],
-	[[4, 2], [5, 2], [6, 2], [7, 3], [8, 3], [9, 3], [10, 3], [11, 2], [12, 1]],
-	[[4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 2]],
-	[[4, 2], [5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3]],
-	[[5, 2], [6, 3], [7, 3], [8, 3], [9, 3], [10, 4], [11, 4], [12, 4]],
-]
-## Recept skafandru: po jednom z tolika nejlevnějších materiálů ze zásobníků levelu.
-const SUIT_RECIPE := 3
+const OLD_SAVES := "user://suits"
 ## Nejvíc hráčů. Ovladačů je tolik: šipky, WASD a čtyři gamepady.
 const MAX_PLAYERS := 6
 
-## Volný pohyb: svět bez továren, vesnic, dolů a příšer, bez času a cíle. Chodí se kamkoli
-## a svět se dotváří. Nic se neukládá, každý start je nový svět.
-var free_roam := false
-## Chytej příšery: volný pohyb (free_roam je zapnutý taky), ve kterém se po světě rodí příšery.
-## Hráči je za HUNT_SECONDS chytají dotykem a sbírají body. Ukládají se jen výkony (Hunt).
-var hunt := false
+## Režimy hry. Všechny se hrají v otevřeném světě, který se dotváří, jak hráči chodí.
+## ROAM: volný pohyb bez příšer, času a cíle. HUNT: Chytej příšery, příšery utíkají a hráči je
+## chytají. COLLECT: Sbírání materiálů, hráči sbírají kameny a příšery je honí. Oba časové
+## režimy řídí Hunt a ukládají se v nich jen výkony.
+const ROAM := "roam"
+const HUNT := "hunt"
+const COLLECT := "collect"
 
-## Identifikátor a jméno hry (kdo hraje) a uložený stav, ze kterého hra
-## pokračuje. Prázdný stav je nová hra. Viz SuitSaves.
-var suit_id := ""
-var suit_name := ""
-var suit_resume := {}
-## Oblečení hráčů pokračující hry podle pořadí. Hrát ji musí stejný počet hráčů.
-var suit_outfits: Array = []
+var mode := ROAM
 
 ## Hráči nové hry. Slovník s klíči pants, shirt a hair (hex bez mřížky) a device (číslo
 ## ovladače z Controls). Pořadí je pořadí připojení v menu.
@@ -82,13 +46,31 @@ const OUTFITS: Array[Dictionary] = [
 func _ready() -> void:
 	if players.is_empty():
 		players.append(default_player())
-	_remove_old_progress()
+	_remove_old_data()
 
 
-## Smaže postup starých typů hry, pokud ještě na disku je.
-func _remove_old_progress() -> void:
+## Je to režim s příšerami, časem a body (Hunt)?
+func timed() -> bool:
+	return mode == HUNT or mode == COLLECT
+
+
+## Smaže data odstraněných režimů: starý postup a uložené hry Sbírání kamenů.
+func _remove_old_data() -> void:
 	if FileAccess.file_exists(OLD_PROGRESS):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(OLD_PROGRESS))
+	if DirAccess.dir_exists_absolute(OLD_SAVES):
+		_remove_dir(ProjectSettings.globalize_path(OLD_SAVES))
+
+
+static func _remove_dir(path: String) -> void:
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return
+	for sub in dir.get_directories():
+		_remove_dir(path.path_join(sub))
+	for file in dir.get_files():
+		dir.remove(file)
+	DirAccess.remove_absolute(path)
 
 
 ## Čas s desetinami: 1:23.4.
@@ -102,35 +84,6 @@ static func players_text(count: int) -> String:
 	if count == 1:
 		return "1 hráč"
 	return "%d hráči" % count if count <= 4 else "%d hráčů" % count
-
-
-## Poslední level hry.
-static func last_level() -> int:
-	return SUIT_LEVELS.size()
-
-
-## Počet materiálů od nejlevnějšího, mezi kterými jsou všechny materiály levelu. Na mapu
-## z nich přijdou jen ty ze zásobníků (suit_orders).
-static func material_window(at: int) -> int:
-	var most := 0
-	for order in suit_orders(at):
-		most = maxi(most, order + 1)
-	return most
-
-
-## Zásobníky levelu: dvojice [pořadí materiálu, počet kamenů].
-static func suit_lanes(at: int) -> Array:
-	return SUIT_LEVELS[clampi(at, 1, SUIT_LEVELS.size()) - 1]
-
-
-## Pořadí materiálů ze zásobníků levelu, od nejlevnějšího, každé jednou.
-static func suit_orders(at: int) -> PackedInt32Array:
-	var seen := {}
-	for pair: Array in suit_lanes(at):
-		seen[int(pair[0])] = true
-	var out := PackedInt32Array(seen.keys())
-	out.sort()
-	return out
 
 
 ## První hráč na šipkách s prvním oblečením. Hra spuštěná rovnou bez menu má aspoň jeho.

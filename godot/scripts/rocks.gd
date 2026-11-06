@@ -1,21 +1,10 @@
 extends "res://scripts/layered_props.gd"
 
-const Crystal := preload("res://scripts/crystal.gd")
-
 ## Varianta bez obrysu v katalogu bere kruh o tolik větší než jmenovitá pata.
 const FOOT_MARGIN := 1.4
 ## Do této výšky je skála pod postavou a jde přeskočit. Vyšší je nad ní.
 const LOW := 1.5
-## Důl materiálu. Nesází se podle povrchu, má ho jen čtverec s továrnou.
-const MINE := "dul"
-const MINE_SHADER := "res://shaders/mine_layer.gdshader"
-## Volný kruh kolem továrny v metrech. Hráč se objeví u továrny a má kudy projít.
-const POND_CLEAR := 10.0
-## Nejmenší vzdálenost středů dvou dolů v metrech. Důl má průměr asi 2 m.
-const POND_GAP := 7.0
-## O kolik pixelů dřív než o obrys se bere dotek postavy.
-const TOUCH_PX := 2.0
-## Lávová puklina: vrstvy pod zemí jako důl, žár pulzuje. Svit vrstev od okraje ke dnu.
+## Lávová puklina: vrstvy pod zemí, žár pulzuje. Svit vrstev od okraje ke dnu.
 const CRACK_SHADER := "res://shaders/crack_layer.gdshader"
 const CRACK_GLOW: Array[float] = [0.35, 0.6, 1.0]
 ## Nejdelší posun vrstvy pukliny v px. O tolik hlubší vrstvy sahají pod kůru, viz MAX_SHIFT
@@ -61,216 +50,23 @@ var _capsule_at := PackedInt32Array()
 var _shaped_kind := -1
 var _shaped_variant := 0
 var _shaped_turn := 0.0
-var _crystal: Crystal
-var _material_count := 0
-## Body materiálů a jejich pořadí od nejběžnějšího. Sázení je čte ve vlákně.
-var _points := PackedInt32Array()
-var _by_points := PackedInt32Array()
-## Mezi kolika nejlevnějšími materiály jsou ty, které mají na mapě důl. Záporné jsou všechny.
-var _available := -1
-## Druh dolu, -1 když v katalogu chybí.
-var _pond_kind := -1
-## Materiál vrstvy dolu podle [druh, vrstva, materiál]. Barvu dolu dává materiál, ne uzel.
-var _mine_materials := {}
-var _mine_shader: Shader
-## U každé skály číslo dolu, nebo -1. Dál už jen doly: skála a materiál.
-var _pond_slot := PackedInt32Array()
-var _pond_rock := PackedInt32Array()
-var _pond_mat := PackedInt32Array()
-## Střed dolu neblíž ke kraji mapy než tolik metrů. Ústí dolu zůstane na mapě.
-var edge_guard := 2.0
-## Počet dolů každého materiálu od nejlevnějšího. Nastaví svět.
-var mine_plan := PackedInt32Array()
-## Pás dolů jednoho materiálu kolem továrny je široký nejvýš tolik metrů. Záporné nechá
-## pásy roztáhnout po celé mapě.
-var band_max := -1.0
 ## Kruhy (střed x, y a poloměr v px), kam nesmí zasahovat pata skály: vtok řeky od souseda
 ## musí zůstat průchozí (River.clear_spots). Nastaví svět před sázením.
 var keep_clear := PackedVector3Array()
-## Řeka čtverce. Doly se jí a jejím prameništím vyhnou. Nastaví svět před plant_town.
+## Řeka čtverce. Nastaví svět před sázením stromů.
 var river
 
 
 ## Přírodní skály podle povrchu, hned po terénu. Řeka je pak obteče a postaví k nim
 ## prameniště. Nesahá na scénu, smí běžet ve vlákně.
 func plant(map: MapData, rng: RandomNumberGenerator) -> void:
-	_pond_kind = int(_kind_of[MINE]) if _kind_of.has(MINE) else -1
 	if _kinds.is_empty():
 		return
 	_begin_plant(map)
 	_scatter(map, rng)
 
 
-## Doly a sklady, až stojí řeka a továrna, cesta a domy (town). Doly v pásech kolem továrny
-## mimo řeku, podle nich sklady (jen když je town chce). Přírodní skála, která by překážela
-## vesnici, dolu nebo skladu, zmizí. Prameniště zůstanou, vesnice i doly se jim vyhnou.
-## Bez továrny nedělá nic. Stromy se sází až potom.
-func plant_town(map: MapData, rng: RandomNumberGenerator) -> void:
-	if _kinds.is_empty() or town == null or town.center() == Vector2.INF:
-		return
-	var pos := _pos.duplicate()
-	var kind := _kind.duplicate()
-	var variant := _variant.duplicate()
-	var turn := _turn.duplicate()
-	_begin_plant(map)
-	_place_ponds(map, rng)
-	if town.stores:
-		var mines := PackedVector2Array()
-		for index in _pond_rock:
-			mines.append(_pos[index])
-		town.plan_stores(map, rng, mines, _kind_foot[_pond_kind] if _pond_kind >= 0 else 0.0)
-	for index in pos.size():
-		if _is_spring(kind[index]) or _fits(pos[index], kind[index], map):
-			_keep_shaped(kind[index], pos[index], variant[index], turn[index])
-	# Puklina při kontrole místa vybrala tvar, ten se tu nepoužije.
-	_shaped_kind = -1
-
-
-func bind_crystal(crystal: Crystal) -> void:
-	_crystal = crystal
-	_material_count = crystal.count()
-	_points.resize(_material_count)
-	var order: Array[int] = []
-	for index in _material_count:
-		_points[index] = crystal.points_of(index)
-		order.append(index)
-	order.sort_custom(func(a: int, b: int) -> bool: return _points[a] < _points[b])
-	_by_points = PackedInt32Array(order)
-
-
-## Materiály od nejlevnějšího.
-func by_points() -> PackedInt32Array:
-	return _by_points
-
-
-## Doly dostanou jen materiály mezi count nejlevnějšími. Ostatní na mapě nejsou, takže je
-## nejde sebrat.
-func set_available(count: int) -> void:
-	_available = count
-
-
-## Materiály, které mají na mapě důl, od nejlevnějšího. Každý dostane svou příšeru.
-func pond_materials() -> PackedInt32Array:
-	var count := _by_points.size() if _available < 0 else mini(_available, _by_points.size())
-	var out := PackedInt32Array()
-	var have := {}
-	for mat in _pond_mat:
-		if mat >= 0:
-			have[mat] = true
-	for order in count:
-		var mat := _by_points[order]
-		if have.has(mat):
-			out.append(mat)
-	return out
-
-
-## Každý materiál z mine_plan dostane pás kolem továrny. Vzácnější je dál.
-## Pásy se roztáhnou jen na materiály, které na mapě jsou, a sousedé se jen dotýkají.
-## Doly drží rozestup POND_GAP, takže mezi nimi vždycky jde projít.
-func _place_ponds(map: MapData, rng: RandomNumberGenerator) -> void:
-	if _pond_kind < 0 or _by_points.is_empty() or mine_plan.is_empty():
-		return
-	var tile := float(TerrainCatalog.TILE_SIZE)
-	var origin := Vector2(float(map.size) * tile, float(map.size) * tile) * 0.5
-	if town != null and town.center() != Vector2.INF:
-		origin = town.center()
-	var materials := _by_points.size()
-	var count := materials if _available < 0 else mini(_available, materials)
-	var layout := mine_plan
-	var present := 0
-	for order in mini(count, layout.size()):
-		if layout[order] > 0:
-			present += 1
-	var band := 0
-	for order in mini(count, layout.size()):
-		var want := layout[order]
-		if want <= 0:
-			continue
-		var mat := _by_points[order]
-		var ring := pond_annulus(band, present, map.size, edge_guard, band_max) * tile
-		_place_ring(map, rng, mat, want, origin, ring.x, ring.y)
-		band += 1
-
-
-func _pond_cell(x: int, y: int, size: int) -> bool:
-	var edge := mini(mini(x, y), mini(size - 1 - x, size - 1 - y))
-	return float(edge) >= edge_guard
-
-
-## Bod rovnoměrně po ploše mezikruží, ne po poloměru, ať se doly u vnitřní hrany nehromadí.
-func _place_ring(
-	map: MapData,
-	rng: RandomNumberGenerator,
-	mat: int,
-	want: int,
-	origin: Vector2,
-	inner: float,
-	outer: float,
-) -> int:
-	var placed := 0
-	var guard := want * 40
-	var gap := POND_GAP * float(TerrainCatalog.TILE_SIZE)
-	while placed < want and guard > 0:
-		guard -= 1
-		var dist := sqrt(lerpf(inner * inner, outer * outer, rng.randf()))
-		var pos := origin + Vector2.from_angle(rng.randf() * TAU) * dist
-		if not _pond_site(map, pos) or _near_object(pos, gap):
-			continue
-		_keep(_pond_kind, pos, rng)
-		_remember_pond(mat)
-		placed += 1
-	return placed
-
-
-## Stojí blíž než gap nějaký už postavený objekt? Při sázení dolů jsou to jen doly.
-func _near_object(pos: Vector2, gap: float) -> bool:
-	var grid := _grid
-	var span := ceili(gap / grid.cell)
-	var side := grid.side
-	var at := grid.cell_at(pos)
-	var gx := at.x
-	var gy := at.y
-	for cy in range(maxi(gy - span, 0), mini(gy + span, side - 1) + 1):
-		for cx in range(maxi(gx - span, 0), mini(gx + span, side - 1) + 1):
-			var item := grid.head[cy * side + cx]
-			while item >= 0:
-				if pos.distance_squared_to(_pos[item]) < gap * gap:
-					return true
-				item = grid.next[item]
-	return false
-
-
-## Mezikruží dolů daného pořadí: vnitřní a vnější vzdálenost od továrny v metrech.
-## count je počet materiálů, které na mapě opravdu mají důl. Pásy jsou stejně široké
-## a sousedé se jen dotýkají. Nejběžnější z nich začíná za volným kruhem, nejdražší končí
-## nejdál guard metrů od kraje mapy.
-## widest omezí šířku pásu v metrech, záporné ji nechá.
-static func pond_annulus(order: int, count: int, size: int, guard: float, widest: float = -1.0) -> Vector2:
-	var reach := maxf(float(size) * 0.5 - guard, POND_CLEAR)
-	var bands := maxi(count, 1)
-	var width := (reach - POND_CLEAR) / float(bands)
-	if widest > 0.0:
-		width = minf(width, widest)
-	var inner := POND_CLEAR + float(clampi(order, 0, bands - 1)) * width
-	return Vector2(inner, inner + width)
-
-
-func _pond_site(map: MapData, pos: Vector2) -> bool:
-	var tile := float(TerrainCatalog.TILE_SIZE)
-	var x := int(pos.x / tile)
-	var y := int(pos.y / tile)
-	if x < 0 or y < 0 or x >= map.size or y >= map.size:
-		return false
-	if not _pond_cell(x, y, map.size):
-		return false
-	if _walkable[map.terrain[y * map.size + x]] != 1:
-		return false
-	if river != null and river.near(pos, _kind_foot[_pond_kind]):
-		return false
-	return _fits(pos, _pond_kind, map)
-
-
-## Mimo kruhy keep_clear, rozestup podle povrchu a k tomu mimo cestu, továrnu a domy. Skála
+## Mimo kruhy keep_clear a rozestup podle povrchu. Skála
 ## nesmí ležet na kmeni a od pukliny drží CRACK_GAP_M. Puklina se zkouší po celé délce, viz _crack_fits.
 func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
 	for spot in keep_clear:
@@ -279,13 +75,13 @@ func _fits(pos: Vector2, kind: int, map: MapData) -> bool:
 			return false
 	if _is_crack(kind):
 		return super._fits(pos, kind, map) and _crack_fits(pos, kind, map)
-	if not super._fits(pos, kind, map) or _in_town(pos, _kind_foot[kind]):
+	if not super._fits(pos, kind, map):
 		return false
 	return _capsule_at[kind] >= 0 or not near_log(pos, _radius[kind], true)
 
 
 ## Vybere natočení a variantu pukliny podle polohy (náhodu sázení nebere) a zkusí, jestli
-## kapsle po celé délce leží na průchozím povrchu mapy, mimo vesnici a CRACK_GAP_M od
+## kapsle po celé délce leží na průchozím povrchu mapy a CRACK_GAP_M od
 ## ostatních objektů. Když ano, _keep ji tak položí.
 func _crack_fits(pos: Vector2, kind: int, map: MapData) -> bool:
 	var roll := absi(hash(Vector2i(pos)))
@@ -310,7 +106,7 @@ func _crack_fits(pos: Vector2, kind: int, map: MapData) -> bool:
 				return false
 			if _walkable[map.terrain[y * map.size + x]] != 1:
 				return false
-			if _in_town(spot, radius) or _crowded_by(spot, radius + gap):
+			if _crowded_by(spot, radius + gap):
 				return false
 	_shaped_kind = kind
 	_shaped_variant = variant
@@ -359,25 +155,6 @@ func spot_gaps() -> PackedFloat32Array:
 	return gaps
 
 
-func _remember_pond(mat: int) -> void:
-	var index := _pos.size() - 1
-	_pond_slot[index] = _pond_rock.size()
-	_pond_rock.append(index)
-	_pond_mat.append(mat)
-
-
-func _begin_plant(map: MapData) -> void:
-	super._begin_plant(map)
-	_pond_slot = PackedInt32Array()
-	_pond_rock = PackedInt32Array()
-	_pond_mat = PackedInt32Array()
-
-
-func _keep_shaped(kind: int, pos: Vector2, variant: int, turn: float) -> void:
-	super._keep_shaped(kind, pos, variant, turn)
-	_pond_slot.append(-1)
-
-
 func _catalog_path() -> String:
 	return "res://graphics/objects/rocks/rocks.json"
 
@@ -395,7 +172,7 @@ func _build(kind: int) -> Node2D:
 	var node := super._build(kind)
 	node.z_index = 0 if _top[kind] <= LOW else 2
 	if _is_pit(kind):
-		# Vrstvy dolu a pukliny jdou pod zem: nejhlubší se kreslí první, okraj na zemi přes ně.
+		# Vrstvy pukliny jdou pod zem: nejhlubší se kreslí první, okraj na zemi přes ně.
 		var sprites: Array[Sprite2D] = []
 		for child in node.get_children():
 			if child is Sprite2D:
@@ -406,21 +183,9 @@ func _build(kind: int) -> Node2D:
 	return node
 
 
-func acquire(index: int) -> Node2D:
-	var node := super.acquire(index)
-	var slot := _pond_slot[index] if index < _pond_slot.size() else -1
-	if slot >= 0 and _is_mine(_kind[index]):
-		_paint_mine(node, _kind[index], _pond_mat[slot])
-	return node
-
-
 ## Skála je plná od země, její stín se od paty neodtrhne.
 func _solid_shadow() -> bool:
 	return true
-
-
-func _is_mine(kind: int) -> bool:
-	return kind >= 0 and kind < _kinds.size() and bool(_kinds[kind].get("mine", false))
 
 
 func _is_crack(kind: int) -> bool:
@@ -431,13 +196,13 @@ func _is_spring(kind: int) -> bool:
 	return kind >= 0 and kind < _kinds.size() and bool(_kinds[kind].get("spring", false))
 
 
-## Vejde se prameniště name na pos? Mimo vesnici a bez jiné skály v dosahu jeho paty.
+## Vejde se prameniště name na pos? Bez jiné skály v dosahu jeho paty.
 ## Volá ho řeka ve vlákně, po plant.
 func spring_room(name: String, pos: Vector2) -> bool:
 	var kind := int(_kind_of.get(name, -1))
 	if not _is_spring(kind):
 		return false
-	return not _in_town(pos, _kind_foot[kind]) and not _crowded_by(pos, _kind_foot[kind])
+	return not _crowded_by(pos, _kind_foot[kind])
 
 
 ## Dosah paty prameniště name v px, 0 když takové není.
@@ -456,14 +221,13 @@ func place_spring(name: String, pos: Vector2, turn: float, variant: int) -> bool
 	return true
 
 
-## Vrstvy pod zemí: důl a puklina.
+## Vrstvy pod zemí: puklina.
 func _is_pit(kind: int) -> bool:
-	return _is_mine(kind) or _is_crack(kind)
+	return _is_crack(kind)
 
 
-## Vrstvy dolu a pukliny mají vždycky vlastní shader: důl barví kameny a svítí lucernou,
-## puklina žhne, obojí i bez posunu výšky. Tady okraje spritů podle posunu, materiál pukliny
-## je z katalogu, dolu ho dá _paint_mine.
+## Vrstvy pukliny mají vždycky vlastní shader z katalogu, žhne i bez posunu výšky. Tady okraje
+## spritů podle posunu.
 func _fit(node: Node2D, kind: int) -> void:
 	if not _is_pit(kind):
 		super._fit(node, kind)
@@ -474,47 +238,10 @@ func _fit(node: Node2D, kind: int) -> void:
 		if sprite == null or not sprite.has_meta("layer"):
 			continue
 		var info: Dictionary = layers[int(sprite.get_meta("layer"))]
-		if _is_crack(kind):
-			sprite.material = info["material"]
+		sprite.material = info["material"]
 		var height := float(info["height"])
 		var rect := sprite.get_rect().grow(ObjectLayers.vertex_pad(_fitted_view, absf(height)))
 		RenderingServer.canvas_item_set_custom_rect(sprite.get_canvas_item(), true, rect)
-
-
-func _paint_mine(node: Node2D, kind: int, mat: int) -> void:
-	for child in node.get_children():
-		var sprite := child as Sprite2D
-		if sprite != null and sprite.has_meta("layer"):
-			sprite.material = _mine_material(kind, int(sprite.get_meta("layer")), mat)
-
-
-func _mine_material(kind: int, layer: int, mat: int) -> ShaderMaterial:
-	var key := Vector3i(kind, layer, mat)
-	if _mine_materials.has(key):
-		return _mine_materials[key]
-	if _mine_shader == null:
-		_mine_shader = load(MINE_SHADER) as Shader
-	var entry := _kinds[kind]
-	var layers: Array = entry["layers"]
-	var depth := 0.0
-	for info: Dictionary in layers:
-		depth = minf(depth, float(info["height"]))
-	var material := ShaderMaterial.new()
-	material.shader = _mine_shader
-	material.set_shader_parameter("height_m", float(layers[layer]["height"]))
-	material.set_shader_parameter("parallax", ObjectLayers.PARALLAX)
-	material.set_shader_parameter("pit_depth", -depth)
-	material.set_shader_parameter("rock_color", entry["rim_color"] if layer == 0 else entry["wall_color"])
-	if _crystal != null and mat >= 0:
-		material.set_shader_parameter("ore_color", _crystal.color_of(mat))
-		material.set_shader_parameter("glint_color", _crystal.glint_of(mat))
-		material.set_shader_parameter("sparkle", maxf(_crystal.sparkle_of(mat), 0.25))
-	_mine_materials[key] = material
-	return material
-
-
-func _scatter_kind(kind: int) -> bool:
-	return kind != int(_kind_of.get(MINE, -1))
 
 
 ## Poloměr paty podle spodní vrstvy. Podle něj se odhaduje krok stěny a kruh varianty bez obrysu.
@@ -531,10 +258,6 @@ func _load_entry(kind_name: String, info: Dictionary, columns: int) -> Dictionar
 		top = maxf(top, float(layer_info.get("height", 0.0)))
 	_radius.append(radius)
 	_top.append(top)
-	if bool(info.get("mine", false)):
-		entry["mine"] = true
-		entry["rim_color"] = Color.html(str(info.get("color", "7C6A54")))
-		entry["wall_color"] = Color.html(str(info.get("wall", "6E6860")))
 	if bool(info.get("spring", false)):
 		entry["spring"] = true
 	if bool(info.get("crack", false)):
@@ -850,44 +573,16 @@ func _off_log(pos: Vector2, item: int, body: float) -> Vector2:
 	return axis + away.normalized() * limit
 
 
-## Důl, jehož obrysu se střed postavy dotýká. Žádný je -1.
-func pond_at(pos: Vector2, body: float) -> int:
-	var best := -1
-	var best_dist := INF
-	for slot in _pond_rock.size():
-		if _pond_mat[slot] < 0:
-			continue
-		var index := _pond_rock[slot]
-		if not _touches(pos, index, body):
-			continue
-		var dist := pos.distance_squared_to(_pos[index])
-		if dist < best_dist:
-			best_dist = dist
-			best = slot
-	return best
-
-
-## Je střed postavy do body od obrysu dolu slot?
-func near_pond(slot: int, pos: Vector2, body: float) -> bool:
-	return _touches(pos, _pond_rock[slot], body)
-
-
 ## Skály do mapy (MiniMap.chart): dlaždice pod obrysem obarví. Skála je šedá, puklina žhne,
-## padlý strom je tmavé dřevo, důl má barvu svého materiálu. Volá se ve vlákně tvorby čtverce,
-## polohy jsou ještě bez posunu čtverce.
+## padlý strom je tmavé dřevo. Volá se ve vlákně tvorby čtverce, polohy jsou ještě bez posunu
+## čtverce.
 func paint_chart(chart: Image) -> void:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var side := chart.get_width()
-	var mine_mat := {}
-	for slot in _pond_rock.size():
-		mine_mat[_pond_rock[slot]] = _pond_mat[slot]
 	for index in _pos.size():
 		var kind := _kind[index]
 		var color := CHART_ROCK
-		if mine_mat.has(index):
-			var mat: int = mine_mat[index]
-			color = _crystal.color_of(mat) if _crystal != null and mat >= 0 else CHART_ROCK
-		elif _is_crack(kind):
+		if _is_crack(kind):
 			color = CHART_CRACK
 		elif _is_spring(kind):
 			color = CHART_SPRING
@@ -905,60 +600,4 @@ func paint_chart(chart: Image) -> void:
 				var delta := Vector2(x + 0.5, y + 0.5) * tile - _pos[index]
 				if delta.length() <= _sample(_outline, kind, _variant[index], _turn[index], delta.angle()):
 					chart.set_pixel(x, y, color)
-
-
-## Doly materiálu mat.
-func ponds_holding(mat: int) -> PackedInt32Array:
-	var out := PackedInt32Array()
-	for slot in _pond_rock.size():
-		if _pond_mat[slot] == mat:
-			out.append(slot)
-	return out
-
-
-## Materiál dolu.
-func pond_material(slot: int) -> int:
-	return _pond_mat[slot]
-
-
-## Střed dolu ve světě.
-func pond_center(slot: int) -> Vector2:
-	return _pos[_pond_rock[slot]]
-
-
-## Místo, kde stojí tělo o poloměru body u okraje dolu, na straně k from. Střed dolu je
-## neprůchodný, cesta k němu by nevedla.
-func pond_edge(slot: int, from: Vector2, body: float) -> Vector2:
-	var index := _pond_rock[slot]
-	var away := from - _pos[index]
-	if away.length_squared() < 1.0:
-		away = Vector2.RIGHT
-	return _pos[index] + away.normalized() * (_radius[_kind[index]] + body + TOUCH_PX)
-
-
-## Výměna u dolu: důl nikdy nedojde a nic se do něj nedává. Levnější kámen z ruky (held, -1 je
-## prázdná ruka) se vymění za materiál dolu a zmizí, stejný nebo dražší zůstane v ruce
-## a vrátí se held.
-func swap_gem(slot: int, held: int) -> int:
-	var own := _pond_mat[slot]
-	if held >= 0 and _points[held] >= _points[own]:
-		return held
-	return own
-
-
-## Doly: poloha ve světě, číslo materiálu a dolu, po trojicích [pos, mat, slot].
-func pond_spots() -> Array:
-	var spots := []
-	for slot in _pond_rock.size():
-		if _pond_mat[slot] >= 0:
-			spots.append([_pos[_pond_rock[slot]], _pond_mat[slot], slot])
-	return spots
-
-
-func _touches(pos: Vector2, index: int, body: float) -> bool:
-	_use_bounds(body)
-	var kind := _kind[index]
-	var delta := pos - _pos[index]
-	var limit := _sample(_bound, kind, _variant[index], _turn[index], delta.angle()) + TOUCH_PX
-	return delta.length_squared() <= limit * limit
 

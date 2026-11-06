@@ -31,7 +31,7 @@ extends Node2D
 ## kolečko menší než pařez, stín se táhne od země ke koruně (trunk).
 ##
 ## Skály a stromy (LayeredProps) mají stíny ve svých zásobnících uzlů (holders), posouvají se
-## s nimi. Ostatní (domy, sklady, továrna, postavy, vesničané, příšery) se přihlásí přes follow
+## s nimi. Ostatní (postavy, příšery) se přihlásí přes follow
 ## a stín se každý snímek srovná s obrázkem: poloha, natočení, snímek, textura a viditelnost.
 ## Zaniklý obrázek si stín uklidí sám.
 

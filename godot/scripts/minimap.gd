@@ -4,7 +4,7 @@ extends Control
 ## jeden pixel obrazovky. Objevené je to, co bylo někdy v záběru kamery bez jeho rohů
 ## (zaoblené o REVEAL_ROUND kratší strany), zbytek je tmavý.
 ## Obrázek čtverce (chart, pixel na dlaždici) se počítá ve vlákně tvorby čtverce, okno
-## ho jen ukáže přes masku objevených dlaždic. Továrny, sklady a hráči jsou značky navrch.
+## ho jen ukáže přes masku objevených dlaždic. Hráči jsou značky navrch.
 ## Obrázek zůstane, i když se čtverec uvolní, objevené místo z mapy nezmizí.
 ## Okno ořízne obrázky čtverců na zaoblený obdélník samo v jejich shaderu. Ořez přes
 ## clip_children by se kreslil přes zvláštní obrázek a na slabé grafice stál milisekundy.
@@ -22,16 +22,10 @@ const REVEAL_ROUND := 0.4
 ## Maska objevených dlaždic se do textury přenáší nejvýš jednou za tolik sekund.
 const FLUSH := 0.1
 const UNSEEN := Color(0.05, 0.05, 0.06, 0.9)
-## Barvy obrázku čtverce. Les dlaždici ztmaví, za každý strom o TREE_SHADE, nejvýš TREE_MAX.
-const ROAD := Color(0.78, 0.7, 0.54)
-const HOUSE := Color(0.54, 0.35, 0.24)
-const FACTORY := Color(0.72, 0.69, 0.63)
-const STORE := Color(0.63, 0.54, 0.38)
+## Les dlaždici ztmaví, za každý strom o TREE_SHADE, nejvýš TREE_MAX.
 const TREE_SHADE := 0.18
 const TREE_MAX := 0.5
-## Značky navrch: továrna, sklad a hráč.
-const FACTORY_MARK := Color(0.95, 0.75, 0.3)
-const STORE_MARK := Color(0.86, 0.66, 0.3)
+## Obrys značky hráče.
 const OUTLINE := Color(0.08, 0.06, 0.05)
 ## Obrázek čtverce přes masku objevených dlaždic, oříznutý na zaoblené okno. place je poloha
 ## obrázku ve vrstvě čtverců (x, y) a pixely okna na jednotku vrstvy (z), window velikost okna
@@ -68,8 +62,6 @@ var _shader: Shader
 ## Ukázané čtverce: souřadnice -> {node, origin, mask (Image), textures (dvě ImageTexture),
 ## shown (index ukázané), dirty}.
 var _views := {}
-## Značky čtverců: souřadnice -> Array dvojic [poloha ve světě, továrna (true) / sklad].
-var _marks := {}
 var _canvas: Control
 var _overlay: Control
 var _last_rect := Rect2i()
@@ -114,8 +106,8 @@ func setup(camera: Camera2D, persons: Array, seen: Dictionary, side: int) -> voi
 		_colors.append(Color.html(str(player.get("shirt", "E8E2D2"))))
 
 
-## Hotový čtverec: jeho obrázek a značky (továrna, sklady) ve světě.
-func add_square(coord: Vector2i, origin: Vector2, chart: Image, marks: Array) -> void:
+## Hotový čtverec: jeho obrázek ve světě.
+func add_square(coord: Vector2i, origin: Vector2, chart: Image) -> void:
 	if chart == null or _views.has(coord):
 		return
 	var bytes: PackedByteArray = _seen.get(coord, PackedByteArray())
@@ -137,7 +129,6 @@ func add_square(coord: Vector2i, origin: Vector2, chart: Image, marks: Array) ->
 	node.stretch_mode = TextureRect.STRETCH_SCALE
 	_canvas.add_child(node)
 	_views[coord] = {"node": node, "origin": origin, "mask": mask, "textures": textures, "shown": 0, "dirty": false}
-	_marks[coord] = marks
 	# Co bylo v záběru dřív, než čtverec vznikl, se dopočítá při příštím pohybu.
 	_last_rect = Rect2i()
 
@@ -238,15 +229,6 @@ func _draw() -> void:
 func _draw_overlay() -> void:
 	if _camera == null:
 		return
-	for coord: Vector2i in _marks:
-		for mark: Array in _marks[coord]:
-			var pos: Vector2 = mark[0]
-			if not _is_seen(coord, pos):
-				continue
-			var at := _to_map(pos)
-			var half := 4.0 if mark[1] else 2.5
-			if _inside(at, half + 1.0):
-				_square_mark(at, half, FACTORY_MARK if mark[1] else STORE_MARK)
 	for i in _persons.size():
 		var person: Node2D = _persons[i]
 		if not is_instance_valid(person):
@@ -256,11 +238,6 @@ func _draw_overlay() -> void:
 			continue
 		_overlay.draw_circle(at, 3.2, OUTLINE)
 		_overlay.draw_circle(at, 2.2, _colors[i] if i < _colors.size() else Color.WHITE)
-
-
-func _square_mark(at: Vector2, half: float, color: Color) -> void:
-	_overlay.draw_rect(Rect2(at - Vector2.ONE * (half + 1.0), Vector2.ONE * (half + 1.0) * 2.0), OUTLINE)
-	_overlay.draw_rect(Rect2(at - Vector2.ONE * half, Vector2.ONE * half * 2.0), color)
 
 
 ## Vejde se značka s poloměrem reach kolem at celá do zaobleného okna? Vzdálenost od okraje
@@ -291,9 +268,9 @@ func _is_seen(coord: Vector2i, world: Vector2) -> bool:
 	return (_seen[coord] as PackedByteArray)[int(local.y) * _side + int(local.x)] != 0
 
 
-## Obrázek čtverce, pixel na dlaždici: terén (mírně zrnitý), les ho ztmaví, řeka, cesta,
-## domy, továrna, sklady a skály. Volá se ve vlákně tvorby čtverce, polohy jsou bez posunu.
-static func chart(map: MapData, rocks: Node, forest: Node, town: Node, river: RefCounted) -> Image:
+## Obrázek čtverce, pixel na dlaždici: terén (mírně zrnitý), les ho ztmaví, řeka a skály.
+## Volá se ve vlákně tvorby čtverce, polohy jsou bez posunu.
+static func chart(map: MapData, rocks: Node, forest: Node, river: RefCounted) -> Image:
 	var side := map.size
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var image := Image.create(side, side, false, Image.FORMAT_RGBA8)
@@ -310,7 +287,6 @@ static func chart(map: MapData, rocks: Node, forest: Node, town: Node, river: Re
 		if x >= 0 and y >= 0 and x < side and y < side:
 			trees[y * side + x] = mini(trees[y * side + x] + 1, 250)
 	var has_river: bool = river != null and river.exists()
-	var has_town: bool = town != null and town.center() != Vector2.INF
 	for y in side:
 		for x in side:
 			var cell := y * side + x
@@ -323,15 +299,6 @@ static func chart(map: MapData, rocks: Node, forest: Node, town: Node, river: Re
 			var center := Vector2(x + 0.5, y + 0.5) * tile
 			if has_river and river.water_at(center):
 				color = water_color
-			elif has_town:
-				if town.touches_factory(center, 0.0):
-					color = FACTORY
-				elif town.store_bay(center, 0.0) >= 0:
-					color = STORE
-				elif town.building_near(center, 0.0):
-					color = HOUSE
-				elif town.on_road(center):
-					color = ROAD
 			image.set_pixel(x, y, color)
 	rocks.paint_chart(image)
 	return image

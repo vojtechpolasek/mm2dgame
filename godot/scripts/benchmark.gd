@@ -4,12 +4,12 @@ extends Node
 ## Volitelně --benchmark-seed=N (jiný svět) a --benchmark-out=cesta.json (kam zapsat výsledek).
 ## --benchmark-probe jen vypíše cíle trasy a otisk světa a skončí (výběr semínka).
 ##
-## Hra Skafandry na pevném semínku, takže je svět pokaždé stejný: vesnice, továrna, příšery,
-## vesničané a řeka (úvodní čtverec benchmarku smí mít vodu, viz WorldBoard._generate).
-## Nic se neukládá a nastavení grafiky se mění jen po dobu měření.
+## Chytej příšery na pevném semínku, takže je svět pokaždé stejný: les, řeka a příšery, které
+## se objeví před postavou (úvodní čtverec benchmarku smí mít vodu, viz WorldBoard._generate).
+## Výkon se nezapíše a nastavení grafiky se mění jen po dobu měření.
 ##
 ## Průběh (asi 50 s po vzniku mapy):
-## 1. Trasa ve dne: stání, les, k vodě, brodění, vesnice. Úsek začne LEG_M metrů před cílem
+## 1. Trasa ve dne: stání, les, k vodě, brodění. Úsek začne LEG_M metrů před cílem
 ##    (každý běh na stejném místě) a postavu vede po NavGrid stejnými akcemi jako hráč. Končí
 ##    v cíli nebo po svém limitu.
 ## 2. Noc: stání a brodění se zapnutými čelovkami. Ve složkách noci jdou zvlášť vypnout i stíny
@@ -24,7 +24,7 @@ extends Node
 
 const Shadows := preload("res://scripts/shadows.gd")
 
-## Semínko světa benchmarku. Úvodní čtverec má les, řeku i vesnici.
+## Semínko světa benchmarku. Úvodní čtverec má les i řeku.
 const DEFAULT_SEED := 2
 ## Denní doba (DayNight.phase): dopoledne a noc s měsícem vysoko.
 const DAY_PHASE := 0.15
@@ -37,7 +37,7 @@ const REACH_M := 1.5
 ## Postava se zasekla, když za STUCK_TIME neušla STUCK_M metrů. Pak skočí a cestu přepočítá.
 const STUCK_TIME := 0.8
 const STUCK_M := 0.4
-## Od kraje čtverce drží cíle tolik metrů, ať je nezastaví ohrada levelu.
+## Od kraje čtverce drží cíle tolik metrů, ať trasa zůstane v úvodním čtverci.
 const EDGE_M := 4.0
 ## Úsek trasy začíná na cestě tolik metrů před cílem, každý běh na stejném místě.
 const LEG_M := 15.0
@@ -114,15 +114,10 @@ func _ready() -> void:
 	_vsync = DisplayServer.window_get_vsync_mode()
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	print("Benchmark: semínko %d, %s" % [world_seed(), RenderingServer.get_video_adapter_name()])
-	# I globální náhoda (zvuky, pořadí vesničanů) je pevná.
+	# I globální náhoda (zvuky) je pevná.
 	seed(hash([world_seed(), "global"]))
 	_settings = {"scale": Graphics.world_scale(), "shadows": Graphics.shadows_on(), "sparkle": Graphics.sparkle_on(), "fps": Graphics.fps_on()}
-	# Bez id se hra neukládá, uložené hry hráče zůstanou, jak byly.
-	GameSession.free_roam = false
-	GameSession.hunt = false
-	GameSession.suit_id = ""
-	GameSession.suit_resume = {}
-	GameSession.suit_outfits = []
+	GameSession.mode = GameSession.HUNT
 	if GameSession.players.is_empty():
 		GameSession.players = [GameSession.default_player()]
 	_start_usec = Time.get_ticks_usec()
@@ -166,7 +161,7 @@ func _begin() -> void:
 	_next()
 
 
-## Cíle trasy v úvodním čtverci: start, nejhustší les, nejbližší brod, kus dál po vodě, továrna.
+## Cíle trasy v úvodním čtverci: start, nejhustší les, nejbližší brod a kus dál po vodě.
 func _find_spots() -> Dictionary:
 	var sq = (_board.get("_squares") as Dictionary)[Vector2i.ZERO]
 	_nav = load("res://scripts/nav_grid.gd").new()
@@ -220,13 +215,10 @@ func _find_spots() -> Dictionary:
 			if inside > wettest:
 				wettest = inside
 				spots["brod"] = at
-	var town_center: Vector2 = sq.town.center()
-	if town_center != Vector2.INF:
-		spots["vesnice"] = town_center
 	spots["stromu"] = trees.size()
 	# Otisk světa: stejné semínko musí dát stejný otisk, jinak běhy nejde porovnat.
 	var rocks: PackedVector2Array = sq.rocks.get("_pos")
-	spots["otisk"] = "%08x" % (hash([sq.map.terrain, trees, rocks, wet, town_center]) & 0xffffffff)
+	spots["otisk"] = "%08x" % (hash([sq.map.terrain, trees, rocks, wet]) & 0xffffffff)
 	spots["voda_dlazdic"] = wet.size() * 4
 	return spots
 
@@ -235,7 +227,7 @@ func _build_plan() -> void:
 	_plan.clear()
 	_add("stani", "trasa_den", STILL, {})
 	var from: Vector2 = _spots["start"]
-	for leg in ["les", "voda", "brod", "vesnice"]:
+	for leg in ["les", "voda", "brod"]:
 		if _spots.has(leg):
 			_add("chuze_" + leg, "trasa_den", 5.0, {"goal": _spots[leg], "from": from})
 			from = _spots[leg]
@@ -395,12 +387,13 @@ func _apply_off(part: String) -> void:
 		shadows.visible = part != "bez_stinu_objektu"
 		if part == "bez_stinu_objektu":
 			(shadows.get("_shadow_view") as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED
-	for sq in (_board.get("_squares") as Dictionary).values():
-		for group in [sq.monsters.members, sq.villagers.members]:
-			for member: Node in group:
-				if is_instance_valid(member):
-					member.process_mode = Node.PROCESS_MODE_DISABLED if part == "bez_tvoru" else Node.PROCESS_MODE_INHERIT
-					(member as CanvasItem).visible = part != "bez_tvoru"
+	var hunt = _board.get("_hunt")
+	if hunt != null:
+		for prey in hunt.get("_alive"):
+			var monster: Node2D = prey.monster
+			if is_instance_valid(monster):
+				monster.process_mode = Node.PROCESS_MODE_DISABLED if part == "bez_tvoru" else Node.PROCESS_MODE_INHERIT
+				monster.visible = part != "bez_tvoru"
 
 
 func _sample() -> void:

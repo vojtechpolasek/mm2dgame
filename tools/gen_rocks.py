@@ -222,20 +222,6 @@ ROCKS = {
         "variants": 9,
         "spacing": 5.0,
     },
-    # Důl, o pětinu větší než dřívější jezírko. Kreslí ho gen_mine.py: vrstva 1 je okraj
-    # na zemi, další jsou pod zemí. color je hlína okraje, wall hornina stěn.
-    "dul": {
-        "mine": True,
-        "layers": 4,
-        "widths": {1: 154, 2: 112, 3: 82, 4: 58},
-        "height": {1: 0.0, 2: -0.6, 3: -1.2, 4: -1.8},
-        "color": "7C6A54",
-        "wall": "6E6860",
-        "rough": 0.12,
-        "pond_ratio": 0.54,
-        "variants": 9,
-        "spacing": 2.0,
-    },
     "kotlina": {
         "layers": 2,
         "widths": {1: 384, 2: 348},
@@ -963,66 +949,7 @@ def stack_layers(
     return image
 
 
-def check_mine(name: str, preset: dict) -> int:
-    """Důl má okraj ve výšce 0 a pod ním vrstvy čím dál hlubší a užší."""
-    layers = int(preset["layers"])
-    if not 2 <= layers <= 4:
-        raise SystemExit(f"{name}: důl má mít 2 až 4 vrstvy")
-    if float(preset["height"][1]) != 0.0:
-        raise SystemExit(f"{name}: okraj dolu má výšku 0")
-    for layer in range(2, layers + 1):
-        if float(preset["height"][layer]) >= float(preset["height"][layer - 1]):
-            raise SystemExit(f"{name}: vrstva {layer} má být hlouběji než {layer - 1}")
-        if float(preset["widths"][layer]) >= float(preset["widths"][layer - 1]):
-            raise SystemExit(f"{name}: vrstva {layer} má být užší než {layer - 1}")
-    ratio = float(preset.get("pond_ratio", 0))
-    if not 0.2 <= ratio <= 0.7:
-        raise SystemExit(f"{name}: pond_ratio má být mezi 0.2 a 0.7")
-    parse_hex(preset["color"])
-    parse_hex(preset["wall"])
-    return layers
-
-
-def check_fallen(name: str, preset: dict) -> int:
-    """Padlý strom má tři vrstvy: zem, kmen a korunu nad ním."""
-    if int(preset["layers"]) != 3:
-        raise SystemExit(f"{name}: padlý strom má tři vrstvy")
-    heights = [float(preset["height"][layer]) for layer in (1, 2, 3)]
-    if heights[0] != 0.0 or not heights[0] < heights[1] < heights[2]:
-        raise SystemExit(f"{name}: výšky mají být 0 a dál stoupat")
-    for key in ("length", "crown"):
-        low, high = preset[key]
-        if not 0 < low <= high:
-            raise SystemExit(f"{name}: {key} má být rozsah od menšího k většímu")
-    if float(preset.get("spacing", 0)) <= 0:
-        raise SystemExit(f"{name}: spacing musí být větší než 0")
-    parse_hex(preset["color"])
-    if preset.get("moss"):
-        parse_hex(preset["moss"])
-    return 3
-
-
-def check_crack(name: str, preset: dict) -> int:
-    """Puklina má okraj ve výšce 0 a pod ním dvě vrstvy čím dál hlubší."""
-    if int(preset["layers"]) != 3:
-        raise SystemExit(f"{name}: puklina má tři vrstvy")
-    heights = [float(preset["height"][layer]) for layer in (1, 2, 3)]
-    if heights[0] != 0.0 or not heights[0] > heights[1] > heights[2]:
-        raise SystemExit(f"{name}: výšky mají být 0 a dál klesat")
-    for key in ("length", "width", "branches"):
-        low, high = preset[key]
-        if not 0 <= low <= high:
-            raise SystemExit(f"{name}: {key} má být rozsah od menšího k většímu")
-    if float(preset.get("spacing", 0)) <= 0:
-        raise SystemExit(f"{name}: spacing musí být větší než 0")
-    parse_hex(preset["color"])
-    parse_hex(preset["lava"])
-    return 3
-
-
 def check_preset(name: str, preset: dict) -> int:
-    if preset.get("mine"):
-        return check_mine(name, preset)
     if preset.get("crack"):
         return check_crack(name, preset)
     if preset.get("fallen"):
@@ -1082,11 +1009,7 @@ def rock_info(rocks: dict) -> dict:
     for name, preset in rocks.items():
         check_preset(name, preset)
         layers = int(preset["layers"])
-        if preset.get("mine"):
-            from gen_mine import canvas_size as mine_canvas
-
-            drawn = mine_canvas(preset)
-        elif preset.get("fallen"):
+        if preset.get("fallen"):
             from gen_fallen import canvas_size as fallen_canvas
 
             drawn = fallen_canvas(preset)
@@ -1129,11 +1052,7 @@ def rock_info(rocks: dict) -> dict:
             catalog[name]["crack"] = True
         if preset.get("spring"):
             catalog[name]["spring"] = True
-        if preset.get("mine"):
-            catalog[name]["mine"] = True
-            catalog[name]["wall"] = preset["wall"]
-            catalog[name]["mouth"] = round(float(preset["widths"][1]) * 0.5 * float(preset["pond_ratio"]), 1)
-        elif preset.get("round"):
+        if preset.get("round"):
             mouth = float(preset["widths"][layers]) * 0.5 * float(preset["pond_ratio"])
             if preset.get("dry"):
                 mouth *= 0.9

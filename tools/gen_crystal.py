@@ -54,72 +54,40 @@ STONE_FACETS = (
 CRYSTAL_SPARKS = (255, 188, 128, 84)
 STONE_SPARKS = (210, 150, 96)
 
-# title je název pro hráče (nápis nad jezírkem, HUD). Body určují skóre, vzácnost jezírek
-# jde podle pořadí materiálu.
-# monster je druh příšery z gen_monsters.MONSTERS. Příšera má tělo v barvě color a kresbu
-# v monster_accent, jinak v glint. monster_speed zrychlí honičku příšery dražšího materiálu ve skupině.
-# Skupiny jdou od nejméně po nejvíc nebezpečné: had, štír, pavouk, kamenná koule, vlk, kocour, tyranosaurus,
-# ptakoještěr. Koule hlídá poslední kameny, krystaly začínají vlkem.
-# Ptakoještěr letí přímo přes všechno, proto hlídá nejvzácnější materiály.
+# title je název pro hráče (nápis nad kamenem, HUD).
+# Příšera z materiálu má tělo v barvě color a kresbu v monster_accent, jinak v glint.
 MATERIALS = {
     "piskovec": {"title": "Pískovec", "shape": "stone", "points": 1, "color": "C4A56A", "sparkle": 0.10, "glint": "F0E0B8",
-                 "monster": "had2", "monster_accent": "5E4022", "monster_speed": 1.0},
+                 "monster_accent": "5E4022"},
     "sira": {"title": "Síra", "shape": "stone", "points": 2, "color": "D6C43A", "sparkle": 0.18, "glint": "FFF3A8",
-             "monster": "had2", "monster_accent": "4A3A18", "monster_speed": 1.08},
+                 "monster_accent": "4A3A18"},
     "hadec": {"title": "Hadec", "shape": "stone", "points": 4, "color": "8C9A58", "sparkle": 0.15, "glint": "E4ECC0",
-              "monster": "stir", "monster_accent": "2A3320", "monster_speed": 1.0},
+                 "monster_accent": "2A3320"},
     "porfyr": {"title": "Porfyr", "shape": "stone", "points": 6, "color": "7E3A6A", "sparkle": 0.20, "glint": "F0C0D8",
-               "monster": "stir", "monster_accent": "E0C8B0", "monster_speed": 1.08},
-    "lavovy": {"title": "Lávový kámen", "shape": "stone", "points": 8, "color": "6A332C", "sparkle": 0.24, "glint": "FF7848",
-               "monster": "pavouk2", "monster_speed": 1.0},
+                 "monster_accent": "E0C8B0"},
+    "lavovy": {"title": "Lávový kámen", "shape": "stone", "points": 8, "color": "6A332C", "sparkle": 0.24, "glint": "FF7848"},
     "grafit": {"title": "Grafit", "shape": "stone", "points": 10, "color": "1A1C1E", "sparkle": 0.0, "glint": "3A3A3A",
-               "monster": "pavouk2", "monster_accent": "6E767E", "monster_speed": 1.08},
-    "magnetit": {"title": "Magnetit", "shape": "stone", "points": 12, "color": "4A5158", "sparkle": 0.38, "glint": "E4E8EE",
-                 "monster": "koule2", "monster_speed": 1.0},
+                 "monster_accent": "6E767E"},
+    "magnetit": {"title": "Magnetit", "shape": "stone", "points": 12, "color": "4A5158", "sparkle": 0.38, "glint": "E4E8EE"},
     "kremen": {"title": "Křemen", "shape": "stone", "points": 15, "color": "E6D6B8", "sparkle": 0.55, "glint": "FFFFFF",
-               "monster": "koule2", "monster_accent": "8C7458", "monster_speed": 1.08},
+                 "monster_accent": "8C7458"},
     "stribro": {"title": "Stříbro", "shape": "crystal", "points": 21, "color": "A8B4C6", "sparkle": 1.0, "glint": "FFFFFF",
-                "monster": "vlk2", "monster_accent": "4E5A6C", "monster_speed": 1.0},
+                 "monster_accent": "4E5A6C"},
     "jantar": {"title": "Jantar", "shape": "crystal", "points": 30, "color": "B4621C", "sparkle": 0.62, "glint": "FFE1B0",
-               "monster": "vlk2", "monster_accent": "5A2410", "monster_speed": 1.08},
+                 "monster_accent": "5A2410"},
     "ametyst": {"title": "Ametyst", "shape": "crystal", "points": 34, "color": "8A4FC8", "sparkle": 0.70, "glint": "F2E0FF",
-                "monster": "kocour", "monster_accent": "E2C8FF", "monster_speed": 1.0},
+                 "monster_accent": "E2C8FF"},
     "akvamarin": {"title": "Akvamarín", "shape": "crystal", "points": 38, "color": "6EC8D8", "sparkle": 0.75, "glint": "F0FFFF",
-                  "monster": "kocour", "monster_accent": "E4FFFF", "monster_speed": 1.08},
+                 "monster_accent": "E4FFFF"},
     "smaragd": {"title": "Smaragd", "shape": "crystal", "points": 42, "color": "1E8A45", "sparkle": 0.80, "glint": "E7FFE8",
-                "monster": "rex2", "monster_accent": "E2B33A", "monster_speed": 1.0},
+                 "monster_accent": "E2B33A"},
     "zlato": {"title": "Zlato", "shape": "crystal", "points": 62, "color": "ECC420", "sparkle": 0.80, "glint": "FFF0A8",
-              "monster": "rex2", "monster_accent": "B8302A", "monster_speed": 1.08},
-    "rubin": {"title": "Rubín", "shape": "crystal", "points": 78, "color": "C42030", "sparkle": 0.92, "glint": "FFE8E0",
-              "monster": "ptakojester2", "monster_speed": 1.0},
-    "safir": {"title": "Safír", "shape": "crystal", "points": 90, "color": "2A5BD7", "sparkle": 1.15, "glint": "E4EEFF",
-              "monster": "ptakojester2", "monster_speed": 1.08},
+                 "monster_accent": "B8302A"},
+    "rubin": {"title": "Rubín", "shape": "crystal", "points": 78, "color": "C42030", "sparkle": 0.92, "glint": "FFE8E0"},
+    "safir": {"title": "Safír", "shape": "crystal", "points": 90, "color": "2A5BD7", "sparkle": 1.15, "glint": "E4EEFF"},
     "diamant": {"title": "Diamant", "shape": "crystal", "points": 100, "color": "D7E7F6", "sparkle": 1.40, "glint": "FFFFFF",
-                "monster": "ptakojester2", "monster_accent": "8098B4", "monster_speed": 1.15},
+                 "monster_accent": "8098B4"},
 }
-# Jak daleko od svého dolu se příšera materiálu běžně toulá: [od, do] v metrech od středu dolu.
-# Při honičce neplatí.
-MONSTER_RANGE = {
-    "piskovec": [3, 8],
-    "sira": [3, 7],
-    "hadec": [3, 9],
-    "porfyr": [3, 8],
-    "lavovy": [3, 10],
-    "grafit": [3, 8],
-    "magnetit": [3, 11],
-    "kremen": [3, 11],
-    "stribro": [4, 12],
-    "jantar": [4, 11],
-    "ametyst": [4, 13],
-    "akvamarin": [4, 12],
-    "smaragd": [5, 16],
-    "zlato": [5, 15],
-    "rubin": [8, 25],
-    "safir": [8, 22],
-    "diamant": [8, 20],
-}
-for _name, _meters in MONSTER_RANGE.items():
-    MATERIALS[_name]["monster_range"] = _meters
 
 
 def parse_hex(text: str) -> tuple[int, int, int]:

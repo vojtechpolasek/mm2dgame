@@ -16,15 +16,11 @@ var _points := PackedInt32Array()
 var _color := PackedColorArray()
 var _glint := PackedColorArray()
 var _sparkle := PackedFloat32Array()
-## Příšera materiálu: druh z monsters.json, barva kresby a zrychlení honičky. Tělo má barvu materiálu.
 var _names := PackedStringArray()
 ## Název pro hráče (Pískovec, Lávový kámen, ...). Bez title v katalogu je to klíč materiálu.
 var _titles := PackedStringArray()
-var _monster := PackedStringArray()
+## Barva kresby příšery z materiálu. Tělo má barvu materiálu.
 var _monster_accent := PackedColorArray()
-var _monster_speed := PackedFloat32Array()
-## Jak daleko od svého dolu se příšera toulá: x od, y do, v metrech.
-var _monster_range := PackedVector2Array()
 
 
 func load_catalog() -> bool:
@@ -74,11 +70,7 @@ func load_catalog() -> bool:
 		_sparkle.append(float(mat.get("sparkle", 0.0)))
 		_names.append(mat_name)
 		_titles.append(str(mat.get("title", mat_name)))
-		_monster.append(str(mat.get("monster", "")))
 		_monster_accent.append(Color.html(str(mat.get("monster_accent", mat.get("glint", "FFFFFF")))))
-		_monster_speed.append(float(mat.get("monster_speed", 1.0)))
-		var area: Array = mat.get("monster_range", [])
-		_monster_range.append(Vector2(float(area[0]), float(area[1])) if area.size() >= 2 else Vector2.ZERO)
 	if _color.is_empty():
 		push_error("Krystal nemá materiály.")
 		return false
@@ -119,21 +111,8 @@ func title_of(index: int) -> String:
 	return _titles[index]
 
 
-func monster_of(index: int) -> String:
-	return _monster[index]
-
-
 func monster_accent(index: int) -> Color:
 	return _monster_accent[index]
-
-
-func monster_speed(index: int) -> float:
-	return _monster_speed[index]
-
-
-## Oblast toulání příšery kolem jejího dolu: x od, y do, v metrech. Bez údaje v katalogu nula.
-func monster_range(index: int) -> Vector2:
-	return _monster_range[index]
 
 
 func make_sprite() -> Sprite2D:

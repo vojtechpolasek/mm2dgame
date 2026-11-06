@@ -12,14 +12,11 @@ extends RefCounted
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapData := preload("res://scripts/map_data.gd")
-const Town := preload("res://scripts/town.gd")
 
 const ROOT := "res://graphics/objects/decor"
 const SHADER := "res://shaders/decor.gdshader"
 ## Strana kusu v dlaždicích.
 const CHUNK := 16
-## Od cesty, továrny a domů drží porost tolik pixelů.
-const TOWN_GAP := 10.0
 ## Vlnová délka shluků v dlaždicích.
 const PATCH_TILES := 9.0
 ## Floatů na instanci v bufferu MultiMesh: 8 transformace 2D a 4 vlastní data.
@@ -120,7 +117,7 @@ static func _quad(cell: float) -> ArrayMesh:
 ## Rozmístí porost. corners jsou rohy dlaždic z MapGenerator.corner_data: dlaždice, která má
 ## v rohu vodu, zůstane holá, je na ní břeh. tile_origin je poloha mapy ve světě v dlaždicích,
 ## podle ní se berou shluky. seed drží rozmístění stejné i po načtení hry. Do řeky nic neroste.
-func plant(kit: Dictionary, map: MapData, corners: PackedByteArray, town: Town, water: int, tile_origin: Vector2i, seed: int, river = null) -> void:
+func plant(kit: Dictionary, map: MapData, corners: PackedByteArray, water: int, tile_origin: Vector2i, seed: int, river = null) -> void:
 	_buffers.clear()
 	if kit.is_empty():
 		return
@@ -150,8 +147,6 @@ func plant(kit: Dictionary, map: MapData, corners: PackedByteArray, town: Town, 
 					count += 1
 				for _i in count:
 					var pos := Vector2((float(x) + rng.randf()) * tile, (float(y) + rng.randf()) * tile)
-					if town != null and town.blocks(pos, TOWN_GAP):
-						continue
 					if river != null and river.near(pos, 4.0):
 						continue
 					var cells: PackedVector2Array = kind["cells"]

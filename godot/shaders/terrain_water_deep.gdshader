@@ -1,5 +1,4 @@
 shader_type canvas_item;
-// Bez unshaded, ať svět obarví CanvasModulate (jed, tma).
 render_mode blend_mix;
 
 // Hluboká voda jezera: dlaždice celé ve vodě, kolem kterých je jen voda (TerrainChunks). Břeh,

@@ -4,8 +4,6 @@ extends Control
 ## ovladači (šipky, WASD, gamepady) ho obsadí a objeví se další prázdné místo, až do šesti hráčů.
 ## Připojený hráč svým ovladačem vybírá řádek (nahoru, dolů) a barvu (doleva, doprava),
 ## podržením skoku se odpojí. Enter nebo Start na gamepadu spustí hru, Esc nebo B vrátí zpět.
-## Pokračující hru (GameSession.suit_outfits) musí hrát stejný počet hráčů, kolik ji
-## začalo. Připojený hráč dostane oblečení ze hry podle pořadí a víc míst než hráčů hry není.
 
 const PersonPreview := preload("res://scripts/person_preview.gd")
 const ControllerIcon := preload("res://scripts/controller_icon.gd")
@@ -42,23 +40,11 @@ func _ready() -> void:
 	_rebuild()
 
 
-## Kolik hráčů musí hrát pokračující hru, u nové 0.
-func _required() -> int:
-	if GameSession.suit_resume.is_empty():
-		return 0
-	return GameSession.suit_outfits.size()
-
-
-## Nejvíc hráčů: u pokračující hry jen tolik, kolik ji začalo.
-func _most() -> int:
-	return _required() if _required() > 0 else GameSession.MAX_PLAYERS
-
-
 func _process(delta: float) -> void:
 	for device in Controls.COUNT:
 		var slot := _slot_of(device)
 		if slot < 0:
-			if Controls.pressed(device, "up") and GameSession.players.size() < _most():
+			if Controls.pressed(device, "up") and GameSession.players.size() < GameSession.MAX_PLAYERS:
 				_join(device)
 			continue
 		if Controls.jump_held(device):
@@ -107,9 +93,6 @@ func _slot_of(device: int) -> int:
 
 func _join(device: int) -> void:
 	var player := GameSession.free_outfit()
-	var slot := GameSession.players.size()
-	if slot < GameSession.suit_outfits.size() and _required() > 0:
-		player = (GameSession.suit_outfits[slot] as Dictionary).duplicate()
 	player["device"] = device
 	GameSession.players.append(player)
 	_rows.append(0)
@@ -171,15 +154,13 @@ func _shirt_taken(hex: String, slot: int) -> bool:
 func _start() -> void:
 	if GameSession.players.is_empty():
 		return
-	if _required() > 0 and GameSession.players.size() != _required():
-		return
 	Sound.ui("start")
 	get_tree().change_scene_to_file("res://scenes/world.tscn")
 
 
 func _back() -> void:
 	Sound.ui("back")
-	get_tree().change_scene_to_file("res://scenes/main_menu.tscn" if GameSession.free_roam else "res://scenes/suit_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 # --- Karty ---
@@ -198,12 +179,9 @@ func _rebuild() -> void:
 		preview.position = (preview.get_parent() as Control).custom_minimum_size * 0.5 + Vector2(0.0, 6.0)
 		preview.apply(GameSession.players[i])
 		_refresh(i)
-	if GameSession.players.size() < _most():
+	if GameSession.players.size() < GameSession.MAX_PLAYERS:
 		_slots.add_child(_empty_card())
-	var need := _required()
-	$Center/Panel/Column/Buttons/Start.disabled = GameSession.players.is_empty() or (need > 0 and GameSession.players.size() != need)
-	if need > 0:
-		$Center/Panel/Column/Title.title = "Hráči · hra je pro %d %s" % [need, "hráče" if need <= 4 else "hráčů"]
+	$Center/Panel/Column/Buttons/Start.disabled = GameSession.players.is_empty()
 
 
 func _player_card(slot: int) -> PanelContainer:

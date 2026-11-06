@@ -1,7 +1,20 @@
 extends Node
 
-## Chytej příšery. Volný pohyb, ve kterém se před hráči objevují příšery. Hráči je za SECONDS
-## sekund chytají dotykem a sbírají společné body. Výkony se zapisují podle počtu hráčů.
+## Hry na čas v otevřeném světě: Chytej příšery a Sbírání materiálů (GameSession.mode). Před
+## hráči se objevují příšery, hráči za SECONDS sekund sbírají společné body. Výkony se
+## zapisují podle počtu hráčů, každý režim do své tabulky.
+##
+## Chytej příšery: příšery utíkají a hráči je chytají dotykem.
+## Sbírání materiálů: místo příšery se objeví kámen a jeho příšera kolem něj krouží ve
+## vzdálenosti GUARD_RING metrů (Monster.guard_at). Kámen má nápis s materiálem a body, body
+## jsou body druhu krát násobitel materiálu jako u příšery v Chytej příšery. Dotek kámen
+## sebere: hráči dostanou body, postava ho nese v ruce a příšera ji začne honit rychlostí úprku
+## o CHASE_BONUS m/s vyšší (laciné příšery jsou pomalejší než postava, drahé rychlejší). Když ji
+## dohoní, body se odečtou, kámen spadne pod příšeru a ta kolem něj zase krouží. Kámen pak
+## ROB_CALM sekund nejde sebrat. Když je postava dál než GIVE_UP_M metrů nebo sebere jiný kámen,
+## příšera honičky nechá a kámen si hráči nechají. Příšera, která honí, nezmizí. Kámen leží
+## tam, kam hráč dojde: na souši, u vodního druhu na mělčině, kolem které vodní příšera krouží
+## ve vodě (kde je voda úzká, na menším kruhu).
 ##
 ## Každou sekundu se zapíše, kde je střed kamery (ukazuje všechny hráče). Příšera se objeví,
 ## když se kamera za posledních MOVED_SECONDS sekund posunula aspoň o MOVED_M metrů: tím
@@ -47,9 +60,11 @@ const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
 const Crowd := preload("res://scripts/crowd.gd")
 const DayNight := preload("res://scripts/day_night.gd")
+const Benchmark := preload("res://scripts/benchmark.gd")
 
 const CATALOG := "res://graphics/characters/monsters/hunt.json"
 const RECORDS := "user://hunt_records.cfg"
+const COLLECT_RECORDS := "user://collect_records.cfg"
 ## Výkonů se pro každý počet hráčů drží tolik. Sekce NAMES drží poslední jména.
 const RECORDS_KEPT := 30
 const NAMES := "names"
@@ -85,6 +100,17 @@ const STONE_REACH := 4.0
 const STONE_STEP := 0.25
 ## Vykreslení shaderů při startu (_warm) se uklidí po tolika snímcích.
 const WARM_FRAMES := 3
+## Sbírání materiálů: příšera krouží kolem kamene ve vzdálenosti GUARD_RING metrů (od středu
+## ke středu). Honí rychlostí úprku plus CHASE_BONUS m/s a nechá toho, kdo je dál
+## než GIVE_UP_M metrů. Kámen, který příšera vzala zpátky, ROB_CALM sekund nejde sebrat.
+const GUARD_RING := 7.0
+const CHASE_BONUS := 0.5
+const GIVE_UP_M := 10.0
+const ROB_CALM := 1.0
+## Hledání místa pro příšeru na kruhu kolem kamene: tolik pootočení.
+const GUARD_TRIES := 8
+## Nápis o ztrátě kamene je červený.
+const LOSS_COLOR := Color(1.0, 0.42, 0.36)
 
 signal scored(points: int, caught: int)
 signal finished(points: int, caught: int)
@@ -115,13 +141,20 @@ class Prey:
 	var tag: Node2D
 	## Jak dlouho už příšera utíká, v sekundách. Při toulání 0.
 	var fleeing_for := 0.0
+	## Sbírání materiálů: kámen, který příšera hlídá, null když ho hráč sebral.
+	var stone: Stone
+	## Sbírání materiálů: sebraný kámen, kvůli kterému příšera honí. null, když nehoní.
+	var carried: Stone
 
 
-## Kámen po chycené příšeře, čeká na sebrání.
+## Kámen na zemi, čeká na sebrání: po chycené příšeře, nebo hlídaný (Sbírání materiálů).
 class Stone:
 	var sprite: Sprite2D
 	var title: String
 	var points := 0
+	var material := -1
+	## Kolik sekund ještě nejde sebrat (po návratu k příšeře).
+	var calm := 0.0
 
 
 ## Nápis nad sebraným kamenem, stoupá a mizí.
@@ -162,6 +195,8 @@ var _pool := {}
 ## Vybrané místo, příšera se objeví v dalším snímku: spot, creature (vylosovaná kombinace,
 ## viz _draw) a monster, když už je vzatá ze zásoby. Prázdné nic.
 var _pending := {}
+## Místo kamene příšery, která se právě objevuje (Sbírání materiálů).
+var _pending_stone := Vector2.ZERO
 ## Střed kamery po sekundách, nejvýš MOVED_SECONDS + 1 posledních.
 var _track := PackedVector2Array()
 var _track_left := 0.0
@@ -169,9 +204,11 @@ var _spawn_left := SPAWN_MIN
 var _day := true
 var _rng := RandomNumberGenerator.new()
 var _over := false
-## Nápisy nad toulajícími se příšerami. Jako nápisy dolů (PondLabels) jsou na obrazovce ve vrstvě
-## HUD, ne ve světě, ať jsou ostré i při nižším rozlišení světa. Do vrstvy je přidá WorldBoard.
-## Utíkající příšera nápis po chvíli schová. Ukázané se posouvají každý snímek těsně před
+## Sbírání materiálů (GameSession.COLLECT), jinak Chytej příšery.
+var _collect := false
+## Nápisy nad toulajícími se příšerami (Sbírání materiálů: nad hlídanými kameny). Jsou na
+## obrazovce ve vrstvě HUD, ne ve světě, ať jsou ostré i při nižším rozlišení světa. Do vrstvy
+## je přidá WorldBoard. Utíkající příšera nápis po chvíli schová. Ukázané se posouvají každý snímek těsně před
 ## kreslením, až po kameře, je jich nejvýš MAX_ALIVE. Držáky se po uklizení příšery vrací
 ## do _spare_tags.
 var tags := Node2D.new()
@@ -183,13 +220,15 @@ var _tag_check_left := 0.0
 ## bodies pak smí číst vlákna.
 func load_catalog(crystal: Crystal) -> void:
 	_crystal = crystal
-	_rng.randomize()
+	_collect = GameSession.mode == GameSession.COLLECT
+	# V benchmarku se příšery objevují pokaždé stejně.
+	Benchmark.seed_rng(_rng, 3)
 	_maker = Monsters.new()
 	_maker.name = "Maker"
 	add_child(_maker)
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(CATALOG)) if FileAccess.file_exists(CATALOG) else null
 	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("Nelze přečíst tabulku příšer pro Chytej příšery.")
+		push_error("Nelze přečíst tabulku příšer (hunt.json).")
 		return
 	var index := {}
 	for i in crystal.count():
@@ -197,7 +236,7 @@ func load_catalog(crystal: Crystal) -> void:
 	var listed: Dictionary = (parsed as Dictionary).get("materials", {})
 	for key: String in listed:
 		if not index.has(key):
-			push_warning("Chytej příšery chce materiál %s, ten chybí." % key)
+			push_warning("Tabulka příšer chce materiál %s, ten chybí." % key)
 			continue
 		var entry: Dictionary = listed[key]
 		var time: Dictionary = entry.get("time", {})
@@ -257,7 +296,7 @@ func start(board, camera: MapCamera, persons: Array[Person], host: Node2D, phase
 	_walker.use_surfaces(surfaces)
 	RenderingServer.frame_pre_draw.connect(_follow_tags)
 	if _materials.is_empty():
-		push_error("Chytej příšery nemá žádný materiál.")
+		push_error("Tabulka příšer nemá žádný materiál.")
 		return
 	for species in _species:
 		var creature := _creature(species, _materials[0])
@@ -272,7 +311,11 @@ func tick(delta: float, phase: float) -> void:
 		return
 	time_left = maxf(time_left - delta, 0.0)
 	_day = phase < 0.5
-	_catch()
+	if _collect:
+		_take_guarded(delta)
+		_follow_chases()
+	else:
+		_catch()
 	_pick_stones()
 	_place_tags(delta)
 	_age_floats(delta)
@@ -295,10 +338,12 @@ func tick(delta: float, phase: float) -> void:
 		finished.emit(points, caught_count)
 
 
-## Utíká některá příšera na obrazovce? Pak hraje hudba honičky.
-func any_fleeing() -> bool:
+## Hraje hudba honičky? Když některá příšera honí, nebo na obrazovce utíká.
+func any_chase() -> bool:
 	var view := _view(0.0)
 	for prey in _alive:
+		if prey.monster.is_chasing():
+			return true
 		if prey.monster.is_fleeing() and view.has_point(prey.monster.position):
 			return true
 	return false
@@ -316,20 +361,29 @@ func _forget() -> void:
 	var size := _view(0.0).size
 	var far := maxf(size.x, size.y)
 	for i in range(_alive.size() - 1, -1, -1):
-		if _nearest(_alive[i].monster.position) > far:
-			_release(_alive[i])
+		var prey := _alive[i]
+		if prey.monster.is_chasing():
+			continue
+		var at := prey.stone.sprite.position if prey.stone != null else prey.monster.position
+		if _nearest(at) > far and _nearest(prey.monster.position) > far:
+			_release(prey)
 	for i in range(_stones.size() - 1, -1, -1):
 		if _nearest(_stones[i].sprite.position) > far:
 			_stones[i].sprite.queue_free()
 			_stones.remove_at(i)
 
 
-## Je místo na další příšeru? Když je plno, uklidí nejstarší, která není na obrazovce.
+## Je místo na další příšeru? Když je plno, uklidí nejstarší, která není na obrazovce
+## a nehoní (ani její kámen není vidět).
 func _room() -> bool:
 	if _alive.size() < MAX_ALIVE:
 		return true
 	var view := _view(HIDDEN_M * float(TerrainCatalog.TILE_SIZE))
 	for prey in _alive:
+		if prey.monster.is_chasing():
+			continue
+		if prey.stone != null and view.has_point(prey.stone.sprite.position):
+			continue
 		if not view.has_point(prey.monster.position):
 			_release(prey)
 			return true
@@ -361,7 +415,8 @@ func _pick(items: Array[Dictionary], weights: PackedFloat32Array) -> Dictionary:
 
 
 ## Příšera druhu species z materiálu material: kind, material, title, points, speed (násobek
-## honičky druhu), flying a body.
+## honičky druhu: úprk, ve Sbírání materiálů o CHASE_BONUS m/s rychlejší), flying,
+## aquatic a body.
 func _creature(species: Dictionary, material: Dictionary) -> Dictionary:
 	var flee: Vector2 = species["flee"]
 	var meters := flee.x + (flee.y - flee.x) * float(material["speedup"])
@@ -371,8 +426,9 @@ func _creature(species: Dictionary, material: Dictionary) -> Dictionary:
 		"material": material["material"],
 		"title": "%s %s%s" % [species["title"], material["adjective"], ending],
 		"points": roundi(float(species["points"]) * float(material["points"])),
-		"speed": meters / float(species["chase"]),
+		"speed": (meters + (CHASE_BONUS if _collect else 0.0)) / float(species["chase"]),
 		"flying": species["flying"],
+		"aquatic": species["aquatic"],
 		"body": species["body"],
 	}
 
@@ -400,10 +456,49 @@ func _spawn() -> bool:
 		if hidden.has_point(spot) or not _board.has_ground(spot):
 			continue
 		var creature := _draw(spot, _swim_spot(spot, hidden))
-		if not creature.is_empty():
+		if creature.is_empty():
+			continue
+		if _collect:
+			var stone: Vector2 = creature["spot"]
+			var guard := _guard_spot(stone, creature)
+			if guard == Vector2.INF:
+				continue
+			_pending = {"spot": guard, "stone": stone, "creature": creature}
+		else:
 			_pending = {"spot": creature["spot"], "creature": creature}
-			return true
+		return true
 	return false
+
+
+## Sbírání materiálů: místo pro příšeru na kruhu kolem kamene na stone, kde stojí na zemi
+## (létající nad hotovým čtvercem, vodní ve vodě). Kruh je GUARD_RING, vodní druh zkusí i jeho
+## polovinu. Vector2.INF, když se nenašlo, nebo když kámen nejde sebrat (postava tam nedojde).
+func _guard_spot(stone: Vector2, creature: Dictionary) -> Vector2:
+	if not _walker.stands(stone, Person.BODY) or _walker.blocked(stone, Person.BODY):
+		return Vector2.INF
+	var ring := guard_ring(creature)
+	var start := _rng.randf() * TAU
+	for i in GUARD_TRIES:
+		var spot := stone + Vector2.from_angle(start + TAU * float(i) / float(GUARD_TRIES)) * ring
+		if not _board.has_ground(spot):
+			continue
+		if bool(creature["flying"]):
+			return spot
+		if bool(creature["aquatic"]):
+			if _walker.swims(spot):
+				return spot
+		elif not _walker.blocked(spot, float(creature["body"])):
+			return spot
+	if bool(creature["aquatic"]) and not creature.has("narrow"):
+		creature["narrow"] = true
+		return _guard_spot(stone, creature)
+	return Vector2.INF
+
+
+## Poloměr kroužení příšery creature kolem kamene v px. Vodní druh v úzké vodě má poloviční.
+static func guard_ring(creature: Dictionary) -> float:
+	var ring := GUARD_RING * float(TerrainCatalog.TILE_SIZE)
+	return ring * 0.5 if creature.has("narrow") else ring
 
 
 ## Nejbližší brodítelná voda kolem spot pro vodní druh, mimo hidden. Vector2.INF, když žádná
@@ -449,6 +544,9 @@ func _draw(spot: Vector2, wet := Vector2.INF) -> Dictionary:
 	for entry in _species:
 		if bool(entry["aquatic"]):
 			weights.append(_weight(entry, wet_terrain) if wet != Vector2.INF else 0.0)
+		elif _collect:
+			# Kámen leží tam, kam postava dojde, i když jeho příšera létá.
+			weights.append(_weight(entry, terrain) if dry else 0.0)
 		else:
 			weights.append(_weight(entry, terrain) if dry or bool(entry["flying"]) else 0.0)
 	var species := _pick(_species, weights)
@@ -464,7 +562,7 @@ func _draw(spot: Vector2, wet := Vector2.INF) -> Dictionary:
 	var material := _pick(_materials, weights)
 	if material.is_empty():
 		return {}
-	if not bool(species["flying"]) and not bool(species["aquatic"]) and _walker.blocked(spot, float(species["body"])):
+	if not _collect and not bool(species["flying"]) and not bool(species["aquatic"]) and _walker.blocked(spot, float(species["body"])):
 		return {}
 	var creature := _creature(species, material)
 	creature["spot"] = spot
@@ -487,6 +585,7 @@ func _advance() -> void:
 		return
 	var monster: Monster = _pending["monster"]
 	var spot: Vector2 = _pending["spot"]
+	_pending_stone = _pending.get("stone", spot)
 	_pending = {}
 	monster.reuse(spot)
 	if crowd != null and not monster.is_flying():
@@ -494,9 +593,15 @@ func _advance() -> void:
 	var prey := Prey.new()
 	prey.monster = monster
 	prey.creature = creature
-	prey.tag = _take_tag(str(creature["title"]), int(creature["points"]))
+	if _collect:
+		var mat := int(creature["material"])
+		prey.stone = _lay_stone(_pending_stone, mat, _crystal.title_of(mat), int(creature["points"]))
+		monster.guard_at(prey.stone.sprite.position, guard_ring(creature))
+		prey.tag = _take_tag(prey.stone.title, prey.stone.points)
+	else:
+		prey.tag = _take_tag(str(creature["title"]), int(creature["points"]))
 	# Nový nápis se ukáže hned, ne až při další kontrole.
-	prey.tag.visible = _watched(prey.monster.position)
+	prey.tag.visible = _watched(_tag_anchor(prey))
 	_put_tag(prey)
 	_alive.append(prey)
 
@@ -505,8 +610,8 @@ func _advance() -> void:
 func _build(creature: Dictionary) -> Monster:
 	_walker.crowd = null
 	var at := _camera.get_screen_center_position()
-	var monster: Monster = _maker.make(int(creature["material"]), _crystal, _walker, null, _persons, _camera, _host,
-		_rng, at, Vector2.INF, Vector2.ZERO, float(creature["speed"]), true, str(creature["kind"]))
+	var monster: Monster = _maker.make(str(creature["kind"]), int(creature["material"]), _crystal, _walker, _persons,
+		_camera, _host, _rng, at, float(creature["speed"]))
 	_walker.crowd = crowd
 	if monster != null:
 		monster.park()
@@ -566,18 +671,26 @@ func _caught(prey: Prey) -> void:
 ## Zmenšenou příšeru vystřídá na zemi kámen jejího materiálu, příšera jde do zásoby.
 func _to_stone(prey: Prey) -> void:
 	var monster := prey.monster
-	var stone := Stone.new()
-	stone.title = str(prey.creature["title"])
-	stone.points = int(prey.creature["points"])
-	stone.sprite = _crystal.make_sprite()
-	stone.sprite.z_index = 3
-	_host.add_child(stone.sprite)
-	stone.sprite.global_position = _stone_spot(monster.global_position)
-	stone.sprite.rotation = _rng.randf() * TAU
-	_crystal.paint(stone.sprite, int(prey.creature["material"]), 0.0, _rng.randf() * TAU)
+	var stone := _lay_stone(_stone_spot(monster.global_position), int(prey.creature["material"]),
+		str(prey.creature["title"]), int(prey.creature["points"]))
 	_stones.append(stone)
 	_park(monster, str(prey.creature["kind"]))
 	Sound.at("sfx/land", stone.sprite.position, 2.0)
+
+
+## Kámen materiálu mat na zemi v at, s názvem title a body points pro nápis.
+func _lay_stone(at: Vector2, mat: int, title: String, points: int) -> Stone:
+	var stone := Stone.new()
+	stone.title = title
+	stone.points = points
+	stone.material = mat
+	stone.sprite = _crystal.make_sprite()
+	stone.sprite.z_index = 3
+	_host.add_child(stone.sprite)
+	stone.sprite.global_position = at
+	stone.sprite.rotation = _rng.randf() * TAU
+	_crystal.paint(stone.sprite, mat, 0.0, _rng.randf() * TAU)
+	return stone
 
 
 ## Místo pro kámen: at, nebo nejbližší, kde postava stojí, když at leží ve vodě nebo v překážce.
@@ -606,10 +719,91 @@ func _pick_stones() -> void:
 				break
 
 
-## Nápis „jméno +body“ nad místem at, stejný jako u příšery. Vystoupá a zmizí.
-func _float_tag(title: String, gained: int, at: Vector2) -> void:
+## Sbírání materiálů: kámen, kterého se dotkne postava, je její. Hráči dostanou body, postava
+## ho nese v ruce a příšera, která ho hlídala, ji začne honit. Kdo postavu honil dřív, přestane.
+func _take_guarded(delta: float) -> void:
+	var reach := Person.BODY + _crystal.radius()
+	for prey in _alive:
+		var stone := prey.stone
+		if stone == null:
+			continue
+		if stone.calm > 0.0:
+			stone.calm -= delta
+			continue
+		var at := stone.sprite.position
+		for person in _persons:
+			if is_instance_valid(person) and person.position.distance_squared_to(at) <= reach * reach:
+				_take(prey, person)
+				break
+
+
+func _take(prey: Prey, person: Person) -> void:
+	var stone := prey.stone
+	prey.stone = null
+	prey.tag.visible = false
+	stone.sprite.queue_free()
+	points += stone.points
+	caught_count += 1
+	scored.emit(points, caught_count)
+	Sound.at("sfx/pickup", stone.sprite.position, 2.0)
+	_float_tag(stone.title, stone.points, stone.sprite.position)
+	for other in _alive:
+		if other.monster.prey() == person:
+			_call_off(other)
+	person.hold(stone.material, stone.points)
+	prey.carried = stone
+	prey.monster.chase(person)
+
+
+## Honička skončila a kámen si hráči nechají. Příšera se vrátí kroužit tam, kde kámen ležel.
+func _call_off(prey: Prey) -> void:
+	prey.carried = null
+	prey.monster.stop_chase()
+
+
+## Honící příšery: dohnaná postava kámen ztratí, vzdálená si ho nechá.
+func _follow_chases() -> void:
+	var far := GIVE_UP_M * float(TerrainCatalog.TILE_SIZE)
+	for prey in _alive:
+		var person := prey.monster.prey() as Person
+		if person == null or prey.carried == null:
+			continue
+		var dist := person.position.distance_to(prey.monster.position)
+		if dist <= prey.monster.touch():
+			_robbed(prey, person)
+		elif dist > far:
+			var mat := prey.carried.material
+			_call_off(prey)
+			if person.carried() == mat:
+				person.drop_held()
+
+
+## Příšera dohnala postavu: body za kámen se odečtou a kámen spadne pod ni. Příšera kolem
+## něj zase krouží a chvíli ho nejde sebrat.
+func _robbed(prey: Prey, person: Person) -> void:
+	var lost := prey.carried
+	prey.carried = null
+	points -= lost.points
+	caught_count -= 1
+	scored.emit(points, caught_count)
+	person.drop_held()
+	var at := _stone_spot(prey.monster.global_position)
+	Sound.at("sfx/steal", at, 2.0)
+	_float_tag(lost.title, lost.points, person.position, true)
+	prey.stone = _lay_stone(at, lost.material, lost.title, lost.points)
+	prey.stone.calm = ROB_CALM
+	prey.monster.guard_at(at, guard_ring(prey.creature))
+
+
+## Nápis „jméno +body“ nad místem at, stejný jako u příšery. Vystoupá a zmizí. lost ukáže
+## ztrátu: „jméno −body“ červeně.
+func _float_tag(title: String, gained: int, at: Vector2, lost := false) -> void:
 	var rising := Rising.new()
 	rising.tag = _take_tag(title, gained)
+	if lost:
+		var score := rising.tag.get_child(0).get_child(1) as Label
+		score.text = "−%d" % gained
+		score.add_theme_color_override("font_color", LOSS_COLOR)
 	rising.tag.visible = true
 	rising.at = at
 	_floats.append(rising)
@@ -637,10 +831,13 @@ func _put_float(rising: Rising) -> void:
 	rising.tag.position = view * rising.at - Vector2(0.0, TAG_LIFT_PX + rise)
 
 
-## Uklidí příšeru do zásoby.
+## Uklidí příšeru do zásoby, s ní i kámen, který hlídá.
 func _release(prey: Prey) -> void:
 	_alive.erase(prey)
 	_drop_tag(prey)
+	if prey.stone != null:
+		prey.stone.sprite.queue_free()
+		prey.stone = null
 	_leave_crowd(prey.monster)
 	_park(prey.monster, str(prey.creature["kind"]))
 
@@ -660,7 +857,9 @@ func _place_tags(delta: float) -> void:
 	if check:
 		_tag_check_left = TAG_CHECK
 	for prey in _alive:
-		if check:
+		if check and _collect:
+			prey.tag.visible = prey.stone != null and _watched(prey.stone.sprite.position)
+		elif check:
 			prey.fleeing_for = prey.fleeing_for + TAG_CHECK if prey.monster.is_fleeing() else 0.0
 			# První kontrola úprku počítá celé TAG_CHECK, i když začal těsně před ní. Nápis
 			# proto zmizí až po TAG_FLEE_KEEP až TAG_FLEE_KEEP + TAG_CHECK sekundách.
@@ -693,16 +892,28 @@ func _watched(at: Vector2) -> bool:
 	return false
 
 
-## Nápis nad tělem příšery. Je na obrazovce, poloha je místo příšery v záběru kamery.
+## Nápis nad tělem příšery (nad kamenem). Je na obrazovce, poloha je místo v záběru kamery.
 func _put_tag(prey: Prey) -> void:
 	var view := tags.get_viewport().canvas_transform
-	var top := prey.monster.global_position - Vector2(0.0, prey.monster.crowd_body())
+	var top := _tag_anchor(prey)
+	if _collect:
+		top -= Vector2(0.0, _crystal.radius())
+	else:
+		top -= Vector2(0.0, prey.monster.crowd_body())
 	prey.tag.position = view * top - Vector2(0.0, TAG_LIFT_PX)
+
+
+## Kde nápis příšery visí: nad hlídaným kamenem, v Chytej příšery nad příšerou.
+func _tag_anchor(prey: Prey) -> Vector2:
+	if _collect and prey.stone != null:
+		return prey.stone.sprite.global_position
+	return prey.monster.global_position
 
 
 ## Nápis „jméno +body“ ze zásoby, nebo nový. Body mají barvu podle počtu (TAG_POINT_COLORS).
 func _take_tag(title: String, gained: int) -> Node2D:
 	var holder: Node2D = _spare_tags.pop_back() if not _spare_tags.is_empty() else _make_tag()
+	holder.modulate.a = 1.0
 	var row := holder.get_child(0)
 	(row.get_child(0) as Label).text = title
 	var score := row.get_child(1) as Label
@@ -776,7 +987,7 @@ static func qualifies(players: int, score: int) -> bool:
 ## Jméno se zapamatuje pro příští hru s tolika hráči.
 static func record(players: int, score: int, caught: int, name: String) -> int:
 	var config := ConfigFile.new()
-	config.load(RECORDS)
+	config.load(_records_path())
 	var id := "%d_%d" % [Time.get_unix_time_from_system(), randi()]
 	config.set_value(id, "players", players)
 	config.set_value(id, "name", name)
@@ -791,14 +1002,14 @@ static func record(players: int, score: int, caught: int, name: String) -> int:
 			config.erase_section(str(rows[i]["id"]))
 		elif str(rows[i]["id"]) == id:
 			rank = i + 1
-	config.save(RECORDS)
+	config.save(_records_path())
 	return rank
 
 
 ## Jméno naposledy zapsané pro tolik hráčů, nebo prázdné.
 static func last_name(players: int) -> String:
 	var config := ConfigFile.new()
-	if config.load(RECORDS) != OK:
+	if config.load(_records_path()) != OK:
 		return ""
 	return str(config.get_value(NAMES, str(players), ""))
 
@@ -806,7 +1017,7 @@ static func last_name(players: int) -> String:
 ## Nejvýš RECORDS_KEPT výkonů pro tolik hráčů od nejvíc bodů. Při shodě dřív dosažený výš.
 static func records(players: int) -> Array[Dictionary]:
 	var config := ConfigFile.new()
-	if config.load(RECORDS) != OK:
+	if config.load(_records_path()) != OK:
 		return []
 	var rows := _rows(config, players)
 	rows.resize(mini(rows.size(), RECORDS_KEPT))
@@ -832,8 +1043,30 @@ static func _rows(config: ConfigFile, players: int) -> Array[Dictionary]:
 	return out
 
 
-## „1 příšera“, „3 příšery“, „5 příšer“.
-static func creatures_text(count: int) -> String:
+## Tabulka výkonů režimu, který se hraje.
+static func _records_path() -> String:
+	return COLLECT_RECORDS if GameSession.mode == GameSession.COLLECT else RECORDS
+
+
+## Název režimu pro HUD.
+static func title() -> String:
+	return "Sbírání materiálů" if GameSession.mode == GameSession.COLLECT else "Chytej příšery"
+
+
+## Nadpis sloupce počtu v tabulce výkonů.
+static func count_caption() -> String:
+	return "Sebráno" if GameSession.mode == GameSession.COLLECT else "Chyceno"
+
+
+## „chyceno 3 příšery“, „sebráno 5 kamenů“ podle režimu.
+static func count_text(count: int) -> String:
+	if GameSession.mode == GameSession.COLLECT:
+		return "sebráno " + _counted(count, "kámen", "kameny", "kamenů")
+	return "chyceno " + _counted(count, "příšera", "příšery", "příšer")
+
+
+## „1 kámen“, „3 kameny“, „5 kamenů“.
+static func _counted(count: int, one: String, few: String, many: String) -> String:
 	if count == 1:
-		return "1 příšera"
-	return "%d příšery" % count if count >= 2 and count <= 4 else "%d příšer" % count
+		return "1 " + one
+	return "%d %s" % [count, few if count >= 2 and count <= 4 else many]
