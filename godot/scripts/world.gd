@@ -9,6 +9,7 @@ const Person := preload("res://scripts/person.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Party := preload("res://scripts/party.gd")
 const WorldBoard := preload("res://scripts/world_board.gd")
+const MenuCurtain := preload("res://scripts/menu_curtain.gd")
 
 ## Terén po chuncích předpečených z corner_map katalogu, voda se vlní nad nimi.
 @onready var ground: TerrainChunks = $Ground
@@ -24,11 +25,18 @@ var _persons: Array[Person] = []
 var _party: Party
 var _board: WorldBoard
 var _fps_shown := -1.0
+## Logo s vlnícími se kameny jako při načítání menu, dokud se netvoří první čtverec.
+var _curtain: MenuCurtain
 
 
 func _ready() -> void:
 	# Kamera na skupinu hráčů až po tom, co se postavy v tomhle snímku pohnuly.
 	process_priority = 10
+	_curtain = MenuCurtain.new()
+	_curtain.name = "Curtain"
+	add_child(_curtain)
+	_curtain.drop()
+	status.visible = false
 	# Při nižším rozlišení světa se svět kreslí zmenšeně, HUD zůstane ostrý.
 	Graphics.attach_world(self)
 	Sound.settings_changed.connect(_on_sound_settings)
@@ -49,6 +57,11 @@ func _process(delta: float) -> void:
 		_party.frame()
 	if _board != null:
 		_board.tick(delta)
+
+
+## Svět je hotový, opona s logem se rozplyne. Volá WorldBoard.
+func lift_curtain() -> void:
+	_curtain.lift()
 
 
 func _to_menu() -> void:

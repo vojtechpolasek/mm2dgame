@@ -233,11 +233,13 @@ func start(host) -> void:
 	_camera = host.camera
 	_ground = host.ground
 	_status = host.status
-	_status.text = "Tvoří se první čtverec…"
 	_catalog = TerrainCatalog.new()
 	_catalog.load_assets()
 	if _catalog.names.is_empty():
 		_status.text = "Chybí terén."
+		_status.visible = true
+		if _host.has_method("lift_curtain"):
+			_host.lift_curtain()
 		push_error("Ve složce terénu nejsou žádné povrchy.")
 		return
 	_crystal = Crystal.new()
@@ -859,6 +861,7 @@ func _open_play(sq: Square) -> void:
 	Benchmark.seed_rng(music, 1)
 	Sound.play_level_music(music)
 	_status.visible = false
+	_host.lift_curtain()
 	_host._map_ready = true
 	_opened = true
 	sq.walker.crowd = _crowd
@@ -1325,7 +1328,6 @@ func _water_map(map: MapData) -> Dictionary:
 
 ## Pokračování uložené hry. Čtverce se staví z uložených map, nejdřív ty nejblíž hráčům.
 func _load(data: Dictionary) -> void:
-	_status.text = "Načítá se uložená hra…"
 	_level = int(data.get("level", 1))
 	_time = float(data.get("time", 0.0))
 	_level_time = float(data.get("level_time", 0.0))
