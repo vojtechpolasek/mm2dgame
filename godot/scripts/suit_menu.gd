@@ -9,6 +9,7 @@ const SuitSaves := preload("res://scripts/suit_saves.gd")
 const SoftKeyboard := preload("res://scripts/soft_keyboard.gd")
 const LOGO := preload("res://graphics/menu/logo.png")
 const MaterialTitle := preload("res://scripts/material_title.gd")
+const ButtonGem := preload("res://scripts/button_gem.gd")
 
 ## Stejná šířka, výška tlačítek a logo jako v hlavním menu, ať přechod z něj neskáče.
 const WIDE := 420.0
@@ -62,15 +63,15 @@ func _show_main() -> void:
 	var last := SuitSaves.last_game()
 	var focus: Button
 	if not last.is_empty():
-		focus = _button("Pokračovat", _resume.bind(last))
+		focus = _button("Pokračovat", ButtonGem.GO, _resume.bind(last))
 		_note(_game_line(last), 15)
-	var fresh := _button("Nová hra", _show_name)
+	var fresh := _button("Nová hra", ButtonGem.GO, _show_name)
 	if focus == null:
 		focus = fresh
-	var saved := _button("Uložené hry", _show_saved)
+	var saved := _button("Uložené hry", ButtonGem.LOAD, _show_saved)
 	saved.disabled = SuitSaves.games().is_empty()
-	_button("Výkony", _show_results)
-	_button("Zpět", func() -> void:
+	_button("Výkony", ButtonGem.INFO, _show_results)
+	_button("Zpět", ButtonGem.BACK, func() -> void:
 		Sound.ui("back")
 		get_tree().change_scene_to_file("res://scenes/main_menu.tscn"))
 	focus.grab_focus()
@@ -86,7 +87,7 @@ func _show_name() -> void:
 	_name_keys.setup(SuitSaves.last_name(), "Vybrat hráče")
 	_name_keys.submitted.connect(func(_text: String) -> void: _start_new())
 	_column.add_child(_name_keys)
-	_button("Zpět", _back_main)
+	_button("Zpět", ButtonGem.BACK, _back_main)
 	_name_keys.focus_start()
 
 
@@ -121,15 +122,17 @@ func _show_saved() -> void:
 		open.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		open.pressed.connect(_resume.bind(header))
 		row.add_child(open)
+		ButtonGem.add(open, ButtonGem.GO)
 		var remove := Button.new()
 		remove.text = "Smazat"
 		remove.custom_minimum_size = Vector2(96, SAVED_ROW)
 		remove.add_theme_font_size_override("font_size", 17)
 		remove.pressed.connect(_delete.bind(str(header["id"]), remove))
 		row.add_child(remove)
+		ButtonGem.add(remove, ButtonGem.DELETE)
 		if first == null:
 			first = open
-	var back := _button("Zpět", _back_main)
+	var back := _button("Zpět", ButtonGem.BACK, _back_main)
 	(first if first != null else back).grab_focus()
 
 
@@ -177,7 +180,7 @@ func _show_results() -> void:
 			grid.add_child(_cell("dohráno" if finished else str(row["level"]), ACCENT if finished else Color.WHITE))
 			grid.add_child(_cell(GameSession.clock(float(row["time"])), Color.WHITE))
 			grid.add_child(_cell(SuitSaves.date_text(int(row["date"])), DIM))
-	_button("Zpět", _back_main)
+	_button("Zpět", ButtonGem.BACK, _back_main)
 	chosen.grab_focus()
 
 
@@ -284,12 +287,14 @@ func _note(text: String, font_size: int) -> void:
 	_column.add_child(label)
 
 
-func _button(text: String, action: Callable) -> Button:
+## Tlačítko přes celou šířku s kamenem role (ButtonGem).
+func _button(text: String, role: String, action: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.custom_minimum_size = ROW_SIZE
 	button.pressed.connect(action)
 	_column.add_child(button)
+	ButtonGem.add(button, role)
 	return button
 
 

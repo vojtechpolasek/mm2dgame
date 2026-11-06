@@ -15,6 +15,7 @@ const MiniMap := preload("res://scripts/minimap.gd")
 const DayNight := preload("res://scripts/day_night.gd")
 const SuitSaves := preload("res://scripts/suit_saves.gd")
 const SoftKeyboard := preload("res://scripts/soft_keyboard.gd")
+const ButtonGem := preload("res://scripts/button_gem.gd")
 
 ## Šipka k továrně drží od kraje obrazovky tolik pixelů. Nahoře drží ARROW_BELOW pod
 ## panely v rozích, nejméně ARROW_TOP.
@@ -238,10 +239,10 @@ func set_hunt_score(points: int, _caught: int) -> void:
 func show_result(title: String, note: String, again := false) -> void:
 	_open_result(title, note)
 	if again:
-		_result_button("Hrát znovu", again_pressed).grab_focus()
-		_result_button("Návrat do menu", menu_pressed)
+		_result_button("Hrát znovu", ButtonGem.GO, again_pressed).grab_focus()
+		_result_button("Návrat do menu", ButtonGem.BACK, menu_pressed)
 	else:
-		_result_button("Návrat do menu", menu_pressed).grab_focus()
+		_result_button("Návrat do menu", ButtonGem.BACK, menu_pressed).grab_focus()
 
 
 ## Okno konce Chytej příšery, než se výkon zapíše: softwarová klávesnice s předvyplněným
@@ -639,12 +640,13 @@ func _build_result() -> void:
 	column.add_child(_result_buttons)
 
 
-func _result_button(text: String, chosen: Signal) -> Button:
+func _result_button(text: String, role: String, chosen: Signal) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.custom_minimum_size = Vector2(320, 52)
 	button.pressed.connect(func() -> void: chosen.emit())
 	_result_buttons.add_child(button)
+	ButtonGem.add(button, role)
 	return button
 
 

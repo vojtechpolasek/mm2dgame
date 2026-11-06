@@ -65,10 +65,10 @@ theme_override_constants/separation = 12
 custom_minimum_size = Vector2(200, 52)
 layout_mode = 2
 focus_mode = 0
-text = "Zpět (Esc)"
+text = "Zpět"
 
 [node name="Start" type="Button" parent="Center/Panel/Column/Buttons"]
 custom_minimum_size = Vector2(200, 52)
 layout_mode = 2
 focus_mode = 0
-text = "Začít (Enter)"
+text = "Začít"

@@ -5,6 +5,8 @@ extends VBoxContainer
 
 signal submitted(text: String)
 
+const ButtonGem := preload("res://scripts/button_gem.gd")
+
 ## Řádky písmen a číslic. Poslední řádek je kratší, tlačítka jdou zleva.
 const ROWS: Array[PackedStringArray] = [
 	["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
@@ -47,6 +49,7 @@ func setup(initial: String, confirm_caption: String, max_length: int = 32) -> Co
 	_confirm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_confirm.pressed.connect(_submit)
 	add_child(_confirm)
+	ButtonGem.add(_confirm, ButtonGem.GO)
 	return self
 
 

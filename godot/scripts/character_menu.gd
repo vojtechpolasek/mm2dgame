@@ -9,6 +9,7 @@ extends Control
 
 const PersonPreview := preload("res://scripts/person_preview.gd")
 const ControllerIcon := preload("res://scripts/controller_icon.gd")
+const ButtonGem := preload("res://scripts/button_gem.gd")
 
 ## Jak dlouho podržet skok, než se hráč odpojí, v sekundách.
 const LEAVE_HOLD := 1.0
@@ -36,6 +37,8 @@ func _ready() -> void:
 	GameSession.players.clear()
 	$Center/Panel/Column/Buttons/Back.pressed.connect(_back)
 	$Center/Panel/Column/Buttons/Start.pressed.connect(_start)
+	ButtonGem.add($Center/Panel/Column/Buttons/Back, ButtonGem.BACK)
+	ButtonGem.add($Center/Panel/Column/Buttons/Start, ButtonGem.GO)
 	_rebuild()
 
 

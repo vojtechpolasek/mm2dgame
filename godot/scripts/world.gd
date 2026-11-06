@@ -15,8 +15,6 @@ const MenuCurtain := preload("res://scripts/menu_curtain.gd")
 @onready var ground: TerrainChunks = $Ground
 @onready var camera: MapCamera = $Camera
 @onready var status: Label = $Hint/Hud/Status
-## Snímky za sekundu vpravo dole. Engine je přepočítává jednou za sekundu.
-@onready var fps: Label = $Hint/Hud/Fps
 
 ## Svět je hotový a hraje se. Nastaví WorldBoard.
 var _map_ready := false
@@ -24,7 +22,6 @@ var _hud: Hud
 var _persons: Array[Person] = []
 var _party: Party
 var _board: WorldBoard
-var _fps_shown := -1.0
 ## Logo s vlnícími se kameny jako při načítání menu, dokud se netvoří první čtverec.
 var _curtain: MenuCurtain
 
@@ -48,11 +45,6 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	# Engine počítá snímky jednou za sekundu. Nový text jen při změně, ať se popisek nepřepočítává.
-	var rate := Engine.get_frames_per_second()
-	if rate != _fps_shown:
-		_fps_shown = rate
-		fps.text = "%d FPS" % rate
 	if _party != null:
 		_party.frame()
 	if _board != null:

@@ -1,9 +1,12 @@
 extends Control
 
+const ButtonGem := preload("res://scripts/button_gem.gd")
+
 
 func _ready() -> void:
 	Sound.play_menu_music()
 	$Center/Panel/Column/Back.pressed.connect(_back)
+	ButtonGem.add($Center/Panel/Column/Back, ButtonGem.BACK)
 	$Center/Panel/Column/Back.grab_focus()
 
 

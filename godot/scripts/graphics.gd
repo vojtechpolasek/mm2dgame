@@ -15,6 +15,8 @@ extends Node
 ## Stíny vypnou stíny od slunce, měsíce i čelovek (Shadows). Den, noc a světlo čelovek zůstanou.
 ## Stíny břehů vypnou stín, který břeh jezera a řeky vrhá na svah a vodu (globální uniforma
 ## bank_shadows). Shadery ho pak vůbec nepočítají, na slabé grafice to je znát.
+## Zobrazit FPS ukáže vpravo dole snímky za sekundu, všude: v menu i ve hře. Popisek je
+## ve vlastní vrstvě nad vším.
 ## Bez persist se změna neuloží (benchmark přepíná jen na dobu měření).
 ##
 ## Výchozí rozlišení světa je na ARM (Raspberry Pi) ARM_SCALE, jinde plné, a stíny břehů jsou
@@ -32,11 +34,18 @@ const WORLD_LAYER := 1 << 19
 const ALL_LAYERS := 0xFFFFF
 ## Obrázek světa leží v okně pod vším ostatním.
 const VIEW_LAYER := -128
+## Vrstva popisku FPS, nad menu, HUD i oponou s logem.
+const FPS_LAYER := 127
 
 var _scale := 1.0
 var _sparkle := true
 var _shadows := true
 var _bank_shadows := true
+var _fps := true
+var _fps_layer: CanvasLayer
+var _fps_label: Label
+## Naposledy ukázaný počet snímků. Engine ho přepočítává jednou za sekundu.
+var _fps_shown := -1.0
 ## Uzel hry, jehož svět se kreslí zmenšeně (attach_world), null mimo hru.
 var _world: CanvasItem
 var _view: SubViewport
@@ -53,9 +62,21 @@ func _ready() -> void:
 		_bank_shadows = bool(config.get_value(SECTION, "bank_shadows", _bank_shadows))
 		_sparkle = bool(config.get_value(SECTION, "sparkle", _sparkle))
 		_shadows = bool(config.get_value(SECTION, "shadows", _shadows))
+		_fps = bool(config.get_value(SECTION, "fps", _fps))
 	if not SCALES.has(_scale):
 		_scale = default_world_scale()
+	_build_fps()
 	_apply()
+
+
+func _process(_delta: float) -> void:
+	if not _fps:
+		return
+	# Nový text jen při změně, ať se popisek nepřepočítává.
+	var rate := Engine.get_frames_per_second()
+	if rate != _fps_shown:
+		_fps_shown = rate
+		_fps_label.text = "%d FPS" % rate
 
 
 ## Rozlišení světa, dokud ho hráč nezmění: na ARM ARM_SCALE, jinde plné.
@@ -84,6 +105,17 @@ func sparkle_on() -> bool:
 
 func shadows_on() -> bool:
 	return _shadows
+
+
+func fps_on() -> bool:
+	return _fps
+
+
+func set_fps(on: bool, persist := true) -> void:
+	_fps = on
+	_apply()
+	if persist:
+		_save()
 
 
 func bank_shadows_on() -> bool:
@@ -129,6 +161,7 @@ func attach_world(world: CanvasItem) -> void:
 func _apply() -> void:
 	RenderingServer.global_shader_parameter_set(&"sparkle_on", 1.0 if _sparkle else 0.0)
 	RenderingServer.global_shader_parameter_set(&"bank_shadows", 1.0 if _bank_shadows else 0.0)
+	_fps_layer.visible = _fps
 	_apply_view()
 	changed.emit()
 
@@ -147,6 +180,26 @@ func _apply_view() -> void:
 	if _world != null and is_instance_valid(_world):
 		_world.visibility_layer = WORLD_LAYER if scaled else 1
 	root.canvas_cull_mask = ALL_LAYERS & ~WORLD_LAYER if scaled else ALL_LAYERS
+
+
+## Popisek FPS vpravo dole, světlé písmo s tmavým obrysem, ať je čitelné na terénu i v menu.
+func _build_fps() -> void:
+	_fps_layer = CanvasLayer.new()
+	_fps_layer.layer = FPS_LAYER
+	add_child(_fps_layer)
+	_fps_label = Label.new()
+	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_fps_label.add_theme_color_override("font_color", Color(0.98, 0.96, 0.9))
+	_fps_label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.04))
+	_fps_label.add_theme_constant_override("outline_size", 5)
+	_fps_label.add_theme_font_size_override("font_size", 16)
+	_fps_label.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_fps_label.offset_left = -136.0
+	_fps_label.offset_top = -36.0
+	_fps_label.offset_right = -16.0
+	_fps_label.offset_bottom = -12.0
+	_fps_layer.add_child(_fps_label)
 
 
 func _build_view() -> void:
@@ -198,4 +251,5 @@ func _save() -> void:
 	config.set_value(SECTION, "sparkle", _sparkle)
 	config.set_value(SECTION, "shadows", _shadows)
 	config.set_value(SECTION, "bank_shadows", _bank_shadows)
+	config.set_value(SECTION, "fps", _fps)
 	config.save(SETTINGS)

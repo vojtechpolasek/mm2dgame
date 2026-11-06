@@ -1,6 +1,7 @@
 extends Control
 
 const Benchmark := preload("res://scripts/benchmark.gd")
+const ButtonGem := preload("res://scripts/button_gem.gd")
 
 @onready var hunt: Button = $Center/Panel/Column/Hunt
 
@@ -18,6 +19,12 @@ func _ready() -> void:
 	$Center/Panel/Column/Settings.pressed.connect(_on_settings)
 	$Center/Panel/Column/About.pressed.connect(_on_about)
 	$Center/Panel/Column/Quit.pressed.connect(_on_quit)
+	ButtonGem.add(hunt, ButtonGem.HUNT)
+	ButtonGem.add($Center/Panel/Column/Play, ButtonGem.COLLECT)
+	ButtonGem.add($Center/Panel/Column/FreeRoam, ButtonGem.ROAM)
+	ButtonGem.add($Center/Panel/Column/Settings, ButtonGem.SETTINGS)
+	ButtonGem.add($Center/Panel/Column/About, ButtonGem.INFO)
+	ButtonGem.add($Center/Panel/Column/Quit, ButtonGem.BACK)
 	hunt.grab_focus()
 
 

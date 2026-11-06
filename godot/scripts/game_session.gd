@@ -63,9 +63,9 @@ const PART_TITLES := {
 	"hair": "Vlasy",
 }
 const SWATCHES := {
-	"pants": ["243056", "3E4A32", "1C1A22", "6B3A28", "C84B78", "D8C8A0", "5A5A60", "7A2A3A", "2E6E8A", "8A7A30"],
-	"shirt": ["C83A32", "3A5EC8", "E8C420", "2E8A4A", "E8E2D2", "8A3AB0", "201A18", "E07828", "30B0C0", "E070A8"],
-	"hair": ["5C3A28", "C4A060", "1A1410", "8A3A28", "C8C4C0", "D86A20", "3A2A20", "E8D8B0", "6A3A6A", "2A4A8A"],
+	"pants": ["243056", "3E4A32", "1C1A22", "6B3A28", "C84B78", "D8C8A0", "5A5A60", "7A2A3A"],
+	"shirt": ["C83A32", "3A5EC8", "E8C420", "2E8A4A", "E8E2D2", "8A3AB0", "201A18", "E07828"],
+	"hair": ["5C3A28", "C4A060", "1A1410", "8A3A28", "C8C4C0", "D86A20", "3A2A20", "E8D8B0"],
 }
 ## Výchozí oblečení hráčů podle pořadí připojení. Triko je shora nejvíc vidět, proto má každý
 ## jinou výraznou barvu trika a k ní kontrastní kalhoty a vlasy.

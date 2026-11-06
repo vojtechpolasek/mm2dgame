@@ -116,7 +116,7 @@ func _ready() -> void:
 	print("Benchmark: semínko %d, %s" % [world_seed(), RenderingServer.get_video_adapter_name()])
 	# I globální náhoda (zvuky, pořadí vesničanů) je pevná.
 	seed(hash([world_seed(), "global"]))
-	_settings = {"scale": Graphics.world_scale(), "shadows": Graphics.shadows_on(), "sparkle": Graphics.sparkle_on()}
+	_settings = {"scale": Graphics.world_scale(), "shadows": Graphics.shadows_on(), "sparkle": Graphics.sparkle_on(), "fps": Graphics.fps_on()}
 	# Bez id se hra neukládá, uložené hry hráče zůstanou, jak byly.
 	GameSession.free_roam = false
 	GameSession.hunt = false
@@ -381,6 +381,8 @@ func _apply_off(part: String) -> void:
 		elif key == "DayNight":
 			item.visible = part != "bez_zavoje"
 	(_world.get_node("Hint") as CanvasLayer).visible = part != "bez_hud"
+	# Popisek FPS patří k HUD: vidět vždy, ať se měření dají srovnat, jen bez HUD ne.
+	Graphics.set_fps(part != "bez_hud", false)
 	var hud = _board.get("_hud")
 	if hud != null and hud.minimap != null:
 		hud.minimap.visible = part != "bez_minimapy"
@@ -488,6 +490,7 @@ func _costs() -> Array:
 func _finish() -> void:
 	_apply_off("")
 	Graphics.set_world_scale(float(_settings["scale"]), false)
+	Graphics.set_fps(bool(_settings["fps"]), false)
 	DisplayServer.window_set_vsync_mode(_vsync)
 	var costs := _costs()
 	print("Cena částí (ms snímku):")

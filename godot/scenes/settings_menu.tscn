@@ -50,32 +50,37 @@ layout_mode = 2
 [node name="Music" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
-text = "Hudba: zapnutá"
+text = "Hudba"
 
 [node name="Sounds" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
-text = "Zvuky: zapnuté"
+text = "Zvuky"
 
 [node name="Resolution" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
-text = "Rozlišení: plné"
+text = "Rozlišení"
 
 [node name="Sparkle" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
-text = "Třpyt kamenů: zapnutý"
+text = "Třpyt kamenů"
 
 [node name="Shadows" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
-text = "Stíny: zapnuté"
+text = "Stíny"
 
 [node name="BankShadows" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(420, 52)
 layout_mode = 2
-text = "Stíny břehů: zapnuté"
+text = "Stíny břehů"
+
+[node name="Fps" type="Button" parent="Center/Panel/Column"]
+custom_minimum_size = Vector2(420, 52)
+layout_mode = 2
+text = "Zobrazit FPS"
 
 [node name="Gap2" type="Control" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(0, 8)
