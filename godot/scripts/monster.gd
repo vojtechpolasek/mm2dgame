@@ -5,6 +5,8 @@ extends Node2D
 ## Chodící obchází překážky stejně jako postava a nechodí přes jiné tvory. Létající letí nad vším
 ## a z mapy nevyletí. Druh s jump_meters přeskočí překážky a tvory do té výšky jako postava.
 ## Atlas je nakreslený směrem na sever, ostatní směry otáčí tenhle uzel.
+## Vodní druh ("aquatic" v katalogu, aligátor) se drží brodítelné vody (Walker.swims): mělčiny
+## u břehu a řeky i pod mosty. Voda ho nezpomalí a neskáče.
 ## V Chytej příšery (hunt) nehoní nikoho: toulá se kolem svého místa, a když se postava
 ## přiblíží na FLEE_NEAR metrů, utíká před ní kamkoli, i do jiných čtverců.
 
@@ -73,7 +75,7 @@ const JUMP_STEP := 0.25
 ## sekund, ne v každém snímku klouzání podél překážky.
 const JUMP_RETRY := 0.2
 ## Hlasitost kroků podle druhu v dB. Chodící dupne dvakrát za cyklus, létající mávne jednou.
-const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "kocour": -9.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "orel": -7.0, "nestvura": -4.0, "brouk": -14.0, "koule": -8.0}
+const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "kocour": -9.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "orel": -7.0, "nestvura": -4.0, "brouk": -14.0, "aligator": -10.0, "koule": -8.0}
 const STEP_VARIANTS := 3
 ## Úprk (hunt): začne, když je postava blíž než FLEE_NEAR metrů, skončí dál než FLEE_FAR.
 ## Po FLEE_EVERY sekundách volí směr: od nejbližší postavy, cíl je od ní dvakrát dál než
@@ -91,6 +93,11 @@ const FLEE_TURNS: Array[float] = [0.0, 0.52, -0.52, 1.05, -1.05, 1.57, -1.57, 2.
 const FLEE_TURNS_PER_FRAME := 3
 ## Toulání v hunt zkusí nejvýš tolik směrů, jeden za snímek. Každý stojí až 14 kontrol místa.
 const WAY_TRIES := 2
+## Vodní druh v úzké vodě: rovná čára dál skoro vždy vede na břeh. Úprk proto ověřuje jen
+## SWIM_LOOK metrů, toulání míří jen SWIM_WANDER metrů daleko a zkusí víc směrů.
+const SWIM_LOOK := 1.5
+const SWIM_WANDER := Vector2(1.5, 4.0)
+const SWIM_WAY_TRIES := 6
 ## Za úprku řve po ROAR_MIN až ROAR_MAX sekundách, jen když je vidět.
 const ROAR_MIN := 1.0
 const ROAR_MAX := 3.0
@@ -137,6 +144,7 @@ var _prey: Node2D
 var _camera: MapCamera
 var _rng: RandomNumberGenerator
 var _flying := false
+var _aquatic := false
 var _wander_px := 64.0
 var _chase_px := 320.0
 ## Rychlost honičky druhu bez násobku materiálu, v px za sekundu.
@@ -223,6 +231,7 @@ func setup(
 	_rng = rng
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	_flying = bool(info.get("flying", false))
+	_aquatic = bool(info.get("aquatic", false))
 	_wander_px = float(info.get("wander_meters", 1.0)) * tile
 	_chase_unit = float(info.get("chase_meters", 5.0)) * tile
 	_chase_px = _chase_unit * speed
@@ -408,7 +417,7 @@ func _flee(delta: float, from: Vector2) -> void:
 		var away := position - from
 		var dist := away.length()
 		_flee_away = away / dist if dist > 0.01 else Vector2.from_angle(_rng.randf() * TAU)
-		_flee_reach = clampf(dist, FLEE_MIN * tile, FLEE_LOOK * tile)
+		_flee_reach = SWIM_LOOK * tile if _aquatic else clampf(dist, FLEE_MIN * tile, FLEE_LOOK * tile)
 		_flee_turn = 0
 	if _flee_turn >= 0:
 		_flee_search()
@@ -445,7 +454,10 @@ func _way_open(way: Vector2, reach: float) -> bool:
 			if _walker.world_board != null and not _walker.world_board.has_ground(spot):
 				return false
 			continue
-		if not _walker.stands(spot, _body):
+		if _aquatic:
+			if not _walker.swims(spot):
+				return false
+		elif not _walker.stands(spot, _body):
 			return false
 		if _walker.place(spot, _body, clear, crowd_id).distance_squared_to(spot) > 0.25:
 			return false
@@ -670,9 +682,9 @@ func _wander(delta: float) -> void:
 
 
 ## Posun o offset. Vrátí, kolik pixelů příšera opravdu ušla.
-## Násobek rychlosti podle povrchu. Létající příšeru močál nezdrží.
+## Násobek rychlosti podle povrchu. Létající příšeru močál nezdrží, vodní voda.
 func _pace() -> float:
-	return 1.0 if _flying or _walker == null else _walker.pace(position)
+	return 1.0 if _flying or _aquatic or _walker == null else _walker.pace(position)
 
 
 func _move(offset: Vector2) -> float:
@@ -686,6 +698,8 @@ func _move(offset: Vector2) -> float:
 		position = _walker.fit(position + offset, margin)
 	elif _escaping or _blocked_now():
 		_escape()
+	elif _aquatic:
+		position = _walker.allowed_swim(position, position + offset, _body, crowd_id)
 	else:
 		position = _walker.allowed(position, position + offset, _body, -1.0, crowd_id)
 		# Klouzání podél překážky do strany se za postup nepočítá. Překážku přes kterou
@@ -702,6 +716,8 @@ func _blocked_now() -> bool:
 	if _block_check_left > 0.0:
 		return false
 	_block_check_left = BLOCK_CHECK
+	if _aquatic:
+		return not _walker.swims(position)
 	return _walker.blocked(position, _body, crowd_id)
 
 
@@ -768,7 +784,14 @@ func _step_jump(delta: float) -> void:
 ## Příšera skončila v překážce nebo ve vodě. Vysune se na nejbližší volné místo.
 func _escape() -> void:
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	if not _escaping or _walker.blocked(_escape_to, _body, crowd_id):
+	if _aquatic:
+		if not _escaping or not _walker.swims(_escape_to):
+			var water := _walker.free_swim(position, ESCAPE_REACH * tile, ESCAPE_STEP)
+			if water == Vector2.INF:
+				return
+			_escape_to = water
+			_escaping = true
+	elif not _escaping or _walker.blocked(_escape_to, _body, crowd_id):
 		var spot := _walker.free_spot(position, _body, ESCAPE_REACH * tile, ESCAPE_STEP, crowd_id)
 		# Hluboko v houští nemusí být volno blízko. Hledá dál, hrubším krokem.
 		if spot == Vector2.INF:
@@ -835,7 +858,7 @@ func _pick_target() -> void:
 ## zkouší _try_way po jednom za snímek (nejvýš WAY_TRIES), mezitím příšera stojí. Když
 ## nic nevyjde, odpočinek HUNT_REST. Ať se při objevení nedělá všechno v jednom snímku.
 func _pick_way() -> void:
-	_ways_left = WAY_TRIES
+	_ways_left = SWIM_WAY_TRIES if _aquatic else WAY_TRIES
 	_resting = true
 	_rest_left = 0.0
 
@@ -846,6 +869,8 @@ func _try_way() -> void:
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var way := Vector2.from_angle(_rng.randf() * TAU)
 	var reach := _rng.randf_range(WANDER_NEAR, WANDER_FAR) * tile
+	if _aquatic:
+		reach = _rng.randf_range(SWIM_WANDER.x, SWIM_WANDER.y) * tile
 	if _way_open(way, reach):
 		_ways_left = 0
 		_resting = false

@@ -369,16 +369,27 @@ func is_dry(pos: Vector2) -> bool:
 	var ground: int = sq.walker.ground(pos)
 	if ground != Walker.EDGE_WATER:
 		return ground == Walker.LAND or ground == Walker.SHALLOW
-	# Voda u kraje čtverce je mělčina, když je souš hned za krajem u souseda.
+	# Voda u kraje čtverce je mělčina, když je souš u souseda nejdál Walker.SHORE_TILES dlaždic.
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	var center := (pos / tile).floor() * tile + Vector2(tile, tile) * 0.5
-	for dy in range(-1, 2):
-		for dx in range(-1, 2):
+	for dy in range(-Walker.SHORE_TILES, Walker.SHORE_TILES + 1):
+		for dx in range(-Walker.SHORE_TILES, Walker.SHORE_TILES + 1):
 			var near := center + Vector2(dx, dy) * tile
 			var other := _ready_at(near)
 			if other != null and other != sq and other.walker.ground(near) == Walker.LAND:
 				return true
 	return false
+
+
+## Brodítelná voda v bodě světa pro vodní příšeru (Walker.swims). Voda u kraje čtverce se bere
+## jako mělčina, když je za krajem souš (stejně jako is_dry).
+func swims(pos: Vector2) -> bool:
+	var sq := _ready_at(pos)
+	if sq == null:
+		return false
+	if sq.walker.ground(pos) == Walker.EDGE_WATER:
+		return is_dry(pos)
+	return sq.walker.swims_here(pos)
 
 
 ## Násobek rychlosti od řeky v bodě světa: ve vodě řeky zpomalí, na mostě ne.

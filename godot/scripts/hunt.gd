@@ -15,6 +15,9 @@ extends Node
 ## chybějící denní doba 1. Body jsou body druhu krát násobitel materiálu. Úprk druhu je flee
 ## [od, do] v m/s, materiál ho posune o speedup (0 až 1) mezi od a do. Jméno je jméno druhu
 ## a přídavné jméno materiálu v rodě druhu (adjective je kmen: „pískovcov“ + ý, á, é).
+## Vodní druh ("aquatic" v katalogu, aligátor) žije jen v brodítelné vodě (Walker.swims). Pro něj
+## se kolem místa hledá nejbližší taková voda nejdál SWIM_REACH metrů, široká aspoň dvakrát
+## SWIM_WIDTH, mimo obrazovku. Jeho váha se počítá z povrchu té vody a objeví se v ní.
 ## Živých je nejvýš MAX_ALIVE: když
 ## je plno, nová vytlačí nejstarší, která není na obrazovce. Denní doba se kontroluje jen při
 ## losování, objevená příšera zůstane i po změně dne a noci.
@@ -55,6 +58,9 @@ const AHEAD_M := 3.0
 const SIDE_SPREAD := 0.3
 ## Když místo nejde (voda, nehotový čtverec, překážka), zkusí se jiný posun, nejvýš tolikrát.
 const SPAWN_TRIES := 4
+const SWIM_REACH := 5.0
+const SWIM_STEP := 0.4
+const SWIM_WIDTH := 0.3
 ## Obrazovka zvětšená o tolik metrů na každou stranu: tam se nikdo neobjeví.
 const HIDDEN_M := 1.0
 const MAX_ALIVE := 6
@@ -87,7 +93,7 @@ var points := 0
 var caught_count := 0
 var time_left := SECONDS
 ## Druhy podle hunt.json: kind, title, gender, points, flee (Vector2 od, do v m/s), surfaces,
-## day, night, forbidden (množina čísel materiálů), flying, body (px) a chase (m/s, honička druhu,
+## day, night, forbidden (množina čísel materiálů), flying, aquatic, body (px) a chase (m/s, honička druhu,
 ## Monster bere rychlost jako její násobek).
 var _species: Array[Dictionary] = []
 ## Materiály podle hunt.json: material (číslo), adjective, points (násobitel), speedup,
@@ -184,6 +190,7 @@ func load_catalog(crystal: Crystal) -> void:
 			"night": float(time.get("night", 1.0)),
 			"forbidden": forbidden,
 			"flying": bool(info.get("flying", false)),
+			"aquatic": bool(info.get("aquatic", false)),
 			"body": body,
 			"chase": maxf(float(info.get("chase_meters", 5.0)), 0.1),
 		})
@@ -338,24 +345,64 @@ func _spawn() -> bool:
 		var spot := center + dir * (edge + AHEAD_M * tile) + side * _rng.randf_range(-SIDE_SPREAD, SIDE_SPREAD) * across
 		if hidden.has_point(spot) or not _board.has_ground(spot):
 			continue
-		var creature := _draw(spot)
+		var creature := _draw(spot, _swim_spot(spot, hidden))
 		if not creature.is_empty():
-			_pending = {"spot": spot, "creature": creature}
+			_pending = {"spot": creature["spot"], "creature": creature}
 			return true
 	return false
 
 
-## Vylosuje druh a pak materiál pro spot (viz popis třídy). Prázdné, když se žádný druh nebo
-## materiál nehodí nebo chodící nemá kde stát.
-func _draw(spot: Vector2) -> Dictionary:
+## Nejbližší brodítelná voda kolem spot pro vodní druh, mimo hidden. Vector2.INF, když žádná
+## není nebo hra vodní druh nemá.
+func _swim_spot(spot: Vector2, hidden: Rect2) -> Vector2:
+	var any := false
+	for species in _species:
+		any = any or bool(species["aquatic"])
+	if not any:
+		return Vector2.INF
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var step := SWIM_STEP * tile
+	var radius := 0.0
+	while radius <= SWIM_REACH * tile:
+		var around := 1 if radius == 0.0 else clampi(int(TAU * radius / step), 8, 64)
+		for i in around:
+			var at := spot + Vector2.from_angle(TAU * float(i) / float(around)) * radius
+			if _swims_wide(at) and not hidden.has_point(at) and _board.has_ground(at):
+				return at
+		radius += step
+	return Vector2.INF
+
+
+## Je v at brodítelná voda aspoň SWIM_WIDTH metrů na každou stranu?
+func _swims_wide(at: Vector2) -> bool:
+	if not _walker.swims(at):
+		return false
+	var reach := SWIM_WIDTH * float(TerrainCatalog.TILE_SIZE)
+	for probe in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
+		if not _walker.swims(at + probe * reach):
+			return false
+	return true
+
+
+## Vylosuje druh a pak materiál pro spot (viz popis třídy). wet je voda pro vodní druh
+## (_swim_spot), bez ní vodní druh nepadne. Výsledek má i spot, kde se příšera objeví.
+## Prázdné, když se žádný druh nebo materiál nehodí nebo chodící nemá kde stát.
+func _draw(spot: Vector2, wet := Vector2.INF) -> Dictionary:
 	var terrain := _walker.surface(spot)
+	var wet_terrain := _walker.surface(wet) if wet != Vector2.INF else ""
 	var dry := _walker.dry(spot)
 	var weights := PackedFloat32Array()
 	for entry in _species:
-		weights.append(_weight(entry, terrain) if dry or bool(entry["flying"]) else 0.0)
+		if bool(entry["aquatic"]):
+			weights.append(_weight(entry, wet_terrain) if wet != Vector2.INF else 0.0)
+		else:
+			weights.append(_weight(entry, terrain) if dry or bool(entry["flying"]) else 0.0)
 	var species := _pick(_species, weights)
 	if species.is_empty():
 		return {}
+	if bool(species["aquatic"]):
+		spot = wet
+		terrain = wet_terrain
 	var forbidden: Dictionary = species["forbidden"]
 	weights.clear()
 	for entry in _materials:
@@ -363,9 +410,11 @@ func _draw(spot: Vector2) -> Dictionary:
 	var material := _pick(_materials, weights)
 	if material.is_empty():
 		return {}
-	if not bool(species["flying"]) and _walker.blocked(spot, float(species["body"])):
+	if not bool(species["flying"]) and not bool(species["aquatic"]) and _walker.blocked(spot, float(species["body"])):
 		return {}
-	return _creature(species, material)
+	var creature := _creature(species, material)
+	creature["spot"] = spot
+	return creature
 
 
 ## Další krok objevení vybrané příšery, jeden za snímek: vzít ji ze zásoby (prázdná

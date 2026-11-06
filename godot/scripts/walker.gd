@@ -4,9 +4,9 @@ extends RefCounted
 ## a domy, ostatní tvorové z crowd, neschůdný povrch je voda a mimo mapu se nesmí. Tělo je kruh o poloměru
 ## body v pixelech. who je číslo tvora v crowd, -1 ostatní tvory nebere v úvahu.
 ##
-## Do vody se smí jen na mělčinu: dlaždice vody, která sousedí se souší (i úhlopříčně). Jde se
-## po ní pomalu jako brodem v řece. Dlaždice vody u kraje čtverce může mít souš až u souseda,
-## to rozhodne svět (WorldBoard.is_dry), sama mělčinou není.
+## Do vody se smí jen na mělčinu: dlaždice vody nejdál SHORE_TILES dlaždic od souše (i úhlopříčně).
+## Jde se po ní pomalu jako brodem v řece. Dlaždice vody u kraje čtverce může mít souš až
+## u souseda, to rozhodne svět (WorldBoard.is_dry), sama mělčinou není.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const Rocks := preload("res://scripts/rocks.gd")
@@ -26,6 +26,10 @@ const LAND := 1
 const SHALLOW := 3
 const EDGE_WATER := 2
 const DEEP := 0
+## Jak široký je pás mělčiny podél souše, v dlaždicích.
+const SHORE_TILES := 2
+## Natočení kroku vodní příšery v radiánech, když rovně nejde (allowed_swim).
+const SWIM_TURNS: Array[float] = [0.0, 0.52, -0.52, 1.05, -1.05, 1.57, -1.57]
 ## Body na obvodu těla, které musí stát na souši.
 const PROBES: Array[Vector2] = [
 	Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
@@ -78,7 +82,8 @@ func _init(rocks: Rocks = null, forest: Forest = null, town_at: Town = null, map
 		_pace[surface_name] = float(info.get("speed", 1.0))
 
 
-## Voda vedle souše je mělčina. U kraje čtverce, kde vedle souš není, rozhodne soused.
+## Voda nejdál SHORE_TILES dlaždic od souše je mělčina. U kraje čtverce, kde tak blízko souš
+## není, rozhodne soused.
 func _mark_shallows() -> void:
 	var last := _tiles - 1
 	for y in _tiles:
@@ -86,13 +91,13 @@ func _mark_shallows() -> void:
 			if _walkable[y * _tiles + x] != DEEP:
 				continue
 			var shore := false
-			for ny in range(maxi(y - 1, 0), mini(y + 1, last) + 1):
-				for nx in range(maxi(x - 1, 0), mini(x + 1, last) + 1):
+			for ny in range(maxi(y - SHORE_TILES, 0), mini(y + SHORE_TILES, last) + 1):
+				for nx in range(maxi(x - SHORE_TILES, 0), mini(x + SHORE_TILES, last) + 1):
 					if _walkable[ny * _tiles + nx] == LAND:
 						shore = true
 			if shore:
 				_walkable[y * _tiles + x] = SHALLOW
-			elif x == 0 or y == 0 or x == last or y == last:
+			elif x < SHORE_TILES or y < SHORE_TILES or x > last - SHORE_TILES or y > last - SHORE_TILES:
 				_walkable[y * _tiles + x] = EDGE_WATER
 
 
@@ -218,6 +223,47 @@ func stands(pos: Vector2, body: float) -> bool:
 		if not dry(pos + probe * body):
 			return false
 	return true
+
+
+## Brodítelná voda pro vodní příšeru (aligátor): mělčina u břehu nebo voda řeky, i pod mostem.
+## Suchá zem, hluboká voda a mimo mapu ne.
+func swims(pos: Vector2) -> bool:
+	if world_board != null:
+		return world_board.swims(pos)
+	return swims_here(pos)
+
+
+## swims na téhle mapě. Voda u kraje čtverce se nepočítá, o ní rozhoduje WorldBoard.
+func swims_here(pos: Vector2) -> bool:
+	var at := ground(pos)
+	if at == SHALLOW:
+		return true
+	return at == LAND and river != null and river.water_at(pos)
+
+
+## Krok vodní příšery z from do desired: jako allowed, ale střed těla musí zůstat v brodítelné
+## vodě (swims). Boky a ocas smějí přečnívat na břeh, tvor je napůl ponořený. Když rovně nejde,
+## zkusí krok pootočený o SWIM_TURNS, ať jede podél břehu a v zatáčce se nezasekne.
+func allowed_swim(from: Vector2, desired: Vector2, body: float, who: int = -1) -> Vector2:
+	var step := desired - from
+	for turn in SWIM_TURNS:
+		var landed := place(from + step.rotated(turn), body, -1.0, who)
+		if swims(landed):
+			return landed
+	return from
+
+
+## Nejbližší brodítelná voda kolem from, kruhy po step pixelech, nejdál reach. Když nic, Vector2.INF.
+func free_swim(from: Vector2, reach: float, step: float) -> Vector2:
+	var radius := step
+	while radius <= reach:
+		var around := clampi(int(TAU * radius / step / 2.0), 8, 64)
+		for i in around:
+			var spot := from + Vector2.from_angle(TAU * float(i) / float(around)) * radius
+			if swims(spot):
+				return spot
+		radius += step
+	return Vector2.INF
 
 
 func dry(pos: Vector2) -> bool:

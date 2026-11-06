@@ -302,6 +302,38 @@
         "eye": "FF2A1A"
       }
     },
+    "aligator": {
+      "cycle_meters": 1.6,
+      "frames": 16,
+      "atlas_columns": 8,
+      "wander_meters": 0.8,
+      "chase_meters": 5.0,
+      "body_meters": 0.4,
+      "height_meters": 0.4,
+      "jump_meters": 0.0,
+      "shader": "stone",
+      "sound": "aligator",
+      "aquatic": true,
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "aligator/layer_1.png",
+          "cell": 150,
+          "center": 75,
+          "glint_file": "aligator/layer_1_glint.png"
+        },
+        "2": {
+          "height": 0.1,
+          "file": "aligator/layer_2.png",
+          "cell": 144,
+          "center": 72,
+          "glint_file": "aligator/layer_2_glint.png"
+        }
+      },
+      "colors": {
+        "eye": "E8FF5A"
+      }
+    },
     "rex2": {
       "cycle_meters": 2.1875,
       "frames": 16,

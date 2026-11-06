@@ -16,6 +16,8 @@
              "surfaces": {"grass": 2, "dirt": 1, "snow": 2, "scree": 1, "swamp": 1, "heath": 2}},
     "nestvura": {"title": "Nestvůra", "gender": "f", "points": 60, "flee": [3.80, 4.55], "time": {"day": 0, "night": 1},
                  "surfaces": {"grass": 1, "dirt": 1, "desert": 1, "snow": 1, "scree": 1, "ash": 1, "swamp": 1, "heath": 1}},
+    "aligator": {"title": "Aligátor", "gender": "m", "points": 50, "flee": [3.60, 4.47], "time": {"day": 1, "night": 1},
+                 "surfaces": {"grass": 3, "dirt": 3, "desert": 3, "snow": 3, "scree": 3, "ash": 3, "swamp": 3, "heath": 3, "water": 3}},
     "kocour": {"title": "Kocour", "gender": "m", "points": 70, "flee": [3.75, 4.53], "time": {"day": 1, "night": 1},
                "surfaces": {"grass": 0.5, "snow": 2, "scree": 1.5, "heath": 1}},
     "rex2": {"title": "Rex", "gender": "m", "points": 100, "flee": [3.85, 4.60], "time": {"day": 2, "night": 1},

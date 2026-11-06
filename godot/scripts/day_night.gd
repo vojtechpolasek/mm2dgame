@@ -8,9 +8,9 @@ extends Node2D
 ## světě vidět nejsou (pohled shora), jen jejich světlo a stíny. Ukazatel na obzoru je v HUD
 ## (Hud.set_sky), počítá polohu stejně (angle_of, height_of).
 ##
-## Měsíc má fáze (MOON_PHASES): každou noc vyjde s další, první noc je úplněk. Světlo noci
-## a stíny od měsíce sílí s osvětleným podílem měsíce, v novu je jen NEW_MOON_LIGHT světla
-## úplňku a skoro tma.
+## Měsíc má fáze (MOON_PHASES): každou noc vyjde s další, první noc je FIRST_MOON (po úplňku
+## ubývající tříčtvrteční). Světlo noci a stíny od měsíce sílí s osvětleným podílem měsíce,
+## v novu je jen NEW_MOON_LIGHT světla úplňku a skoro tma.
 ##
 ## Stíny (Shadows) míří od slunce nebo měsíce, toho, který je výš. Konec stínu jde po
 ## půlelipse: u obzoru je stín dlouhý Shadows.MAX_LENGTH na metr výšky, v poledne
@@ -42,6 +42,8 @@ const MOON_SHADOW := 0.18
 const SHADOW_RISE := Vector2(0.0, 0.2)
 ## Osvětlený podíl měsíce v nocích po sobě, pak znovu od začátku: úplněk, ubývá, nov, přibývá.
 const MOON_PHASES: Array[float] = [1.0, 0.75, 0.5, 0.25, 0.0, 0.25, 0.5, 0.75]
+## Pořadí fáze první noci v MOON_PHASES. Další noci jdou cyklem dál.
+const FIRST_MOON := 1
 ## Světlo noci v novu jako podíl světla v úplňku.
 const NEW_MOON_LIGHT := 0.1
 ## Barvy světla. NIGHT je noc v úplňku, DAWN slunce nízko nad obzorem.
@@ -72,7 +74,7 @@ const VEIL_Z := 10
 
 ## 0 až 1 přes celý den, viz START.
 var phase := START
-## Kolik dní uplynulo. Noc dne days má fázi měsíce MOON_PHASES[days % 8].
+## Kolik dní uplynulo. Noc dne days má fázi měsíce MOON_PHASES[(days + FIRST_MOON) % 8].
 var days := 0
 ## Měsíc stále v úplňku (průlet v menu, ať je pozadí čitelné).
 var full_moon_only := false
@@ -127,7 +129,7 @@ static func height_of(angle: float) -> float:
 
 ## Pořadí fáze měsíce dnešní noci v MOON_PHASES.
 func moon_index() -> int:
-	return 0 if full_moon_only else posmod(days, MOON_PHASES.size())
+	return 0 if full_moon_only else posmod(days + FIRST_MOON, MOON_PHASES.size())
 
 
 ## Osvětlený podíl měsíce dnešní noci, 1 úplněk, 0 nov.

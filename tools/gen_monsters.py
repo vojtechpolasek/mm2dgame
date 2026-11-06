@@ -1,5 +1,5 @@
 """Kamenné příšery z pohledu shora: brouk, had, štír, pavouk, koule, vlk, kocour, nestvůra,
-tyranosaurus, ptakoještěr a orel.
+aligátor, tyranosaurus, ptakoještěr a orel.
 
 64 px je 1 m, stejně jako u postavy, skal a stromů. Kreslí se ve čtyřnásobném
 rozlišení do plátna druhu (canvas). Uložená buňka vrstvy je ořezaná na obsah,
@@ -7,7 +7,7 @@ střed zůstává.
 
 Atlas má osm sloupců, příšera jde na sever. Ostatní směry otáčí uzel v Godotu.
 Počet snímků cyklu (frames) má každý druh v katalogu: brouk, pavouk, štír, vlk a kocour 8, had a
-tyranosaurus, nestvůra a orel 16, ptakoještěr a koule 24. Delší animace se zalomí do dalších řádků (atlas_columns).
+tyranosaurus, nestvůra, aligátor a orel 16, ptakoještěr a koule 24. Delší animace se zalomí do dalších řádků (atlas_columns).
 Jeden atlas slouží všem materiálům druhu, barvy dodá shader.
 
 Vrstva nese masky, ne hotovou barvu: R světlost, G podíl akcentu (kresba,
@@ -82,6 +82,12 @@ a jdou do stran, ať jsou vedle hrbatého trupu vidět. Kyčle se kývají k noz
 proti nim. Dlouhé paže se kývají proti nohám a tři drápy se dvakrát za cyklus rozevřou. Dlouhý
 tenký ocas švihá. Protáhlá hlava má hřeben a ostny po hřbetě v akcentu, čtyři oči a kusadla,
 která se dvakrát za cyklus rozevřou.
+
+Aligátor (aligator) plave napůl ponořený v brodítelné vodě: vrstva 1 (0 m) jsou ponořené boky,
+nohy a tlama, v atlasu průhlednější (GATOR_UNDER_ALPHA) a tmavší, ať prosvítají vodou. Vrstva 2
+(0,1 m) je to, co trčí nad hladinu: hřbet s pancířem, temeno hlavy s hrbolky očí, nozdry
+a hřeben ocasu s pruhy v akcentu. Plave vlněním, vlna běží po těle dozadu a sílí k ocasu,
+nohy jsou přitažené a zadní pádlují. Ve hře ho drží ve vodě "aquatic" v katalogu.
 
 Tyranosaurus (rex2): vrstva 1 (nohy, 0 m), vrstva 2 (stehna, trup, ocas, ruce a hlava,
 1,2 m). Holeň začíná pod stehnem, chodidlo vykukuje vedle břicha a kořene ocasu.
@@ -561,6 +567,48 @@ BEAST_CLAW_SPREAD = 10.0
 BEAST_LIMB_STONES = ((0.03, 0.5, 1.05, 0.0), (0.5, 0.97, 1.0, 0.0))
 BEAST_CLAW_STONES = ((0.0, 0.55, 1.0, 0.0), (0.5, 1.0, 0.95, 0.85))
 
+# Aligátor, asi 2 m od čenichu po špičku ocasu, napůl ponořený. Krátký a zavalitý, ať se vejde
+# do úzké vody. Střed plátna je uprostřed trupu.
+GATOR_CANVAS = 160
+# Celé tělo pod hladinou i nad ní: Y a poloviční šířka. Hlava je plochá a široká v kloubu čelistí.
+GATOR_BODY = (
+    (-68.0, 4.9),
+    (-61.2, 7.0),
+    (-51.0, 8.6),
+    (-42.5, 10.3),
+    (-37.4, 9.2),
+    (-28.9, 14.0),
+    (-12.8, 16.2),
+    (4.2, 14.0),
+    (11.9, 10.8),
+    (26.6, 8.1),
+    (40.6, 5.4),
+    (52.5, 3.2),
+    (62.3, 1.3),
+)
+# Nad hladinou trčí jen hřbet: díl šířky těla podle Y. Hlava jen temeno a nozdry.
+GATOR_TOP = ((-68.0, 0.3), (-64.6, 0.8), (-59.5, 0.75), (-49.3, 0.75), (-42.5, 0.85), (-37.4, 0.55), (-28.9, 0.55), (-12.8, 0.6), (4.2, 0.55), (16.1, 0.6), (37.1, 0.7), (58.1, 0.8))
+# Ponořené části jsou v atlasu průhlednější a tmavší, prosvítají vodou.
+GATOR_UNDER_ALPHA = 0.45
+GATOR_UNDER_SHADE = 0.55
+# Plave vlněním: vlna běží po těle dozadu, výchylka roste od hlavy (0) k ocasu (px).
+GATOR_WAVE = 90.0
+GATOR_SWING = ((-68.0, 0.0), (-34.0, 0.8), (0.0, 2.5), (30.1, 6.8), (62.3, 11.9))
+# Nohy pravé strany přitažené k tělu: rameno, loket, tlapa. Zadní nohy pádlují o GATOR_PADDLE px.
+GATOR_LEGS: tuple[tuple[Point, Point, Point], ...] = (
+    ((11.9, -28.9), (20.5, -25.5), (20.5, -17.0)),
+    ((11.9, 3.4), (21.6, 7.6), (20.5, 17.5)),
+)
+GATOR_PADDLE = 3.0
+# Oči na hrbolcích temene pravé strany, nozdry na konci čenichu.
+GATOR_EYE = ((5.4, -42.5), 1.4)
+GATOR_EYE_BUMP = 3.2
+GATOR_NOSTRIL = ((1.7, -66.3), 1.6)
+# Ocas má od GATOR_TAIL_BANDS Y příčné pruhy v akcentu po GATOR_BAND px.
+GATOR_TAIL_BANDS = 11.9
+GATOR_BAND = 7.0
+GATOR_ACCENT = 0.7
+
 # Tyranosaurus, asi 3,2 m od čenichu po špičku ocasu. Kyčle jsou ve středu plátna.
 REX_CANVAS = 256
 # Páteř trupu od šíje po špičku ocasu: Y a poloviční šířka v px.
@@ -1010,6 +1058,24 @@ MONSTERS = {
         "height_meters": 3.0,
         "jump_meters": 4.0,
         "eye": "FF2A1A",
+    },
+    # Aligátor, asi 2 m, napůl ponořený, žije jen v brodítelné vodě (aquatic). Rychlý jako vlk. Zvuky má vlastní.
+    "aligator": {
+        "canvas": GATOR_CANVAS,
+        "preview_shadow": None,
+        "preview_materials": ("kremen", "zlato"),
+        "info": {"shader": "stone", "sound": "aligator", "aquatic": True},
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": 0.1, "file": "layer_2.png"},
+        },
+        "cycle_meters": 1.6,
+        "frames": 16,
+        "wander_meters": 0.8,
+        "chase_meters": 5.0,
+        "body_meters": 0.4,
+        "height_meters": 0.4,
+        "eye": "E8FF5A",
     },
     # Zvuky má tyranosauří.
     "rex2": {
@@ -2199,6 +2265,83 @@ def beast_layers(t: float) -> dict[int, Layer]:
     return {1: legs, 2: body}
 
 
+def gator_swing(y: float) -> float:
+    """Výchylka vlny v místě Y, lineárně mezi body GATOR_SWING."""
+    for (y0, a0), (y1, a1) in zip(GATOR_SWING, GATOR_SWING[1:]):
+        if y <= y1:
+            return a0 + (a1 - a0) * max(0.0, (y - y0) / (y1 - y0))
+    return GATOR_SWING[-1][1]
+
+
+def gator_x(y: float, t: float) -> float:
+    """Vybočení páteře: vlna běží po těle od hlavy dozadu."""
+    return gator_swing(y) * math.sin(math.tau * (t - y / GATOR_WAVE))
+
+
+def gator_top_share(y: float) -> float:
+    for (y0, s0), (y1, s1) in zip(GATOR_TOP, GATOR_TOP[1:]):
+        if y <= y1:
+            return s0 + (s1 - s0) * max(0.0, (y - y0) / (y1 - y0))
+    return GATOR_TOP[-1][1]
+
+
+def gator_layers(t: float) -> dict[int, Layer]:
+    """Kamenný aligátor napůl ve vodě: dole ponořené boky, nohy a tlama (průhlednější a tmavší),
+    nahoře hřbet s pancířem, temeno hlavy s očima, nozdry a hřeben ocasu s pruhy v akcentu."""
+    under, top = Layer(GATOR_CANVAS), Layer(GATOR_CANVAS)
+    dense = profile(GATOR_BODY)
+    spine = [(gator_x(y, t), y) for y, _w in dense]
+    widths = [w for _y, w in dense]
+    # Ponořené: nohy přitažené k bokům, pak celé tělo.
+    for index, (shoulder_r, elbow_r, paw_r) in enumerate(GATOR_LEGS):
+        for side in (-1.0, 1.0):
+            paddle = GATOR_PADDLE * index * math.sin(math.tau * t + (0.0 if side > 0 else math.pi))
+            shoulder, elbow, paw = (mirror(point, side) for point in (shoulder_r, elbow_r, paw_r))
+            shift = gator_x(shoulder[1], t)
+            shoulder = (shoulder[0] + shift, shoulder[1])
+            elbow = (elbow[0] + shift, elbow[1] + paddle * 0.5)
+            paw = (paw[0] + shift + side * paddle * 0.4, paw[1] + paddle)
+            cell = 9500 + index * 2 + (1 if side > 0 else 0)
+            stone_segment(under, shoulder, elbow, 10.0, 10.0, 4.0, 3.2, BEAST_LIMB_STONES, cell)
+            stone_segment(under, elbow, paw, 10.0, 8.0, 3.2, 2.6, BEAST_LIMB_STONES, cell + 10)
+            for toe in (-25.0, 0.0, 25.0):
+                heading = rotate((0.0, 1.0), math.radians(toe))
+                under.capsule(paw, (paw[0] + heading[0] * 4.0, paw[1] + heading[1] * 4.0), 1.0, 0.5, 0.3)
+    stone_band(under, spine, widths, 9600, lambda at, across: 0.7 - 0.2 * abs(across))
+    for index in range(4):
+        under.channels[index] = under.channels[index].point(
+            lambda value, k=(GATOR_UNDER_SHADE if index == 0 else GATOR_UNDER_ALPHA if index == 3 else 1.0): round(value * k)
+        )
+    under.draws = [ImageDraw.Draw(channel) for channel in under.channels]
+    # Nad hladinou: řady pancíře po hřbetě a ocasu, pruhy na ocase.
+    top_widths = [w * gator_top_share(y) for (y, _), w in zip(dense, widths)]
+    first = nearest(dense, -37.4)
+
+    def band(at: int) -> float:
+        y = dense[at][0]
+        if y >= GATOR_TAIL_BANDS and int((y - GATOR_TAIL_BANDS) / GATOR_BAND) % 2 == 0:
+            return GATOR_ACCENT
+        return 0.0
+
+    stone_band(top, spine[first:], top_widths[first:], 9700, lambda at, across: 0.95 - 0.3 * abs(across),
+               lambda at: band(at + first))
+    # Hlava: temeno, hrbolky očí a nozdry. Hlava se nevlní, jen jede s krkem.
+    head = spine[:first + 1]
+    stone_band(top, head, top_widths[:first + 1], 9800, lambda at, across: 0.9 - 0.25 * abs(across))
+    neck = gator_x(GATOR_EYE[0][1], t)
+    for side in (-1.0, 1.0):
+        center, radius = GATOR_EYE
+        eye = (center[0] * side + neck, center[1])
+        paint_stone(top, eye, GATOR_EYE_BUMP, -math.pi / 2, 9900 + (1 if side > 0 else 0), 1.0, SPARK_BODY, 1.2)
+        top.disk(eye, radius + 0.45, 0.05)
+        top.disk(eye, radius, None, 0.0, 1.0)
+        center, radius = GATOR_NOSTRIL
+        nostril = (center[0] * side + gator_x(center[1], t), center[1])
+        top.disk(nostril, radius + 0.6, 0.85)
+        top.disk(nostril, radius * 0.5, 0.05)
+    return {1: under, 2: top}
+
+
 def rex_spine_x(y: float, t: float, hips: float) -> float:
     if y < REX_NECK_FROM:
         bend = min(1.0, (REX_NECK_FROM - y) / (REX_NECK_FROM - REX_NECK))
@@ -2917,6 +3060,7 @@ RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
     "ptakojester2": stone_ptero_layers,
     "orel": eagle_layers,
     "nestvura": beast_layers,
+    "aligator": gator_layers,
     "rex2": stone_rex_layers,
     "koule2": ball_layers,
 }
