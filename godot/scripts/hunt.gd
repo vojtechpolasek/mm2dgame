@@ -24,7 +24,8 @@ extends Node
 ## Jednou za sekundu se uklidí příšera, která je od všech postav dál, než je delší strana
 ## obrazovky. Příšery se toulají bez mřížky cest a utíkají kamkoli (Monster.hunt).
 ## Chycená příšera pozvolna zprůhlední (Monster.fade). Nad toulající se příšerou je nápis
-## s jejím jménem a body (tags), při úprku zmizí.
+## s jejím jménem a body (tags), jen když k ní některý hráč míří (výseč čelovky), a při úprku
+## zmizí po TAG_FLEE_KEEP sekundách.
 ##
 ## Ať se hra při objevení příšery necukne: příšery se nestaví, berou se ze zásoby schovaných
 ## (_pool, od každého druhu jedna postavená při startu, další přibude, když je zásoba druhu
@@ -41,6 +42,7 @@ const Walker := preload("res://scripts/walker.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Person := preload("res://scripts/person.gd")
 const Crowd := preload("res://scripts/crowd.gd")
+const DayNight := preload("res://scripts/day_night.gd")
 
 const CATALOG := "res://graphics/characters/monsters/hunt.json"
 const RECORDS := "user://hunt_records.cfg"
@@ -76,17 +78,30 @@ signal finished(points: int, caught: int)
 
 ## Nápis nad toulající se příšerou: velikost písma a obrysu na obrazovce, šířka a výška
 ## řádku a o kolik pixelů obrazovky je nad tělem.
-const TAG_FONT := 15
-const TAG_OUTLINE := 5
+const TAG_FONT := 13
+const TAG_OUTLINE := 4
 const TAG_WIDTH := 260.0
-const TAG_LINE := 22.0
+const TAG_LINE := 19.0
+## Barva jména a mezera mezi jménem a body v pixelech obrazovky.
+const TAG_COLOR := Color(0.98, 0.93, 0.8)
+const TAG_GAP := 5
+## Barva bodů podle jejich počtu: do TAG_POINTS[0] první barva, do TAG_POINTS[1] druhá, víc třetí.
+const TAG_POINTS: Array[int] = [50, 100]
+const TAG_POINT_COLORS: Array[Color] = [Color(0.62, 0.9, 0.42), Color(1.0, 0.82, 0.25), Color(0.92, 0.55, 1.0)]
 const TAG_LIFT_PX := 8.0
+## Po začátku úprku zůstane nápis vidět ještě tolik sekund, ať hráč stihne přečíst, co honí.
+const TAG_FLEE_KEEP := 2.5
+## Úprk a viditelnost nápisů se kontrolují jen po tolika sekundách. Pozice viditelných nápisů
+## se posouvá každý snímek, ať nápis za příšerou neposkakuje.
+const TAG_CHECK := 0.5
 
 class Prey:
 	var monster: Monster
 	var creature: Dictionary
 	## Nápis „jméno +body“, držák s Labelem pod tags.
 	var tag: Node2D
+	## Jak dlouho už příšera utíká, v sekundách. Při toulání 0.
+	var fleeing_for := 0.0
 
 
 var points := 0
@@ -126,10 +141,11 @@ var _day := true
 var _rng := RandomNumberGenerator.new()
 var _over := false
 ## Nápisy nad toulajícími se příšerami. Jsou ve světě nad vším jako nápisy dolů (PondLabels),
-## do scény je přidá WorldBoard. Utíkající příšera nápis schová. Ukázané se posouvají každý
+## do scény je přidá WorldBoard. Utíkající příšera nápis po chvíli schová. Ukázané se posouvají každý
 ## snímek, je jich nejvýš MAX_ALIVE. Držáky se po uklizení příšery vrací do _spare_tags.
 var tags := Node2D.new()
 var _spare_tags: Array[Node2D] = []
+var _tag_check_left := 0.0
 
 
 ## Přečte hunt.json a načte vzhled příšer dopředu. Volá se před tvorbou prvního čtverce,
@@ -225,7 +241,7 @@ func tick(delta: float, phase: float) -> void:
 	time_left = maxf(time_left - delta, 0.0)
 	_day = phase < 0.5
 	_catch()
-	_place_tags()
+	_place_tags(delta)
 	_track_left -= delta
 	if _track_left <= 0.0:
 		_track_left = 1.0
@@ -440,7 +456,10 @@ func _advance() -> void:
 	var prey := Prey.new()
 	prey.monster = monster
 	prey.creature = creature
-	prey.tag = _take_tag("%s +%d" % [creature["title"], creature["points"]])
+	prey.tag = _take_tag(str(creature["title"]), int(creature["points"]))
+	# Nový nápis se ukáže hned, ne až při další kontrole.
+	prey.tag.visible = _watched(prey.monster.position)
+	_put_tag(prey)
 	_alive.append(prey)
 
 
@@ -522,21 +541,59 @@ func _leave_crowd(monster: Monster) -> void:
 	monster.crowd_id = -1
 
 
-## Posune nápisy nad příšery. Velikost drží na obrazovce stejnou, utíkající příšera nápis schová.
-func _place_tags() -> void:
-	var zoom := _camera.zoom.x
+## Posune nápisy nad příšery. Velikost drží na obrazovce stejnou. Nápis je vidět, když k příšeře
+## míří některý hráč (_watched), utíkající ho schová, až utíká déle než TAG_FLEE_KEEP sekund.
+## Obojí se kontroluje po TAG_CHECK sekundách.
+func _place_tags(delta: float) -> void:
+	_tag_check_left -= delta
+	var check := _tag_check_left <= 0.0
+	if check:
+		_tag_check_left = TAG_CHECK
 	for prey in _alive:
-		var shown := not prey.monster.is_fleeing()
-		prey.tag.visible = shown
-		if shown:
-			prey.tag.scale = Vector2.ONE / zoom
-			prey.tag.global_position = prey.monster.global_position - Vector2(0.0, prey.monster.crowd_body() + TAG_LIFT_PX / zoom)
+		if check:
+			prey.fleeing_for = prey.fleeing_for + TAG_CHECK if prey.monster.is_fleeing() else 0.0
+			# První kontrola úprku počítá celé TAG_CHECK, i když začal těsně před ní. Nápis
+			# proto zmizí až po TAG_FLEE_KEEP až TAG_FLEE_KEEP + TAG_CHECK sekundách.
+			prey.tag.visible = prey.fleeing_for <= TAG_FLEE_KEEP and _watched(prey.monster.position)
+		if prey.tag.visible:
+			_put_tag(prey)
 
 
-## Nápis s textem text ze zásoby, nebo nový.
-func _take_tag(text: String) -> Node2D:
+## Míří některý hráč k bodu at? Ve výseči jako kužel čelovky (DayNight.LAMP_HALF i s měkkým
+## okrajem) kolem směru, kam postava jde nebo naposledy šla. Na vzdálenost nezáleží, těsně
+## u postavy vždy.
+func _watched(at: Vector2) -> bool:
+	var cone := cos(DayNight.LAMP_HALF)
+	for person in _persons:
+		if not is_instance_valid(person):
+			continue
+		var to := at - person.position
+		if to.length_squared() < 1.0:
+			return true
+		var forward := Vector2.from_angle(person.rotation - PI * 0.5)
+		if forward.dot(to.normalized()) >= cone:
+			return true
+	return false
+
+
+## Nápis nad tělem příšery, na obrazovce pořád stejně velký.
+func _put_tag(prey: Prey) -> void:
+	var zoom := _camera.zoom.x
+	prey.tag.scale = Vector2.ONE / zoom
+	prey.tag.global_position = prey.monster.global_position - Vector2(0.0, prey.monster.crowd_body() + TAG_LIFT_PX / zoom)
+
+
+## Nápis „jméno +body“ ze zásoby, nebo nový. Body mají barvu podle počtu (TAG_POINT_COLORS).
+func _take_tag(title: String, gained: int) -> Node2D:
 	var holder: Node2D = _spare_tags.pop_back() if not _spare_tags.is_empty() else _make_tag()
-	(holder.get_child(0) as Label).text = text
+	var row := holder.get_child(0)
+	(row.get_child(0) as Label).text = title
+	var score := row.get_child(1) as Label
+	score.text = "+%d" % gained
+	var grade := 0
+	while grade < TAG_POINTS.size() and gained > TAG_POINTS[grade]:
+		grade += 1
+	score.add_theme_color_override("font_color", TAG_POINT_COLORS[grade])
 	holder.visible = false
 	return holder
 
@@ -549,20 +606,27 @@ func _drop_tag(prey: Prey) -> void:
 	prey.tag = null
 
 
-## Držák s Labelem, spodní okraj textu leží na držáku. Styl jako nápisy dolů, menší.
+## Držák s řádkem jméno a body, spodní okraj textu leží na držáku. Řádek je vycentrovaný.
+## Styl jako nápisy dolů, menší.
 func _make_tag() -> Node2D:
 	var holder := Node2D.new()
 	tags.add_child(holder)
-	var label := Label.new()
-	label.add_theme_font_size_override("font_size", TAG_FONT)
-	label.add_theme_color_override("font_color", Color(0.98, 0.93, 0.8))
-	label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.04))
-	label.add_theme_constant_override("outline_size", TAG_OUTLINE)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	label.size = Vector2(TAG_WIDTH, TAG_LINE)
-	label.position = Vector2(-TAG_WIDTH * 0.5, -TAG_LINE)
-	holder.add_child(label)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", TAG_GAP)
+	row.size = Vector2(TAG_WIDTH, TAG_LINE)
+	row.position = Vector2(-TAG_WIDTH * 0.5, -TAG_LINE)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(row)
+	for part in 2:
+		var label := Label.new()
+		label.add_theme_font_size_override("font_size", TAG_FONT)
+		label.add_theme_color_override("font_color", TAG_COLOR)
+		label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.04))
+		label.add_theme_constant_override("outline_size", TAG_OUTLINE)
+		label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		label.size_flags_vertical = Control.SIZE_FILL
+		row.add_child(label)
 	return holder
 
 
