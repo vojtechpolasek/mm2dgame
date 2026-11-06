@@ -220,6 +220,10 @@ class Square:
 	var water_side := 0
 	## Terén čtverce ve scéně.
 	var ground
+	## Dlaždice s vodou pro terén, spočítané ve vlákně (TerrainChunks.find_water).
+	var water: Array = []
+	## Výřezy pole koryta řeky po chuncích terénu (River.field_tiles).
+	var river_tiles := {}
 
 
 ## Krajina pod menu. Volá se místo start().
@@ -486,11 +490,6 @@ func _enqueue(coord: Vector2i, saved: Dictionary = {}) -> void:
 	sq.rocks.name = "Rocks"
 	sq.forest.name = "Trees"
 	sq.town.name = "Town"
-	sq.rocks.load_catalog(_catalog.names, _catalog.surfaces)
-	sq.forest.load_catalog(_catalog.names, _catalog.surfaces)
-	if sq.town.load_assets():
-		sq.rocks.town = sq.town
-		sq.forest.town = sq.town
 	sq.rocks.bind_crystal(_crystal)
 	sq.rocks.edge_guard = EDGE
 	_configure(sq)
@@ -636,7 +635,18 @@ func _fixed_vertices(coord: Vector2i) -> PackedByteArray:
 	return fixed
 
 
+## Katalogy skal, stromů a vesnice. Ve vlákně čtverce, na hlavním by čtení katalogů zaseklo
+## hru při přechodu do dalšího čtverce (na Raspberry Pi desítky ms).
+func _load_catalogs(sq: Square) -> void:
+	sq.rocks.load_catalog(_catalog.names, _catalog.surfaces)
+	sq.forest.load_catalog(_catalog.names, _catalog.surfaces)
+	if sq.town.load_assets():
+		sq.rocks.town = sq.town
+		sq.forest.town = sq.town
+
+
 func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> void:
+	_load_catalogs(sq)
 	# Benchmark chce vodu hned u startu, jeho čtverec ji proto smí mít.
 	var banned := START_BANNED if sq.coord == Vector2i.ZERO and not Benchmark.requested() else PackedStringArray()
 	var pool := MapGenerator.pick_terrains(_catalog.names, _catalog.surfaces, sq.rng, TERRAINS_PER_SQUARE, ring, banned)
@@ -656,6 +666,7 @@ func _generate(sq: Square, ring: PackedByteArray, fixed: PackedByteArray) -> voi
 ## Čtverec z uložené mapy. Rohy dlaždic se dopočítají z vrcholů, objekty se sází od
 ## uloženého stavu rng, takže stojí tam, kde stály.
 func _rebuild(sq: Square) -> void:
+	_load_catalogs(sq)
 	var map := MapData.new()
 	map.size = _side
 	map.names = _catalog.names
@@ -740,6 +751,10 @@ func _furnish(sq: Square, map: MapData) -> void:
 	# Menu mapu v rohu nemá.
 	if not _flyover:
 		sq.chart = MiniMap.chart(map, sq.rocks, sq.forest, sq.town, sq.river)
+	# Co jde, se připraví tady, ať dokončení čtverce na hlavním vlákně nezasekne hru.
+	sq.water = TerrainChunks.find_water(map.size, sq.painted["corners"], _catalog.water_index)
+	sq.river.prepare_mesh()
+	sq.river_tiles = sq.river.field_tiles(TerrainChunks.TILES * TerrainCatalog.TILE_SIZE)
 	sq.map = map
 
 
@@ -993,20 +1008,14 @@ func _show_terrain(sq: Square) -> void:
 		chunks.share_spare(_ground)
 		_host.add_child(chunks)
 		sq.ground = chunks
+	chunks.water_tiles = sq.water
 	var water := mats["water"] as ShaderMaterial
 	water.set_shader_parameter("map_origin", sq.origin)
 	var bake := mats["bake"] as ShaderMaterial
 	bake.set_shader_parameter("map_origin", sq.origin)
-	# Břehy řeky do pečení terénu (jako jezera). Pole vzniklo ve vlákně v river.plan.
-	var field: ImageTexture = sq.river.field_texture() if sq.river != null else null
-	if field != null:
-		var look: Dictionary = sq.river.field_look()
-		bake.set_shader_parameter("river_field", field)
-		bake.set_shader_parameter("river_field_on", 1.0)
-		bake.set_shader_parameter("river_field_size", look["size"])
-		bake.set_shader_parameter("river_field_step", look["step"])
-	else:
-		bake.set_shader_parameter("river_field_on", 0.0)
+	# Břehy řeky do pečení terénu (jako jezera). Výřezy pole vznikly ve vlákně (_furnish).
+	bake.set_shader_parameter("river_field_step", float(River.FIELD_STEP))
+	chunks.river_tiles = sq.river_tiles
 	chunks.setup(
 		_catalog,
 		sq.map.size,

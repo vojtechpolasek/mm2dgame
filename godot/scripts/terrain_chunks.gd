@@ -19,12 +19,13 @@ const DEEP_SHADER := preload("res://shaders/terrain_water_deep.gdshader")
 
 ## Strana chunku v dlaždicích. Textura chunku má TILES * TILE_SIZE pixelů na stranu.
 const TILES := 8
-## Chunky do tolika pixelů světa za okrajem obrazovky se pečou dopředu, nejvýš BAKE_PER_FRAME
-## za snímek. Chunk, který už je na obrazovce, se upeče hned, ale nejvýš BAKE_NOW za snímek,
-## ať rychlé oddálení nezasekne hru. Zbytek dojde z fronty, nejbližší ke středu první.
+## Chunky do tolika pixelů světa za okrajem obrazovky se pečou dopředu po STRIPS vodorovných
+## pruzích, jeden pruh za snímek (celý chunk najednou je na slabé grafice zásek 8-15 ms).
+## Chunk, který už je na obrazovce, se dopeče hned celý, ale nejvýš BAKE_NOW za snímek, ať
+## rychlé oddálení nezasekne hru. Zbytek dojde z fronty, nejbližší ke středu první.
 ## Při prvním zobrazení se upeče všechno, co je vidět.
 const AHEAD := 256.0
-const BAKE_PER_FRAME := 1
+const STRIPS := 4
 const BAKE_NOW := 3
 ## Chunk dál než tolik pixelů za okrajem obrazovky se vrátí do zásobníku. Mezera proti AHEAD
 ## brání tomu, aby se chunk na hraně pekl a vracel dokola.
@@ -38,7 +39,7 @@ var _camera: MapCamera
 var _water: ShaderMaterial
 var _deep: ShaderMaterial
 var _bake_template: ShaderMaterial
-## Každé pečení v jednom snímku potřebuje vlastní materiál, liší se chunk_origin.
+## Každé pečení v jednom snímku potřebuje vlastní materiál, liší se chunk_origin a bake_rect.
 var _bakers: Array[ShaderMaterial] = []
 var _chunk_px := TILES * TerrainCatalog.TILE_SIZE
 var _map_px := 0
@@ -56,7 +57,11 @@ var _water_meshes := {}
 var _deep_meshes := {}
 ## Chunky čekající na pečení, nejbližší ke středu obrazovky první.
 var _queue: Array[Vector2i] = []
+## Klíč rozpečeného chunku -> počet hotových pruhů.
+var _strips := {}
+## Celé chunky upečené v tomto snímku (BAKE_NOW) a všechna pečení včetně pruhů (materiály).
 var _baked_this_frame := 0
+var _blits_this_frame := 0
 var _bake_frame := -1
 var _shown := false
 ## Upečené chunky čekající na mipmapy: [textura, snímek, od kterého se smí udělat].
@@ -71,6 +76,11 @@ class Spare:
 	var cap := 0
 
 
+## Dlaždice s vodou spočítané předem ve vlákně (find_water). Prázdné, spočítají se v setup.
+var water_tiles: Array = []
+## Výřezy pole koryta řeky pro pečení (River.field_tiles): klíč chunku -> [Image, počátek].
+## Textura z výřezu vznikne při prvním pečení chunku a zůstane tu.
+var river_tiles := {}
 ## Majitel sdíleného zásobníku. Sprity uvolněného čtverce se přestěhují k němu.
 var _spare_owner: Node2D
 ## Materiál všech chunků, jeden kvůli dávkování kreslení.
@@ -92,6 +102,7 @@ func detach() -> void:
 		_spare.sprites.append(sprite)
 	_live.clear()
 	_queue.clear()
+	_strips.clear()
 	if _spare_owner == null:
 		return
 	for sprite in _spare.sprites:
@@ -118,7 +129,11 @@ func setup(
 	_water.set_shader_parameter("chunk_px", float(_chunk_px))
 	_deep = _water.duplicate() as ShaderMaterial
 	_deep.shader = DEEP_SHADER
-	_find_water(size, corners, catalog.water_index)
+	if water_tiles.is_empty():
+		water_tiles = find_water(size, corners, catalog.water_index)
+	_water_tiles = water_tiles[0]
+	_deep_tiles = water_tiles[1]
+	water_tiles = []
 	_prefill()
 	camera.view_changed.connect(_refresh)
 	_refresh()
@@ -129,20 +144,29 @@ func _process(_delta: float) -> void:
 	var frame := Engine.get_process_frames()
 	while not _mips.is_empty() and int(_mips[0][1]) <= frame:
 		(_mips.pop_front()[0] as DrawableTexture2D).generate_mipmaps()
-	while not _queue.is_empty() and _baked_this_frame < BAKE_PER_FRAME:
-		var key: Vector2i = _queue.pop_front()
-		if _live.has(key) and not (_live[key] as Sprite2D).visible:
-			_bake(key)
+	while not _queue.is_empty() and _blits_this_frame == 0:
+		var key: Vector2i = _queue[0]
+		if not _live.has(key) or (_live[key] as Sprite2D).visible:
+			_queue.pop_front()
+			continue
+		var done: int = _strips.get(key, 0)
+		_blit(key, done, done + 1)
+		if done + 1 < STRIPS:
+			_strips[key] = done + 1
+		else:
+			_queue.pop_front()
+			_finish(key)
 
 
 ## Dlaždice s vodou v rohu rozdělí na hlubokou vodu a vodu u břehu. Hluboká je dlaždice celá ve
 ## vodě, kolem které je jen taková voda: posun hladiny (water_parallax) je menší než dlaždice,
-## břeh tam proto nikdy neprosvitne.
-func _find_water(size: int, corners: PackedByteArray, water: int) -> void:
-	_water_tiles.clear()
-	_deep_tiles.clear()
+## břeh tam proto nikdy neprosvitne. Vrací [voda u břehu, hluboká voda] jako _water_tiles
+## a _deep_tiles. Smí běžet ve vlákně.
+static func find_water(size: int, corners: PackedByteArray, water: int) -> Array:
+	var shore := {}
+	var deep_tiles := {}
 	if water < 0:
-		return
+		return [shore, deep_tiles]
 	var full := PackedByteArray()
 	full.resize(size * size)
 	for index in size * size:
@@ -160,11 +184,12 @@ func _find_water(size: int, corners: PackedByteArray, water: int) -> void:
 				for nx in range(x - 1, x + 2):
 					if nx < 0 or ny < 0 or nx >= size or ny >= size or full[ny * size + nx] == 0:
 						deep = false
-			var tiles: Dictionary = _deep_tiles if deep else _water_tiles
+			var tiles: Dictionary = deep_tiles if deep else shore
 			var key := Vector2i(x / TILES, y / TILES)
 			var spots: PackedVector2Array = tiles.get(key, PackedVector2Array())
 			spots.append(Vector2((x % TILES) * tile, (y % TILES) * tile))
 			tiles[key] = spots
+	return [shore, deep_tiles]
 
 
 func _refresh() -> void:
@@ -179,6 +204,7 @@ func _refresh() -> void:
 			sprite.visible = false
 			_spare.sprites.append(sprite)
 			_live.erase(key)
+			_strips.erase(key)
 	var ahead := _cells(view.grow(AHEAD))
 	var added := false
 	for y in range(ahead.position.y, ahead.end.y):
@@ -286,6 +312,7 @@ func _create(key: Vector2i) -> void:
 		else:
 			water.mesh = null
 	_live[key] = sprite
+	_strips.erase(key)
 
 
 ## Čtverec za každou dlaždici s vodou. UV ukazuje do textury chunku.
@@ -307,18 +334,42 @@ func _water_mesh(spots: PackedVector2Array) -> ArrayMesh:
 	return mesh
 
 
+## Dopeče chunk celý (zbylé pruhy jedním pečením) a ukáže ho.
 func _bake(key: Vector2i) -> void:
 	_new_frame()
-	var sprite: Sprite2D = _live[key]
-	while _bakers.size() <= _baked_this_frame:
-		_bakers.append(_bake_template.duplicate() as ShaderMaterial)
-	var baker := _bakers[_baked_this_frame]
-	baker.set_shader_parameter("chunk_origin", Vector2(key) * _chunk_px)
-	var texture := sprite.texture as DrawableTexture2D
-	texture.blit_rect(Rect2i(0, 0, _chunk_px, _chunk_px), null, Color.WHITE, 0, baker)
-	_mips.append([texture, Engine.get_process_frames() + MIP_DELAY])
-	sprite.visible = true
+	_blit(key, _strips.get(key, 0), STRIPS)
+	_finish(key)
 	_baked_this_frame += 1
+
+
+## Upeče pruhy from až to (bez to) chunku do jeho textury.
+func _blit(key: Vector2i, from: int, to: int) -> void:
+	_new_frame()
+	while _bakers.size() <= _blits_this_frame:
+		_bakers.append(_bake_template.duplicate() as ShaderMaterial)
+	var baker := _bakers[_blits_this_frame]
+	var share := 1.0 / STRIPS
+	baker.set_shader_parameter("chunk_origin", Vector2(key) * _chunk_px)
+	baker.set_shader_parameter("bake_rect", Vector4(0.0, from * share, 1.0, (to - from) * share))
+	var field: Array = river_tiles.get(key, [])
+	baker.set_shader_parameter("river_field_on", 0.0 if field.is_empty() else 1.0)
+	if not field.is_empty():
+		if field[0] is Image:
+			field[0] = ImageTexture.create_from_image(field[0])
+		baker.set_shader_parameter("river_field", field[0])
+		baker.set_shader_parameter("river_field_size", float((field[0] as Texture2D).get_width()))
+		baker.set_shader_parameter("river_field_origin", field[1])
+	var rows := _chunk_px / STRIPS
+	var texture := (_live[key] as Sprite2D).texture as DrawableTexture2D
+	texture.blit_rect(Rect2i(0, from * rows, _chunk_px, (to - from) * rows), null, Color.WHITE, 0, baker)
+	_blits_this_frame += 1
+
+
+func _finish(key: Vector2i) -> void:
+	var sprite: Sprite2D = _live[key]
+	_strips.erase(key)
+	_mips.append([sprite.texture, Engine.get_process_frames() + MIP_DELAY])
+	sprite.visible = true
 
 
 ## Pečení se provede až při kreslení snímku. Materiál se proto smí znovu použít až v dalším snímku.
@@ -327,3 +378,4 @@ func _new_frame() -> void:
 	if frame != _bake_frame:
 		_bake_frame = frame
 		_baked_this_frame = 0
+		_blits_this_frame = 0

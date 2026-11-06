@@ -173,6 +173,8 @@ var _size := 0
 var _origin := Vector2.ZERO
 ## Uzly ve scéně (síť a mosty), pro despawn.
 var _nodes: Array[Node] = []
+## Síť řeky z prepare_mesh, čeká na spawn.
+var _arrays: Array = []
 ## Voda čtverce pro shader řeky (255 voda), vzniká ve vlákně v plan. Bere se z rohů
 ## dlaždic (vertex), podle nich terén kreslí břeh. Bez nich po dlaždicích.
 var _water_mask: Image
@@ -180,8 +182,6 @@ var _water_mask: Image
 var _mask_shift := 0.0
 ## Pole koryta (výška, rel, inner/outer) pro terrain_bake. Vzniká ve vlákně v plan.
 var _field: Image
-## Textura z _field, až na hlavním vlákně (field_texture).
-var _field_tex: ImageTexture
 
 # Jen během plan.
 var _map: MapData
@@ -223,7 +223,6 @@ func plan(
 	_spring_rocks = PackedVector3Array()
 	_cells.clear()
 	_field = null
-	_field_tex = null
 	_size = map.size
 	var water := map.names.find("water")
 	_lake = _largest_water(map, water) if water >= 0 else PackedVector2Array()
@@ -269,20 +268,24 @@ func plan(
 	_taken = {}
 
 
-## Textura pole koryta pro terrain_bake (břehy jako u jezera). Null bez řeky. Volat na hlavním.
-func field_texture() -> ImageTexture:
+## Pole koryta pro terrain_bake (břehy jako u jezera) po chuncích terénu o straně chunk_px.
+## Celé pole je pro Raspberry Pi moc velká textura (16 MB, nahrání zasekne hru), chunk při
+## pečení dostane jen svůj výřez s okrajem texelu pro lineární filtr. Klíč chunku -> [Image
+## výřezu, levý horní texel výřezu v poli]. Chunky bez řeky chybí. Smí běžet ve vlákně.
+func field_tiles(chunk_px: int) -> Dictionary:
+	var out := {}
 	if _field == null:
-		return null
-	if _field_tex == null:
-		_field_tex = ImageTexture.create_from_image(_field)
-	return _field_tex
-
-
-## Strana pole v texelech a krok v px světa (terrain_bake).
-func field_look() -> Dictionary:
-	if _field == null:
-		return {}
-	return {"size": float(_field.get_width()), "step": float(FIELD_STEP)}
+		return out
+	var side := _field.get_width()
+	var texels := chunk_px / FIELD_STEP
+	var crop := mini(texels + 2, side)
+	for cy in ceili(float(side) / texels):
+		for cx in ceili(float(side) / texels):
+			var at := Vector2i(clampi(cx * texels - 1, 0, side - crop), clampi(cy * texels - 1, 0, side - crop))
+			var tile := _field.get_region(Rect2i(at, Vector2i(crop, crop)))
+			if not tile.is_invisible():
+				out[Vector2i(cx, cy)] = [tile, Vector2(at)]
+	return out
 
 
 ## Kde u vtoků inlets (viz plan) nesmí stát skála, ať k nim řeka projde: kruhy (střed x, y
@@ -1238,7 +1241,11 @@ func spawn(host: Node2D, origin: Vector2, look: ShaderMaterial = null, _bank := 
 			var value: Variant = look.get_shader_parameter(uniform["name"])
 			if value != null:
 				shared[uniform["name"]] = value
-	var mesh := _mesh()
+	var mesh := ArrayMesh.new()
+	if _arrays.is_empty():
+		prepare_mesh()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _arrays, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	_arrays = []
 	var mask := ImageTexture.create_from_image(_water_mask) if _water_mask != null else null
 	var node := MeshInstance2D.new()
 	node.mesh = mesh
@@ -1284,7 +1291,13 @@ func despawn() -> void:
 ## CUSTOM0.xy je směr napříč, kterým UV.y roste (pro stín břehu ve shaderu), z a w kam pás
 ## sahá vlevo a vpravo v px (u zúžené vnitřní strany zákruty se břeh vejde dovnitř).
 ## Na vnitřní straně ostré zákruty je pás užší než poloměr zákruty, ať se síť nepřehne.
-func _mesh() -> ArrayMesh:
+## Spočítá síť řeky dopředu (smí ve vlákně), spawn ji pak jen předá grafice.
+func prepare_mesh() -> void:
+	if exists():
+		_arrays = _mesh_arrays()
+
+
+func _mesh_arrays() -> Array:
 	var vertices := PackedVector2Array()
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
@@ -1357,9 +1370,7 @@ func _mesh() -> ArrayMesh:
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_CUSTOM0] = customs
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
-	return mesh
+	return arrays
 
 
 ## Zakřivení osy v každém bodě v 1/px, kladné, když je střed zákruty vlevo (+ orthogonal

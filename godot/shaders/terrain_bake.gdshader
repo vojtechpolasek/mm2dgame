@@ -16,9 +16,12 @@ uniform vec2 chunk_origin = vec2(0.0);
 // Levý horní roh čtverce ve světě. Textura vody má varianty podle dlaždic světa.
 uniform vec2 map_origin = vec2(0.0);
 uniform float chunk_px = 512.0;
+// Pečená část chunku (x, y, šířka, výška v dílech chunku). Chunk se peče po pruzích, UV běží
+// jen přes pruh.
+uniform vec4 bake_rect = vec4(0.0, 0.0, 1.0, 1.0);
 
 void blit() {
-	vec2 world_pos = chunk_origin + UV * chunk_px;
+	vec2 world_pos = chunk_origin + (bake_rect.xy + UV * bake_rect.zw) * chunk_px;
 	vec2 tile = floor(world_pos / tile_size);
 	vec2 local_uv = (world_pos - tile * tile_size) / tile_size;
 	vec2 data_uv = (tile + 0.5) / map_size;

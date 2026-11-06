@@ -483,7 +483,9 @@ vec3 lake_bank(vec3 surface, float f, vec2 at, float lod) {
 // Pole koryta řeky (river.gd _build_field): 1 texel = river_field_step px. A < 0.5 = bez řeky.
 uniform sampler2D river_field : filter_linear, repeat_disable, hint_default_black;
 uniform float river_field_on = 0.0;
+// Pole je výřez (TerrainChunks): strana v texelech a jeho levý horní texel v celém poli.
 uniform float river_field_size = 1.0;
+uniform vec2 river_field_origin = vec2(0.0);
 uniform float river_field_step = 2.0;
 
 // Výška břehu řeky 0–1, 1 bez řeky. Stejná alfa jako u jezera (stín v terrain_water / chunk).
@@ -491,7 +493,7 @@ float river_height(vec2 at) {
 	if (river_field_on < 0.5) {
 		return 1.0;
 	}
-	vec2 uv = at / (river_field_size * river_field_step);
+	vec2 uv = (at / river_field_step - river_field_origin) / river_field_size;
 	vec4 rf = texture(river_field, uv);
 	if (rf.a < 0.5) {
 		return 1.0;
@@ -504,7 +506,7 @@ vec3 river_bank(vec3 surface, vec2 at, float lod) {
 	if (river_field_on < 0.5) {
 		return surface;
 	}
-	vec2 uv = at / (river_field_size * river_field_step);
+	vec2 uv = (at / river_field_step - river_field_origin) / river_field_size;
 	vec4 rf = texture(river_field, uv);
 	if (rf.a < 0.5) {
 		return surface;
