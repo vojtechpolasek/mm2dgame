@@ -1,4 +1,4 @@
-"""Kamenné příšery z pohledu shora: had, štír, pavouk, koule, vlk, kocour, tyranosaurus a ptakoještěr.
+"""Kamenné příšery z pohledu shora: had, štír, pavouk, koule, vlk, kocour, tyranosaurus, ptakoještěr a orel.
 
 64 px je 1 m, stejně jako u postavy, skal a stromů. Kreslí se ve čtyřnásobném
 rozlišení do plátna druhu (canvas). Uložená buňka vrstvy je ořezaná na obsah,
@@ -6,7 +6,7 @@ střed zůstává.
 
 Atlas má osm sloupců, příšera jde na sever. Ostatní směry otáčí uzel v Godotu.
 Počet snímků cyklu (frames) má každý druh v katalogu: pavouk, štír, vlk a kocour 8, had a
-tyranosaurus 16, ptakoještěr a koule 24. Delší animace se zalomí do dalších řádků (atlas_columns).
+tyranosaurus a orel 16, ptakoještěr a koule 24. Delší animace se zalomí do dalších řádků (atlas_columns).
 Jeden atlas slouží všem materiálům druhu, barvy dodá shader.
 
 Vrstva nese masky, ne hotovou barvu: R světlost, G podíl akcentu (kresba,
@@ -62,6 +62,13 @@ vzdálí. Stín hra kreslí černě s krytím shadow_alpha z katalogu. Cyklus je
 mávnutí: dolů jde křídlo roztažené, nahoru složené v zápěstí. Snímek glide_frame
 se hodí na plachtění. Blána je z plochých kamenů, hřbet je tmavší a nohy jen vykukují
 zpod těla, aby tvor nepůsobil jako zespodu. Konce křídel jsou v akcentu.
+
+Orel (orel) pořád letí jako ptakoještěr: vrstva 1 je stín, vrstva 2 je tvor ve 2,5 m. Je menší
+a zavalitější, mává rychleji a s menším náklonem. Široká křídla mají vnitřní část z hustých řad
+kamenů (krovky), za odtokovou hranou trčí loketní letky a na konci je pět roztažených ručních
+letek s mezerami jako prsty. Každé pero je jeden dlouhý kámen, konce letek a per ocasu jsou
+v akcentu. Při švihu nahoru se křídlo v zápěstí přitáhne a letky se stočí dozadu. Ocas je vějíř,
+který kormidluje. Hlava je v akcentu (jako bílá hlava orla), zobák v barvě těla a rozhlíží se.
 
 Tyranosaurus (rex2): vrstva 1 (nohy, 0 m), vrstva 2 (stehna, trup, ocas, ruce a hlava,
 1,2 m). Holeň začíná pod stehnem, chodidlo vykukuje vedle břicha a kořene ocasu.
@@ -450,6 +457,54 @@ PTERO_HEAD_STONES = ((-24.5, 5.0), (-29.0, 6.2), (-35.0, 4.6), (-41.0, 3.2), (-4
 # Kamenný ptakoještěr je o pětinu větší než původní.
 PTERO_STONE_ZOOM = 1.2
 
+# Orel, rozpětí asi 2 m, zavalitější a menší než ptakoještěr. Střed plátna je mezi rameny a kořenem ocasu.
+EAGLE_CANVAS = 176
+# Letí níž než ptakoještěr, stín je od něj blíž.
+EAGLE_HEIGHT = 2.5
+# Za jedno mávnutí uletí tolik metrů. Ve čtvrtině mávnutí jsou křídla vodorovně, snímek na plachtění.
+EAGLE_CYCLE = 1.6
+EAGLE_FRAMES = 16
+EAGLE_GLIDE_FRAME = EAGLE_FRAMES // 4
+# Největší náklon křídla ve stupních a jak moc se křídlo při švihu nahoru složí.
+EAGLE_FLAP = 50.0
+EAGLE_FOLD = 0.6
+# Rameno pravého křídla. Kosti (pažní, předloktí): délka, úhel roztaženého a složeného křídla.
+# Úhel 0 míří ven, kladný dozadu.
+EAGLE_SHOULDER = (5.5, -5.0)
+EAGLE_BONES = ((19.0, -4.0, 18.0), (17.0, -6.0, 40.0))
+# Náběžná hrana vede EAGLE_LEAD px před kostmi. Kořen náběžné a odtokové hrany na trupu.
+EAGLE_LEAD = 4.5
+EAGLE_ROOT_LEAD = (2.0, -9.0)
+EAGLE_ROOT_TRAIL = (2.0, 14.0)
+# Hloubka křídla za ramenem, loktem a zápěstím (ruční letky začínají až za zápěstím).
+EAGLE_TRAIL = (22.0, 20.0, 16.0)
+# Ruční letky od předku: úhel od směru předloktí ve stupních (kladný dozadu) a délka v px.
+# Mezi nimi jsou mezery, typické „prsty“ dravce. Při švihu nahoru se stočí o EAGLE_PRIMARY_FOLD dozadu.
+EAGLE_PRIMARIES = ((-6.0, 26.0), (5.0, 30.0), (16.0, 30.0), (27.0, 27.0), (38.0, 22.0))
+EAGLE_PRIMARY_FOLD = 35.0
+EAGLE_PRIMARY_R = (4.2, 1.6)
+# Počet bodů hran vnitřní části křídla pro řady krovek a přibližný poloměr kamene krovky.
+EAGLE_COVERT_SAMPLES = 12
+EAGLE_COVERT_STONE = 3.6
+# Loketní letky trčí za odtokovou hranu o tolik px, poloměr jejich kamene.
+EAGLE_SECONDARY = 4.0
+EAGLE_SECONDARY_R = 2.4
+# Zavalitý trup od šíje po kořen ocasu: Y a poloviční šířka.
+EAGLE_BODY = ((-15.0, 5.0), (-10.0, 8.0), (-3.0, 9.8), (4.0, 9.2), (10.0, 7.0), (14.0, 4.6))
+# Hlava: kameny po ose (Y, poloměr) v akcentu jako bílá hlava orla, zobák od kořene ke špičce,
+# poloměr u kořene a u špičky, oko pravé strany. Hlava se rozhlíží o EAGLE_HEAD_YAW stupňů.
+EAGLE_HEAD_STONES = ((-15.5, 4.6), (-19.5, 5.4), (-23.5, 4.2))
+EAGLE_HEAD_ACCENT = 0.75
+EAGLE_BEAK = ((0.0, -26.0), (0.0, -31.5), 2.6, 1.0)
+EAGLE_EYE = ((3.8, -21.0), 1.2)
+EAGLE_HEAD_YAW = 4.0
+# Ocas jako vějíř: kořen, úhly per od osy ve stupních, délka, poloměr u kořene a na konci.
+# Konce per jsou v akcentu. Ocas kormidluje, natáčí se o EAGLE_TAIL_STEER stupňů.
+EAGLE_TAIL_ROOT = (0.0, 11.0)
+EAGLE_TAIL_FEATHERS = (-26.0, -13.0, 0.0, 13.0, 26.0)
+EAGLE_TAIL = (20.0, 3.4, 2.8)
+EAGLE_TAIL_STEER = 3.0
+
 # Tyranosaurus, asi 3,2 m od čenichu po špičku ocasu. Kyčle jsou ve středu plátna.
 REX_CANVAS = 256
 # Páteř trupu od šíje po špičku ocasu: Y a poloviční šířka v px.
@@ -797,6 +852,25 @@ MONSTERS = {
         "height_meters": 0.9,
         "jump_meters": 2.6,
         "eye": "FFF27A",
+    },
+    # Orel, dravec menší a pomalejší než ptakoještěr. Létá nad vším jako on. Zvuky má vlastní.
+    "orel": {
+        "canvas": EAGLE_CANVAS,
+        "preview_shadow": None,
+        "preview_materials": ("kremen", "zlato"),
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png", "shadow": True},
+            2: {"height": EAGLE_HEIGHT, "file": "layer_2.png"},
+        },
+        "cycle_meters": EAGLE_CYCLE,
+        "frames": EAGLE_FRAMES,
+        "info": {"flying": True, "glide_frame": EAGLE_GLIDE_FRAME, "shader": "stone", "sound": "orel"},
+        "preview_cycle_ms": 900,
+        "wander_meters": 1.2,
+        "chase_meters": 4.7,
+        "body_meters": 0.5,
+        "height_meters": 1.0,
+        "eye": "FF9A1A",
     },
     # Zvětšený o PTERO_STONE_ZOOM. Zvuky má ptakoještěří.
     "ptakojester2": {
@@ -1766,6 +1840,140 @@ def stone_ptero_layers(t: float) -> dict[int, Layer]:
     return {1: body.shadow(), 2: body}
 
 
+def eagle_wing(t: float, side: float) -> tuple[list[Point], list[Point], list[tuple[Point, Point]], float]:
+    """Křídlo orla ve fázi t: náběžná a odtoková hrana vnitřní části, ruční letky (kořen, konec) a náklon.
+
+    Náklon zkrátí rozpětí, jak ho vidí kamera shora. Při švihu nahoru se křídlo v zápěstí
+    přitáhne a letky se stočí dozadu.
+    """
+    tilt = math.radians(EAGLE_FLAP) * math.cos(math.tau * t)
+    fold = EAGLE_FOLD * max(0.0, -math.sin(math.tau * t))
+    angles = [math.radians(spread + (folded - spread) * fold) for _length, spread, folded in EAGLE_BONES]
+    joints = [EAGLE_SHOULDER]
+    for (length, _spread, _folded), angle in zip(EAGLE_BONES, angles):
+        x, y = joints[-1]
+        joints.append((x + length * math.cos(angle), y + length * math.sin(angle)))
+    shoulder, elbow, wrist = joints
+    arm, hand = angles
+    middle = (arm + hand) / 2
+
+    def behind(point: Point, angle: float, depth: float) -> Point:
+        return (point[0] - math.sin(angle) * depth, point[1] + math.cos(angle) * depth)
+
+    deep_shoulder, deep_elbow, deep_wrist = EAGLE_TRAIL
+    lead = [EAGLE_ROOT_LEAD, behind(shoulder, arm, -EAGLE_LEAD), behind(elbow, middle, -EAGLE_LEAD), behind(wrist, hand, -EAGLE_LEAD)]
+    trail = [EAGLE_ROOT_TRAIL, behind(shoulder, arm, deep_shoulder), behind(elbow, middle, deep_elbow), behind(wrist, hand, deep_wrist)]
+    front, back = behind(wrist, hand, -EAGLE_LEAD * 0.5), behind(wrist, hand, deep_wrist * 0.85)
+    primaries = []
+    count = len(EAGLE_PRIMARIES)
+    for index, (turn, length) in enumerate(EAGLE_PRIMARIES):
+        base = lerp(front, back, index / (count - 1))
+        heading = hand + math.radians(turn + EAGLE_PRIMARY_FOLD * fold)
+        reach = length * (1.0 - 0.2 * fold)
+        primaries.append((base, (base[0] + math.cos(heading) * reach, base[1] + math.sin(heading) * reach)))
+
+    def place(point: Point) -> Point:
+        return mirror((shoulder[0] + (point[0] - shoulder[0]) * math.cos(tilt), point[1]), side)
+
+    return (
+        [place(point) for point in lead],
+        [place(point) for point in trail],
+        [(place(a), place(b)) for a, b in primaries],
+        tilt,
+    )
+
+
+def stone_feather(layer: Layer, base: Point, tip: Point, radius: float, cell: int, light: float, tip_accent: float) -> None:
+    """Pero jako jeden dlouhý plochý kámen od kořene ke konci, konec je menší kámen v akcentu."""
+    angle = math.atan2(tip[1] - base[1], tip[0] - base[0])
+    length = math.dist(base, tip)
+    paint_stone(layer, lerp(base, tip, 0.5), radius, angle, cell, light, SPARK_LEG, max(1.0, length * 0.5 / radius))
+    if tip_accent > 0.0:
+        small = radius * 0.8
+        paint_stone(layer, lerp(base, tip, 0.83), small, angle, cell + 50, light, 0.0, max(1.0, length * 0.17 / small), tip_accent)
+
+
+def stone_eagle_wing(layer: Layer, t: float, side: float) -> None:
+    """Křídlo z kamenů: ruční letky a loketní letky jako dlouhé kameny, přes ně krovky v hustých řadách."""
+    lead, trail, primaries, tilt = eagle_wing(t, side)
+    # Vodorovné křídlo je nejsvětlejší, zvednuté o kousek světlejší než spuštěné.
+    bright = 0.7 + 0.3 * math.cos(tilt) + 0.08 * math.sin(tilt)
+    cell = 7000 + (0 if side > 0 else 500)
+    r_base, _r_tip = EAGLE_PRIMARY_R
+    for index, (base, tip) in reversed(list(enumerate(primaries))):
+        stone_feather(layer, base, tip, r_base * 0.75, cell + index, bright * 0.9, 0.85)
+    lead = resample(smooth(lead), EAGLE_COVERT_SAMPLES)
+    trail = resample(smooth(trail), EAGLE_COVERT_SAMPLES)
+    layer.polygon(lead + trail[::-1], 0.06)
+    # Loketní letky trčí za odtokovou hranou dozadu.
+    for index in range(1, EAGLE_COVERT_SAMPLES - 1):
+        a, b = lead[index], trail[index]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        reach = math.hypot(dx, dy) or 1.0
+        tip = (b[0] + dx / reach * EAGLE_SECONDARY, b[1] + dy / reach * EAGLE_SECONDARY)
+        stone_feather(layer, lerp(a, b, 0.45), tip, EAGLE_SECONDARY_R, cell + 20 + index, bright * 0.85, 0.0)
+    # Krovky: řady napříč křídlem od zadní ke přední, přední leží navrch.
+    rows = []
+    for index in range(EAGLE_COVERT_SAMPLES):
+        a, b = lead[index], trail[index]
+        chord = math.dist(a, b)
+        count = max(2, round(chord / (2.0 * EAGLE_COVERT_STONE)))
+        for k in range(count):
+            v = (k + 0.5) / count
+            rows.append((v, index, k, count, chord))
+    for v, index, k, count, chord in sorted(rows, reverse=True):
+        a, b = lead[index], trail[index]
+        nxt = lead[min(index + 1, EAGLE_COVERT_SAMPLES - 1)]
+        prev = lead[max(index - 1, 0)]
+        angle = math.atan2(nxt[1] - prev[1], nxt[0] - prev[0])
+        stone = cell + 100 + index * 8 + k
+        jitter = BAND_STONE_JITTER * (facet_factor(stone, 60) - 0.5) / count
+        radius = chord / count * 0.6 * (0.9 + 0.2 * facet_factor(stone, 62))
+        light = bright * (1.0 - 0.3 * v)
+        paint_stone(layer, lerp(a, b, v + jitter), radius, angle, stone, light, SPARK_BODY, 1.2)
+
+
+def stone_eagle_head(layer: Layer, t: float) -> None:
+    yaw = math.radians(EAGLE_HEAD_YAW) * math.sin(math.tau * t)
+    pivot = EAGLE_BODY[0][0]
+
+    def place(point: Point) -> Point:
+        turned = rotate((point[0], point[1] - pivot), yaw)
+        return (turned[0], pivot + turned[1])
+
+    start, end, r_root, r_tip = EAGLE_BEAK
+    layer.capsule(place(start), place(end), r_root + 0.5, r_tip + 0.5, 0.05)
+    layer.capsule(place(start), place(end), r_root, r_tip, 0.9)
+    layer.disk(place(end), r_tip, 0.06)
+    for index, (y, radius) in enumerate(EAGLE_HEAD_STONES):
+        paint_stone(layer, place((0.0, y)), radius, -math.pi / 2 + yaw, 7600 + index, 0.95, SPARK_BODY, 1.2, EAGLE_HEAD_ACCENT)
+    center, radius = EAGLE_EYE
+    for side in (-1.0, 1.0):
+        eye = place(mirror(center, side))
+        layer.disk(eye, radius + 0.45, 0.06)
+        layer.disk(eye, radius, None, 0.0, 1.0)
+
+
+def eagle_layers(t: float) -> dict[int, Layer]:
+    """Kamenný orel: vějíř ocasu, křídla s ručními letkami, zavalitý trup a hlava v akcentu."""
+    body = Layer(EAGLE_CANVAS)
+    steer = math.radians(EAGLE_TAIL_STEER) * math.sin(math.tau * t - 0.6)
+    length, r_root, _r_tip = EAGLE_TAIL
+    for index, angle in enumerate(EAGLE_TAIL_FEATHERS):
+        direction = rotate((0.0, 1.0), math.radians(angle) + steer)
+        tip = (EAGLE_TAIL_ROOT[0] + direction[0] * length, EAGLE_TAIL_ROOT[1] + direction[1] * length)
+        stone_feather(body, EAGLE_TAIL_ROOT, tip, r_root, 7200 + index, 0.8, 0.75)
+    for side in (-1.0, 1.0):
+        stone_eagle_wing(body, t, side)
+    dense = profile(EAGLE_BODY)
+    spine = [(0.0, y) for y, _w in dense]
+    widths = [w for _y, w in dense]
+    fringe(body, spine, widths, 0, len(spine) - 1, 10, 1.4, 0.35)
+    stone_band(body, spine, widths, 7300, lambda at, across: 0.62 + 0.38 * (1.0 - across * across))
+    stone_eagle_head(body, t)
+    return {1: body.shadow(), 2: body}
+
+
 def rex_spine_x(y: float, t: float, hips: float) -> float:
     if y < REX_NECK_FROM:
         bend = min(1.0, (REX_NECK_FROM - y) / (REX_NECK_FROM - REX_NECK))
@@ -2430,6 +2638,7 @@ RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
     "vlk2": stone_wolf_layers,
     "kocour": cat_layers,
     "ptakojester2": stone_ptero_layers,
+    "orel": eagle_layers,
     "rex2": stone_rex_layers,
     "koule2": ball_layers,
 }

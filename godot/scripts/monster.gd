@@ -73,7 +73,7 @@ const JUMP_STEP := 0.25
 ## sekund, ne v každém snímku klouzání podél překážky.
 const JUMP_RETRY := 0.2
 ## Hlasitost kroků podle druhu v dB. Chodící dupne dvakrát za cyklus, létající mávne jednou.
-const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "kocour": -9.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "koule": -8.0}
+const STEP_DB := {"had": -12.0, "pavouk": -10.0, "vlk": -6.0, "kocour": -9.0, "tyranosaurus": 0.0, "ptakojester": -5.0, "orel": -7.0, "koule": -8.0}
 const STEP_VARIANTS := 3
 ## Úprk (hunt): začne, když je postava blíž než FLEE_NEAR metrů, skončí dál než FLEE_FAR.
 ## Po FLEE_EVERY sekundách volí směr: od nejbližší postavy, cíl je od ní dvakrát dál než

@@ -8,6 +8,8 @@
                 "surfaces": {"grass": 2, "dirt": 2, "desert": 1, "snow": 1, "scree": 2, "ash": 2, "swamp": 3, "heath": 2}},
     "koule2": {"title": "Koule", "gender": "f", "points": 35, "flee": [3.35, 4.40], "time": {"day": 1, "night": 1},
                "surfaces": {"grass": 1, "dirt": 2, "desert": 2, "snow": 2, "scree": 3, "ash": 2, "heath": 1}},
+    "orel": {"title": "Orel", "gender": "m", "points": 45, "flee": [3.45, 4.35], "time": {"day": 2, "night": 0.5},
+             "surfaces": {"grass": 1, "dirt": 0.5, "desert": 1, "snow": 1, "scree": 1.5, "ash": 0.5, "swamp": 0.5, "heath": 1, "water": 0.5}},
     "vlk2": {"title": "Vlk", "gender": "m", "points": 50, "flee": [3.60, 4.47], "time": {"day": 1, "night": 2},
              "surfaces": {"grass": 2, "dirt": 1, "snow": 2, "scree": 1, "swamp": 1, "heath": 2}},
     "kocour": {"title": "Kocour", "gender": "m", "points": 70, "flee": [3.75, 4.53], "time": {"day": 1, "night": 1},

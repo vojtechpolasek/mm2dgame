@@ -172,6 +172,40 @@
         "eye": "FFF27A"
       }
     },
+    "orel": {
+      "cycle_meters": 1.6,
+      "frames": 16,
+      "atlas_columns": 8,
+      "wander_meters": 1.2,
+      "chase_meters": 4.7,
+      "body_meters": 0.5,
+      "height_meters": 1.0,
+      "jump_meters": 0.0,
+      "flying": true,
+      "glide_frame": 4,
+      "shader": "stone",
+      "sound": "orel",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "orel/layer_1.png",
+          "cell": 154,
+          "center": 77,
+          "shadow": true,
+          "glint_file": "orel/layer_1_glint.png"
+        },
+        "2": {
+          "height": 2.5,
+          "file": "orel/layer_2.png",
+          "cell": 150,
+          "center": 75,
+          "glint_file": "orel/layer_2_glint.png"
+        }
+      },
+      "colors": {
+        "eye": "FF9A1A"
+      }
+    },
     "ptakojester2": {
       "cycle_meters": 3.0,
       "frames": 24,
