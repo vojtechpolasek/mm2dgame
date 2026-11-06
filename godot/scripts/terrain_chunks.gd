@@ -3,8 +3,9 @@ extends Node2D
 ## Terén po chuncích. Souš, přechody a břehy (jezero i řeka) chunku se jednou předpečou do
 ## textury s mipmapami (terrain_bake.gdshader) a dál je kreslí obyčejný sprite. Drahý shader
 ## terénu tak neběží v každém snímku přes celou obrazovku. Voda jezer se vlní jen přes dlaždice,
-## které mají v rohu vodu (terrain_water.gdshader); vodu řeky kreslí river.gd. Chunky se pečou
-## podle kamery. Vzdálený chunk vrátí sprite i texturu do zásobníku, nový chunk si je odtud
+## které mají v rohu vodu (terrain_water.gdshader); vodu řeky kreslí river.gd. Hluboká voda
+## (dlaždice celé ve vodě s vodou i kolem) má vlastní levnou vrstvu (terrain_water_deep.gdshader),
+## drahý shader vody běží jen u břehů. Chunky se pečou podle kamery. Vzdálený chunk vrátí sprite i texturu do zásobníku, nový chunk si je odtud
 ## vezme a jen se přepeče. Založit texturu je drahé (jednotky ms), proto se zásobník naplní už
 ## při načítání levelu. Čtverce světa sdílejí jeden zásobník (share_spare), jinak by každý
 ## otevřený čtverec držel své textury, i když je daleko.
@@ -13,6 +14,8 @@ const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 ## Chunk se kreslí neprůhledně, alfa textury nese výšku břehu (terrain_bake.gdshader).
 const CHUNK_SHADER := preload("res://shaders/terrain_chunk.gdshader")
+## Levná hluboká voda, materiál je kopie materiálu vody s tímhle shaderem (stejné parametry vln).
+const DEEP_SHADER := preload("res://shaders/terrain_water_deep.gdshader")
 
 ## Strana chunku v dlaždicích. Textura chunku má TILES * TILE_SIZE pixelů na stranu.
 const TILES := 8
@@ -33,20 +36,24 @@ const MIP_DELAY := 2
 
 var _camera: MapCamera
 var _water: ShaderMaterial
+var _deep: ShaderMaterial
 var _bake_template: ShaderMaterial
 ## Každé pečení v jednom snímku potřebuje vlastní materiál, liší se chunk_origin.
 var _bakers: Array[ShaderMaterial] = []
 var _chunk_px := TILES * TerrainCatalog.TILE_SIZE
 var _map_px := 0
 var _count := 0
-## Klíč chunku -> levé horní rohy dlaždic s vodou v chunku, v pixelech od rohu chunku.
+## Klíč chunku -> levé horní rohy dlaždic s vodou u břehu v chunku, v pixelech od rohu chunku.
 var _water_tiles := {}
+## Totéž pro hlubokou vodu: dlaždice celé ve vodě, jejichž sousedé jsou taky celí ve vodě.
+var _deep_tiles := {}
 ## Klíč chunku -> Sprite2D. Neupečený chunk je skrytý.
 var _live := {}
 ## Volné sprity chunků i s texturou a vodou, čekají na další chunk.
 var _spare := Spare.new()
-## Klíč chunku -> ArrayMesh vody. Postaví se poprvé, když je chunk vidět.
+## Klíč chunku -> ArrayMesh vody u břehu a hluboké vody. Postaví se poprvé, když je chunk vidět.
 var _water_meshes := {}
+var _deep_meshes := {}
 ## Chunky čekající na pečení, nejbližší ke středu obrazovky první.
 var _queue: Array[Vector2i] = []
 var _baked_this_frame := 0
@@ -109,6 +116,8 @@ func setup(
 	_bake_template.set_shader_parameter("chunk_px", float(_chunk_px))
 	_water = catalog.water_material if water == null else water
 	_water.set_shader_parameter("chunk_px", float(_chunk_px))
+	_deep = _water.duplicate() as ShaderMaterial
+	_deep.shader = DEEP_SHADER
 	_find_water(size, corners, catalog.water_index)
 	_prefill()
 	camera.view_changed.connect(_refresh)
@@ -126,20 +135,36 @@ func _process(_delta: float) -> void:
 			_bake(key)
 
 
+## Dlaždice s vodou v rohu rozdělí na hlubokou vodu a vodu u břehu. Hluboká je dlaždice celá ve
+## vodě, kolem které je jen taková voda: posun hladiny (water_parallax) je menší než dlaždice,
+## břeh tam proto nikdy neprosvitne.
 func _find_water(size: int, corners: PackedByteArray, water: int) -> void:
 	_water_tiles.clear()
+	_deep_tiles.clear()
 	if water < 0:
 		return
+	var full := PackedByteArray()
+	full.resize(size * size)
+	for index in size * size:
+		var cell := index * 4
+		if corners[cell] == water and corners[cell + 1] == water and corners[cell + 2] == water and corners[cell + 3] == water:
+			full[index] = 1
 	var tile := TerrainCatalog.TILE_SIZE
 	for y in size:
 		for x in size:
 			var cell := (y * size + x) * 4
 			if corners[cell] != water and corners[cell + 1] != water and corners[cell + 2] != water and corners[cell + 3] != water:
 				continue
+			var deep := full[y * size + x] == 1
+			for ny in range(y - 1, y + 2):
+				for nx in range(x - 1, x + 2):
+					if nx < 0 or ny < 0 or nx >= size or ny >= size or full[ny * size + nx] == 0:
+						deep = false
+			var tiles: Dictionary = _deep_tiles if deep else _water_tiles
 			var key := Vector2i(x / TILES, y / TILES)
-			var spots: PackedVector2Array = _water_tiles.get(key, PackedVector2Array())
+			var spots: PackedVector2Array = tiles.get(key, PackedVector2Array())
 			spots.append(Vector2((x % TILES) * tile, (y % TILES) * tile))
-			_water_tiles[key] = spots
+			tiles[key] = spots
 
 
 func _refresh() -> void:
@@ -219,11 +244,13 @@ func _new_sprite() -> Sprite2D:
 		_chunk_material.set_shader_parameter("chunk_px", float(TILES * TerrainCatalog.TILE_SIZE))
 	sprite.material = _chunk_material
 	sprite.visible = false
-	var water := MeshInstance2D.new()
-	water.texture = texture
-	water.material = _water
-	water.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	sprite.add_child(water)
+	# Dítě 0 je voda u břehu, dítě 1 hluboká voda.
+	for material in [_water, _deep]:
+		var water := MeshInstance2D.new()
+		water.texture = texture
+		water.material = material
+		water.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		sprite.add_child(water)
 	add_child(sprite)
 	return sprite
 
@@ -246,15 +273,18 @@ func _create(key: Vector2i) -> void:
 	var inside := Vector2(mini(_chunk_px, _map_px - key.x * _chunk_px), mini(_chunk_px, _map_px - key.y * _chunk_px))
 	sprite.region_enabled = inside.x < _chunk_px or inside.y < _chunk_px
 	sprite.region_rect = Rect2(Vector2.ZERO, inside)
-	var water := sprite.get_child(0) as MeshInstance2D
-	water.material = _water
-	water.visible = _water_tiles.has(key)
-	if water.visible:
-		if not _water_meshes.has(key):
-			_water_meshes[key] = _water_mesh(_water_tiles[key])
-		water.mesh = _water_meshes[key]
-	else:
-		water.mesh = null
+	for layer in [[0, _water, _water_tiles, _water_meshes], [1, _deep, _deep_tiles, _deep_meshes]]:
+		var water := sprite.get_child(layer[0]) as MeshInstance2D
+		var tiles: Dictionary = layer[2]
+		var meshes: Dictionary = layer[3]
+		water.material = layer[1]
+		water.visible = tiles.has(key)
+		if water.visible:
+			if not meshes.has(key):
+				meshes[key] = _water_mesh(tiles[key])
+			water.mesh = meshes[key]
+		else:
+			water.mesh = null
 	_live[key] = sprite
 
 

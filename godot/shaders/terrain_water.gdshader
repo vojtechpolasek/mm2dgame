@@ -22,17 +22,19 @@ global uniform vec2 camera_position;
 global uniform float camera_zoom;
 
 varying vec2 world_pos;
+// Lineární v bodě světa, proto se počítají ve vrcholech a pixel textury čte rovnou z nich (na
+// slabé grafice levnější): bod hladiny (world_pos posunutý o water_parallax), UV dna pod ním,
+// fáze dvou vln a souřadnice odlesků.
+varying vec2 surface_world;
+varying vec2 surface_uv_raw;
+varying vec2 wave_phase;
+varying vec2 glint_uv;
 
 // Výška svahu jezera, nad kterou voda nepřeteče: slope_height(0.85, 0, 0).
 const float SLOPE_TOP = 0.907;
 
-// Fáze dvou vln jezera (první dvě z wave_phases). Třetí vlna jezero nemá, je na každém pixelu
-// vody drahá a skoro není vidět. Řeka má dál tři.
-vec2 lake_phases(vec2 world) {
-	return wave_phases(world).xy;
-}
-
-// Výška vlny jezera z fází, -1 až 1.
+// Výška vlny jezera z fází prvních dvou vln (wave_phases), -1 až 1. Třetí vlna jezero nemá,
+// je na každém pixelu vody drahá a skoro není vidět. Řeka má dál tři.
 float lake_wave(vec2 phases) {
 	return (sin(phases.x) + sin(phases.y) * 0.65) / 1.65;
 }
@@ -60,6 +62,13 @@ float share_at(vec2 uv, vec4 packed_ids) {
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
+	vec2 shift = water_parallax(world_pos, camera_position, camera_zoom);
+	surface_world = world_pos + shift;
+	surface_uv_raw = UV + shift / chunk_px;
+	wave_phase = wave_phases(surface_world).xy;
+	// Odlesky protažené podél hřebene, plují pomalu s první vlnou (jako water_glints).
+	vec2 ridge = vec2(dot(surface_world, vec2(wave_dir_a.y, -wave_dir_a.x)), dot(surface_world, wave_dir_a) - TIME * wave_speed * 6.0);
+	glint_uv = ridge / vec2(glint_scale, glint_scale * 0.4) / GLINT_CELLS;
 }
 
 // Výška břehu (lake_height) v bodě at (px ve čtverci). Bod ground je tenhle pixel, uv jeho
@@ -72,12 +81,11 @@ float height_at(sampler2D chunk, vec2 at, vec2 ground, vec2 uv) {
 	return texture(chunk, at_uv).a;
 }
 
-// Stín břehu jezera v bodě at: kus směrem ke slunci (sun_shadow) je břeh výš.
-float bank_shadow(sampler2D chunk, vec2 at, vec2 ground, vec2 uv) {
+// Stín břehu jezera v bodě at s výškou here: kus směrem ke slunci (sun_shadow) je břeh výš.
+float bank_shadow(sampler2D chunk, vec2 at, float here, vec2 ground, vec2 uv) {
 	if (shadow_opacity <= 0.001) {
 		return 0.0;
 	}
-	float here = height_at(chunk, at, ground, uv);
 	float back = height_at(chunk, at - sun_shadow * BANK_SHADOW_DEPTH, ground, uv);
 	return clamp((back - here) * 1.6, 0.0, 1.0) * shadow_opacity * BANK_SHADOW;
 }
@@ -89,37 +97,43 @@ float share_here(vec2 at) {
 	return share_at(uv, texelFetch(corner_map, cell, 0));
 }
 
+// Odlesky 0 až 1 jako water_glints, souřadnice z vrcholů.
+float glints() {
+	return smoothstep(0.62, 0.85, texture(glint_noise, glint_uv).r);
+}
+
 void fragment() {
 	vec2 ground = world_pos - map_origin;
-	vec2 shift = water_parallax(world_pos, camera_position, camera_zoom);
 	// Bod hladiny, který je tady vidět, a dno pod ním z předpečení.
-	vec2 surface_pos = world_pos + shift;
+	vec2 surface_pos = surface_world;
 	vec2 tile = floor((surface_pos - map_origin) / tile_size);
 	vec2 local_uv = (surface_pos - map_origin - tile * tile_size) / tile_size;
 	vec4 packed_ids = texelFetch(corner_map, clamp(ivec2(tile), ivec2(0), ivec2(int(map_size) - 1)), 0);
 	float share = share_at(local_uv, packed_ids);
+	// Předpečený terén tady: barva a v alfě výška břehu.
+	vec4 baked = texture(TEXTURE, UV);
 	// Za horní hranou svahu je terén, voda pod ním nepřeteče.
-	if (texture(TEXTURE, UV).a > SLOPE_TOP) {
+	if (baked.a > SLOPE_TOP) {
 		share = min(share, share_here(ground));
 	}
-	vec2 surface_uv = clamp(UV + shift / chunk_px, vec2(0.0), vec2(1.0));
-	// Odlesky protažené podél hřebene, plují pomalu s první vlnou.
-	vec2 ridge = vec2(dot(surface_pos, vec2(wave_dir_a.y, -wave_dir_a.x)), dot(surface_pos, wave_dir_a) - TIME * wave_speed * 6.0);
+	vec2 surface_uv = clamp(surface_uv_raw, vec2(0.0), vec2(1.0));
 	// Vlny začínají od mask_start, pěna nejníž od 0.57. Svah břehu zůstane z předpečení.
 	if (share < min(mask_start, 0.57)) {
-		float shadow = bank_shadow(TEXTURE, ground, ground, UV);
-		COLOR = vec4(texture(TEXTURE, UV).rgb * (1.0 - shadow), 1.0);
+		// Svah: výšku i barvu tady už má baked.
+		float shadow = bank_shadow(TEXTURE, ground, baked.a, ground, UV);
+		COLOR = vec4(baked.rgb * (1.0 - shadow), 1.0);
 	} else if (share >= DEEP_READ) {
 		// Hluboká voda je předpečená (terrain_bake): textura vody, dno pod ní vidět není. Je daleko
 		// od břehu, stín břehu ani pěna tu nejsou, vlny jsou v plné síle.
-		float height = lake_wave(lake_phases(surface_pos));
+		float height = lake_wave(wave_phase);
 		vec3 color = mix(texture(TEXTURE, surface_uv).rgb, wave_band(height), wave_tint);
-		color = mix(color, highlight_color, water_glints(ridge) * glint_strength * (0.5 + 0.5 * height));
+		color = mix(color, highlight_color, glints() * glint_strength * (0.5 + 0.5 * height));
 		COLOR = vec4(color, 1.0);
 	} else {
-		float shadow = bank_shadow(TEXTURE, surface_pos - map_origin, ground, UV);
+		vec2 at = surface_pos - map_origin;
+		float shadow = bank_shadow(TEXTURE, at, height_at(TEXTURE, at, ground, UV), ground, UV);
 		float amount = smoothstep(mask_start, 1.0, share);
-		vec2 phases = lake_phases(surface_pos);
+		vec2 phases = wave_phase;
 		float height = lake_wave(phases);
 		// Voda sama, dno (předpečený svah) pod ní prosvítá jen u kraje jako mělčina.
 		float lod = max(log2(max(length(dFdx(world_pos)), 1.0)), 0.0);
@@ -139,7 +153,7 @@ void fragment() {
 			surface = mix(surface, body, 0.55 + 0.45 * deep);
 		}
 		vec3 color = mix(surface, wave_band(height), wave_tint * amount);
-		color = mix(color, highlight_color, water_glints(ridge) * glint_strength * amount * (0.5 + 0.5 * height));
+		color = mix(color, highlight_color, glints() * glint_strength * amount * (0.5 + 0.5 * height));
 		float crest = smoothstep(0.35, 0.9, 1.0 - (height * 0.5 + 0.5));
 		float center = mix(0.74, 0.66, crest);
 		float half_width = mix(0.035, 0.09, crest);

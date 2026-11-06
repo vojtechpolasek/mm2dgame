@@ -14,6 +14,9 @@ extends Node
 ## Třpyt vypne odlesky kamenů, příšer a dolů přes globální uniformu sparkle_on.
 ## Stíny vypnou stíny od slunce, měsíce i čelovek (Shadows). Den, noc a světlo čelovek zůstanou.
 ## Bez persist se změna neuloží (benchmark přepíná jen na dobu měření).
+##
+## Výchozí rozlišení světa je na ARM (Raspberry Pi) ARM_SCALE, jinde plné. Uložené nastavení
+## hráče má přednost.
 
 signal changed
 
@@ -21,6 +24,7 @@ const SETTINGS := "user://settings.cfg"
 const SECTION := "graphics"
 ## Úrovně rozlišení světa, podíl rozlišení obrazovky.
 const SCALES: Array[float] = [1.0, 0.75, 0.5]
+const ARM_SCALE := 0.75
 ## Vrstva viditelnosti uzlu hry při zmenšeném rozlišení (bit 20), okno ji nekreslí.
 const WORLD_LAYER := 1 << 19
 const ALL_LAYERS := 0xFFFFF
@@ -38,14 +42,20 @@ var _view_layer: CanvasLayer
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_scale = default_world_scale()
 	var config := ConfigFile.new()
 	if config.load(SETTINGS) == OK:
 		_scale = float(config.get_value(SECTION, "scale", _scale))
 		_sparkle = bool(config.get_value(SECTION, "sparkle", _sparkle))
 		_shadows = bool(config.get_value(SECTION, "shadows", _shadows))
 	if not SCALES.has(_scale):
-		_scale = 1.0
+		_scale = default_world_scale()
 	_apply()
+
+
+## Rozlišení světa, dokud ho hráč nezmění: na ARM ARM_SCALE, jinde plné.
+static func default_world_scale() -> float:
+	return ARM_SCALE if Engine.get_architecture_name().begins_with("arm") else 1.0
 
 
 ## Rozlišení světa, podíl rozlišení obrazovky (jedna ze SCALES).

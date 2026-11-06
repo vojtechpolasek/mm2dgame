@@ -362,12 +362,14 @@ func _apply_off(part: String) -> void:
 		var key := str(child.name)
 		if key.begins_with("Ground"):
 			item.visible = part != "bez_terenu"
-			# Vlnící se voda jezer: MeshInstance2D pod spritem každého chunku, jen když má mesh.
+			# Vlnící se voda jezer: MeshInstance2D pod spritem každého chunku (u břehu a hluboká),
+			# jen když má mesh.
 			for sprite in child.get_children():
-				if sprite is Sprite2D and sprite.get_child_count() > 0:
-					var water := sprite.get_child(0) as MeshInstance2D
-					if water != null:
-						water.visible = water.mesh != null and part != "bez_vody"
+				if sprite is Sprite2D:
+					for layer in sprite.get_children():
+						var water := layer as MeshInstance2D
+						if water != null:
+							water.visible = water.mesh != null and part != "bez_vody"
 		elif key == "Rivers":
 			item.visible = part != "bez_reky"
 		elif key == "Decor":
