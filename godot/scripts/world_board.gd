@@ -908,8 +908,7 @@ func _open_play(sq: Square) -> void:
 		_hunt.crowd = _crowd
 		_hunt.start(self, _camera, _host._persons, _props, _day.phase, sq.map.surfaces)
 		_hunt.tags.name = "HuntTags"
-		_hunt.tags.z_index = 20
-		_host.add_child(_hunt.tags)
+		_add_screen_labels(_hunt.tags)
 		_hunt.scored.connect(_hud.set_hunt_score)
 		_hunt.finished.connect(_finish_hunt)
 
@@ -1031,9 +1030,21 @@ func _add_labels(sq: Square) -> void:
 	if spots.is_empty():
 		return
 	var labels := PondLabels.new()
-	labels.name = "Ponds_%d_%d" % [sq.coord.x, sq.coord.y]
-	_host.add_child(labels)
+	labels.name = _labels_name(sq)
+	_add_screen_labels(labels)
 	labels.setup(spots, _crystal, _host._persons, _camera)
+
+
+func _labels_name(sq: Square) -> String:
+	return "Ponds_%d_%d" % [sq.coord.x, sq.coord.y]
+
+
+## Nápisy nad doly a příšerami jsou na obrazovce ve vrstvě HUD (Hint), pod HUD a pauzou. Ve
+## světě by se při nižším rozlišení kreslily zmenšené a rozmazané.
+func _add_screen_labels(labels: Node) -> void:
+	var layer: Node = _host.get_node("Hint")
+	layer.add_child(labels)
+	layer.move_child(labels, 0)
 
 
 func _wake(sq: Square) -> void:
@@ -1260,6 +1271,12 @@ func _park(sq: Square) -> void:
 		sq.ground.queue_free()
 	if sq.air != null:
 		sq.air.queue_free()
+	# Nápisy dolů čtverce. Po návratu se přidají znovu, jinak by jich tam bylo víc přes sebe.
+	var labels: Node = _host.get_node_or_null(NodePath("Hint/" + _labels_name(sq)))
+	if labels != null:
+		# Hned ze stromu, ať jméno neblokuje nápisy, kdyby se čtverec vrátil ještě v tomhle snímku.
+		labels.get_parent().remove_child(labels)
+		labels.queue_free()
 	for node: Node in [sq.rocks, sq.forest, sq.town, sq.monsters, sq.villagers]:
 		if node.get_parent() != null:
 			node.get_parent().remove_child(node)
@@ -1269,11 +1286,6 @@ func _park(sq: Square) -> void:
 ## Je pod bodem hotový čtverec? Létající příšera při úprku nad jiný nevyletí.
 func has_ground(pos: Vector2) -> bool:
 	return _ready_at(pos) != null
-
-
-func hunt_notice(text: String, seconds: float) -> void:
-	if _hud != null:
-		_hud.show_notice(text, seconds)
 
 
 func _ready_at(pos: Vector2) -> Square:

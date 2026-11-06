@@ -23,7 +23,11 @@ extends Node
 ## losování, objevená příšera zůstane i po změně dne a noci.
 ## Jednou za sekundu se uklidí příšera, která je od všech postav dál, než je delší strana
 ## obrazovky. Příšery se toulají bez mřížky cest a utíkají kamkoli (Monster.hunt).
-## Chycená příšera pozvolna zprůhlední (Monster.fade). Nad toulající se příšerou je nápis
+## Chycená příšera dobíhá, za SHRINK sekund zpomalí na nulu a zmenší se zhruba na velikost
+## kamene (Monster.shrink). Pak je na jejím místě kámen jejího materiálu. Počítá se jako chycená
+## hned, body dostanou hráči až za sebrání kamene dotykem. Tehdy nad kamenem vystoupá nápis
+## jako u příšery a pozvolna zmizí (FLOAT_TIME). Kámen leží, dokud se hráči nevzdálí jako od
+## příšer (_forget). Nad toulající se příšerou je nápis
 ## s jejím jménem a body (tags), jen když k ní některý hráč míří (výseč čelovky), a při úprku
 ## zmizí po TAG_FLEE_KEEP sekundách.
 ##
@@ -68,10 +72,17 @@ const SWIM_WIDTH := 0.3
 ## Obrazovka zvětšená o tolik metrů na každou stranu: tam se nikdo neobjeví.
 const HIDDEN_M := 1.0
 const MAX_ALIVE := 6
-## Chycená příšera zprůhlední za tolik sekund.
-const FADE := 1.0
-## Hláška po chycení svítí tolik sekund.
-const CATCH_NOTICE := 2.0
+## Chycená příšera se zmenší na kámen za tolik sekund.
+const SHRINK := 0.5
+## Zmenšená příšera je asi takhle krát větší než kámen, pak ho vystřídá.
+const SHRINK_TO_STONE := 1.3
+## Nápis po sebrání kamene vystoupá o FLOAT_RISE pixelů obrazovky a za FLOAT_TIME sekund zmizí.
+const FLOAT_TIME := 1.6
+const FLOAT_RISE := 36.0
+## Kámen nad vodou nebo v překážce (létající, vodní příšera) se posune na nejbližší místo,
+## kam postava dojde, nejdál tolik metrů po STONE_STEP metrech.
+const STONE_REACH := 4.0
+const STONE_STEP := 0.25
 ## Vykreslení shaderů při startu (_warm) se uklidí po tolika snímcích.
 const WARM_FRAMES := 3
 
@@ -106,6 +117,20 @@ class Prey:
 	var fleeing_for := 0.0
 
 
+## Kámen po chycené příšeře, čeká na sebrání.
+class Stone:
+	var sprite: Sprite2D
+	var title: String
+	var points := 0
+
+
+## Nápis nad sebraným kamenem, stoupá a mizí.
+class Rising:
+	var tag: Node2D
+	var at: Vector2
+	var age := 0.0
+
+
 var points := 0
 var caught_count := 0
 var time_left := SECONDS
@@ -130,6 +155,8 @@ var _maker: Monsters
 ## Chodec všech příšer přes celý svět.
 var _walker: Walker
 var _alive: Array[Prey] = []
+var _stones: Array[Stone] = []
+var _floats: Array[Rising] = []
 ## Schované příšery podle druhu: kind -> Array[Monster].
 var _pool := {}
 ## Vybrané místo, příšera se objeví v dalším snímku: spot, creature (vylosovaná kombinace,
@@ -142,9 +169,11 @@ var _spawn_left := SPAWN_MIN
 var _day := true
 var _rng := RandomNumberGenerator.new()
 var _over := false
-## Nápisy nad toulajícími se příšerami. Jsou ve světě nad vším jako nápisy dolů (PondLabels),
-## do scény je přidá WorldBoard. Utíkající příšera nápis po chvíli schová. Ukázané se posouvají každý
-## snímek, je jich nejvýš MAX_ALIVE. Držáky se po uklizení příšery vrací do _spare_tags.
+## Nápisy nad toulajícími se příšerami. Jako nápisy dolů (PondLabels) jsou na obrazovce ve vrstvě
+## HUD, ne ve světě, ať jsou ostré i při nižším rozlišení světa. Do vrstvy je přidá WorldBoard.
+## Utíkající příšera nápis po chvíli schová. Ukázané se posouvají každý snímek těsně před
+## kreslením, až po kameře, je jich nejvýš MAX_ALIVE. Držáky se po uklizení příšery vrací
+## do _spare_tags.
 var tags := Node2D.new()
 var _spare_tags: Array[Node2D] = []
 var _tag_check_left := 0.0
@@ -226,6 +255,7 @@ func start(board, camera: MapCamera, persons: Array[Person], host: Node2D, phase
 	_walker.world_board = board
 	_walker.crowd = crowd
 	_walker.use_surfaces(surfaces)
+	RenderingServer.frame_pre_draw.connect(_follow_tags)
 	if _materials.is_empty():
 		push_error("Chytej příšery nemá žádný materiál.")
 		return
@@ -243,7 +273,9 @@ func tick(delta: float, phase: float) -> void:
 	time_left = maxf(time_left - delta, 0.0)
 	_day = phase < 0.5
 	_catch()
+	_pick_stones()
 	_place_tags(delta)
+	_age_floats(delta)
 	_track_left -= delta
 	if _track_left <= 0.0:
 		_track_left = 1.0
@@ -286,6 +318,10 @@ func _forget() -> void:
 	for i in range(_alive.size() - 1, -1, -1):
 		if _nearest(_alive[i].monster.position) > far:
 			_release(_alive[i])
+	for i in range(_stones.size() - 1, -1, -1):
+		if _nearest(_stones[i].sprite.position) > far:
+			_stones[i].sprite.queue_free()
+			_stones.remove_at(i)
 
 
 ## Je místo na další příšeru? Když je plno, uklidí nejstarší, která není na obrazovce.
@@ -514,19 +550,91 @@ func _catch() -> void:
 				break
 
 
-## Chycená příšera zůstane stát, zprůhlední a vrátí se do zásoby.
+## Chycená příšera dobíhá a zmenšuje se, pak ji vystřídá kámen. Body až za kámen.
 func _caught(prey: Prey) -> void:
 	var monster := prey.monster
 	_alive.erase(prey)
 	_drop_tag(prey)
 	_leave_crowd(monster)
-	monster.fade(FADE, _park.bind(monster, str(prey.creature["kind"])))
-	Sound.at("sfx/pickup", monster.position, 2.0)
-	var gained := int(prey.creature["points"])
-	points += gained
+	# Obrázek příšery je asi dvakrát širší než její tělo.
+	var end := clampf(_crystal.radius() * SHRINK_TO_STONE / (monster.crowd_body() * 2.0), 0.03, 0.6)
+	monster.shrink(SHRINK, end, _to_stone.bind(prey))
 	caught_count += 1
 	scored.emit(points, caught_count)
-	_board.hunt_notice("%s +%d" % [prey.creature["title"], gained], CATCH_NOTICE)
+
+
+## Zmenšenou příšeru vystřídá na zemi kámen jejího materiálu, příšera jde do zásoby.
+func _to_stone(prey: Prey) -> void:
+	var monster := prey.monster
+	var stone := Stone.new()
+	stone.title = str(prey.creature["title"])
+	stone.points = int(prey.creature["points"])
+	stone.sprite = _crystal.make_sprite()
+	stone.sprite.z_index = 3
+	_host.add_child(stone.sprite)
+	stone.sprite.global_position = _stone_spot(monster.global_position)
+	stone.sprite.rotation = _rng.randf() * TAU
+	_crystal.paint(stone.sprite, int(prey.creature["material"]), 0.0, _rng.randf() * TAU)
+	_stones.append(stone)
+	_park(monster, str(prey.creature["kind"]))
+	Sound.at("sfx/land", stone.sprite.position, 2.0)
+
+
+## Místo pro kámen: at, nebo nejbližší, kde postava stojí, když at leží ve vodě nebo v překážce.
+func _stone_spot(at: Vector2) -> Vector2:
+	if not _walker.blocked(at, Person.BODY):
+		return at
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	var spot := _walker.free_spot(at, Person.BODY, STONE_REACH * tile, STONE_STEP * tile)
+	return at if spot == Vector2.INF else spot
+
+
+## Kámen, kterého se dotkne postava, zmizí a hráči dostanou jeho body.
+func _pick_stones() -> void:
+	var reach := Person.BODY + _crystal.radius()
+	for i in range(_stones.size() - 1, -1, -1):
+		var stone := _stones[i]
+		var at := stone.sprite.position
+		for person in _persons:
+			if is_instance_valid(person) and person.position.distance_squared_to(at) <= reach * reach:
+				_stones.remove_at(i)
+				stone.sprite.queue_free()
+				points += stone.points
+				scored.emit(points, caught_count)
+				Sound.at("sfx/pickup", at, 2.0)
+				_float_tag(stone.title, stone.points, at)
+				break
+
+
+## Nápis „jméno +body“ nad místem at, stejný jako u příšery. Vystoupá a zmizí.
+func _float_tag(title: String, gained: int, at: Vector2) -> void:
+	var rising := Rising.new()
+	rising.tag = _take_tag(title, gained)
+	rising.tag.visible = true
+	rising.at = at
+	_floats.append(rising)
+	_put_float(rising)
+
+
+func _age_floats(delta: float) -> void:
+	for i in range(_floats.size() - 1, -1, -1):
+		var rising := _floats[i]
+		rising.age += delta
+		var t := rising.age / FLOAT_TIME
+		if t >= 1.0:
+			rising.tag.visible = false
+			rising.tag.modulate.a = 1.0
+			_spare_tags.append(rising.tag)
+			_floats.remove_at(i)
+			continue
+		# Nejdřív chvíli plný, pak mizí.
+		rising.tag.modulate.a = clampf((1.0 - t) / 0.6, 0.0, 1.0)
+
+
+func _put_float(rising: Rising) -> void:
+	var view := tags.get_viewport().canvas_transform
+	var rise := FLOAT_RISE * (1.0 - pow(1.0 - rising.age / FLOAT_TIME, 2.0))
+	rising.tag.position = view * rising.at - Vector2(0.0, TAG_LIFT_PX + rise)
 
 
 ## Uklidí příšeru do zásoby.
@@ -557,8 +665,15 @@ func _place_tags(delta: float) -> void:
 			# První kontrola úprku počítá celé TAG_CHECK, i když začal těsně před ní. Nápis
 			# proto zmizí až po TAG_FLEE_KEEP až TAG_FLEE_KEEP + TAG_CHECK sekundách.
 			prey.tag.visible = prey.fleeing_for <= TAG_FLEE_KEEP and _watched(prey.monster.position)
+
+
+## Ukázané nápisy nad své příšery a sebrané kameny, podle záběru, který se právě nakreslí.
+func _follow_tags() -> void:
+	for prey in _alive:
 		if prey.tag.visible:
 			_put_tag(prey)
+	for rising in _floats:
+		_put_float(rising)
 
 
 ## Míří některý hráč k bodu at? Ve výseči jako kužel čelovky (DayNight.LAMP_HALF i s měkkým
@@ -578,11 +693,11 @@ func _watched(at: Vector2) -> bool:
 	return false
 
 
-## Nápis nad tělem příšery, na obrazovce pořád stejně velký.
+## Nápis nad tělem příšery. Je na obrazovce, poloha je místo příšery v záběru kamery.
 func _put_tag(prey: Prey) -> void:
-	var zoom := _camera.zoom.x
-	prey.tag.scale = Vector2.ONE / zoom
-	prey.tag.global_position = prey.monster.global_position - Vector2(0.0, prey.monster.crowd_body() + TAG_LIFT_PX / zoom)
+	var view := tags.get_viewport().canvas_transform
+	var top := prey.monster.global_position - Vector2(0.0, prey.monster.crowd_body())
+	prey.tag.position = view * top - Vector2(0.0, TAG_LIFT_PX)
 
 
 ## Nápis „jméno +body“ ze zásoby, nebo nový. Body mají barvu podle počtu (TAG_POINT_COLORS).

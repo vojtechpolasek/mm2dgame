@@ -1,7 +1,8 @@
 extends Node2D
 
 ## Nápis nad dolem: materiál a jeho body, když je některá postava blízko. Plynule se objeví
-## a zmizí. Velikost drží stejnou na obrazovce i při oddálení kamery.
+## a zmizí. Leží na obrazovce ve vrstvě HUD, ne ve světě, ať je ostrý i při nižším rozlišení
+## světa a stejně velký při každém přiblížení. Poloha se počítá těsně před kreslením, až po kameře.
 
 const Crystal := preload("res://scripts/crystal.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
@@ -33,7 +34,7 @@ func setup(spots: Array, crystal: Crystal, persons: Array, camera: MapCamera) ->
 	_crystal = crystal
 	_persons = persons
 	_camera = camera
-	z_index = 20
+	RenderingServer.frame_pre_draw.connect(_follow)
 
 
 func _process(delta: float) -> void:
@@ -43,7 +44,6 @@ func _process(delta: float) -> void:
 	if _check_left <= 0.0:
 		_check_left = CHECK_EVERY
 		_find_near()
-	var zoom := _camera.zoom.x
 	for slot: int in _labels.keys():
 		var label: Label = _labels[slot]
 		var target := 1.0 if _near.has(slot) else 0.0
@@ -51,10 +51,14 @@ func _process(delta: float) -> void:
 		if label.modulate.a <= 0.0 and target == 0.0:
 			label.queue_free()
 			_labels.erase(slot)
-			continue
-		var holder := label.get_parent() as Node2D
-		holder.scale = Vector2.ONE / zoom
-		holder.position = (_spots[slot][0] as Vector2) - Vector2(0.0, LIFT_PX / zoom)
+
+
+## Nápisy nad své doly, podle záběru, který se právě nakreslí.
+func _follow() -> void:
+	var view := get_viewport().canvas_transform
+	for slot: int in _labels.keys():
+		var holder := (_labels[slot] as Label).get_parent() as Node2D
+		holder.position = view * (_spots[slot][0] as Vector2) - Vector2(0.0, LIFT_PX)
 
 
 func _find_near() -> void:

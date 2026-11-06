@@ -184,6 +184,8 @@ var _jump_t := 0.0
 var _jump_dur := 0.0
 var _jump_retry_left := 0.0
 var _block_check_left := 0.0
+## Rychlost z posledního snímku chůze v pixelech za sekundu (hunt). Chycená příšera s ní dobíhá.
+var _velocity := Vector2.ZERO
 var _step_travel := 0.0
 ## Která noha teď došlápla (cákání ve vodě).
 var _left_foot := false
@@ -396,9 +398,11 @@ func _hunt(delta: float) -> void:
 	var before := position
 	if _fleeing and _near != null:
 		_flee(delta, _near.position)
+		_velocity = (position - before) / delta
 		_animate(delta, position - before)
 		return
 	_wander(delta)
+	_velocity = (position - before) / delta if delta > 0.0 else Vector2.ZERO
 	# Mimo obrazovku toulání nikdo nevidí: bez animace a kroků.
 	if _on_screen(OFF_SCREEN_M * tile):
 		_animate(delta, position - before)
@@ -513,19 +517,35 @@ func reuse(at: Vector2) -> void:
 	_jump_retry_left = 0.0
 	_escaping = false
 	_block_check_left = 0.0
+	_velocity = Vector2.ZERO
 	visible = true
 	process_mode = Node.PROCESS_MODE_INHERIT
 	_active = true
 	_pick_target()
 
 
-## Chytej příšery: chycená zůstane stát a za seconds sekund zprůhlední. Pak zavolá done.
-func fade(seconds: float, done: Callable) -> void:
+## Chytej příšery: chycená za seconds sekund dobíhá, rovnoměrně zpomalí na nulu a zmenší se na
+## end_scale. Pak zavolá done. Překážky ji zastaví jako při chůzi, létající letí volně.
+func shrink(seconds: float, end_scale: float, done: Callable) -> void:
 	_active = false
 	_fleeing = false
 	var tween := create_tween()
-	tween.tween_method(_set_opacity, 1.0, 0.0, seconds)
+	tween.tween_method(_shrink_step.bind(position, _velocity, seconds, end_scale), 0.0, 1.0, seconds)
 	tween.tween_callback(done)
+
+
+## Podíl t z dobíhání. Rychlost klesá rovnoměrně, dráha je v · T · (t − t²/2).
+func _shrink_step(t: float, from: Vector2, velocity: Vector2, seconds: float, end_scale: float) -> void:
+	var next := from + velocity * seconds * (t - t * t * 0.5)
+	# Kolize s plným tělem, ne zmenšeným: skály mají hranice spočítané předem jen pro těla
+	# příšer. Pro jinou velikost by je počítaly na hlavním vlákně, asi 100 ms každý snímek.
+	if not _flying and not _aquatic and _walker != null:
+		next = _walker.allowed(position, next, _body, -1.0)
+	var step := next - position
+	position = next
+	scale = Vector2.ONE * lerpf(1.0, end_scale, t)
+	# Nohy dobíhají s ní, natočení zůstane.
+	_animate(0.0, step)
 
 
 func _set_opacity(opacity: float) -> void:
