@@ -1,12 +1,13 @@
-"""Kamenné příšery z pohledu shora: had, štír, pavouk, koule, vlk, kocour, tyranosaurus, ptakoještěr a orel.
+"""Kamenné příšery z pohledu shora: brouk, had, štír, pavouk, koule, vlk, kocour, nestvůra,
+tyranosaurus, ptakoještěr a orel.
 
 64 px je 1 m, stejně jako u postavy, skal a stromů. Kreslí se ve čtyřnásobném
 rozlišení do plátna druhu (canvas). Uložená buňka vrstvy je ořezaná na obsah,
 střed zůstává.
 
 Atlas má osm sloupců, příšera jde na sever. Ostatní směry otáčí uzel v Godotu.
-Počet snímků cyklu (frames) má každý druh v katalogu: pavouk, štír, vlk a kocour 8, had a
-tyranosaurus a orel 16, ptakoještěr a koule 24. Delší animace se zalomí do dalších řádků (atlas_columns).
+Počet snímků cyklu (frames) má každý druh v katalogu: brouk, pavouk, štír, vlk a kocour 8, had a
+tyranosaurus, nestvůra a orel 16, ptakoještěr a koule 24. Delší animace se zalomí do dalších řádků (atlas_columns).
 Jeden atlas slouží všem materiálům druhu, barvy dodá shader.
 
 Vrstva nese masky, ne hotovou barvu: R světlost, G podíl akcentu (kresba,
@@ -34,6 +35,11 @@ vlněním do stran: vlna stojí vůči zemi a had po ní klouže, za cyklus uraz
 délku. Hlava a krk se nevlní, jen natáčejí, výchylka roste k ocasu. Kameny sedí na pevných
 místech podél těla, na hřbetě jsou kosočtverce v akcentu, jazyk má barvu očí a vyjede
 dvakrát za cyklus.
+
+Brouk (brouk) je malý střevlík: vrstva 1 (šest nohou, 0 m), vrstva 2 (tělo, 0,15 m). Nohy jsou
+jako u golema a jdou trojnožkou: přední a zadní jedné strany se střední druhé. Protáhlé krovky
+jsou dvě řady kamenů se švem uprostřed a lemem v akcentu, štít je hromádka kamenů. Malá hlava
+má kusadla a článkovaná tykadla, která se vlní.
 
 Štír (stir): vrstva 1 (nohy, 0 m), vrstva 2 (hlavohruď, zadeček, klepeta a ocas, 0,3 m).
 Chodí jako pavouk, nohy míří víc do stran. Klepeta se kývají a za cyklus jednou sevřou,
@@ -69,6 +75,13 @@ kamenů (krovky), za odtokovou hranou trčí loketní letky a na konci je pět r
 letek s mezerami jako prsty. Každé pero je jeden dlouhý kámen, konce letek a per ocasu jsou
 v akcentu. Při švihu nahoru se křídlo v zápěstí přitáhne a letky se stočí dozadu. Ocas je vějíř,
 který kormidluje. Hlava je v akcentu (jako bílá hlava orla), zobák v barvě těla a rozhlíží se.
+
+Nestvůra (nestvura) je dvounohá a 3 m vysoká: vrstva 1 (holeně, nárty a prsty, 0 m), vrstva 2
+(stehna, trup, paže, ocas a hlava, 2 m). Nohy jsou ohnuté dozadu, koleno vpředu, hlezno vzadu,
+a jdou do stran, ať jsou vedle hrbatého trupu vidět. Kyčle se kývají k noze na zemi, ramena
+proti nim. Dlouhé paže se kývají proti nohám a tři drápy se dvakrát za cyklus rozevřou. Dlouhý
+tenký ocas švihá. Protáhlá hlava má hřeben a ostny po hřbetě v akcentu, čtyři oči a kusadla,
+která se dvakrát za cyklus rozevřou.
 
 Tyranosaurus (rex2): vrstva 1 (nohy, 0 m), vrstva 2 (stehna, trup, ocas, ruce a hlava,
 1,2 m). Holeň začíná pod stehnem, chodidlo vykukuje vedle břicha a kořene ocasu.
@@ -505,6 +518,49 @@ EAGLE_TAIL_FEATHERS = (-26.0, -13.0, 0.0, 13.0, 26.0)
 EAGLE_TAIL = (20.0, 3.4, 2.8)
 EAGLE_TAIL_STEER = 3.0
 
+# Nestvůra, dvounohá a 3 m vysoká, shora hlavně hřbet, hlava a ocas. Kyčle jsou ve středu plátna.
+BEAST_CANVAS = 256
+# Trup se v ramenou hrbí dopředu: od šíje po kyčle, Y a poloviční šířka. Ramena jsou úzká, pas tenký.
+BEAST_BODY = ((-48.0, 6.0), (-42.0, 12.0), (-34.0, 15.0), (-24.0, 12.5), (-14.0, 8.5), (-4.0, 10.5), (4.0, 8.0))
+# Ocas od kyčlí: Y a poloviční šířka. Je dlouhý a tenký, švihá víc než u tyranosaura.
+BEAST_TAIL = ((2.0, 6.5), (20.0, 5.5), (45.0, 4.2), (70.0, 3.0), (95.0, 2.0), (114.0, 1.0))
+BEAST_TAIL_WAVE = 15.0
+# Hlava je protáhlá dopředu, týl je na šíji (BEAST_NECK). Y a poloviční šířka.
+BEAST_NECK = -46.0
+BEAST_HEAD = ((-46.0, 5.0), (-52.0, 7.5), (-60.0, 8.5), (-70.0, 8.0), (-80.0, 6.5), (-88.0, 4.5), (-94.0, 2.0))
+# Hřeben po ose hlavy (Y, poloměr) a po hřbetě (Y od do, rozestup, poloměr). Hřebeny jsou v akcentu.
+BEAST_CREST = ((-50.0, 4.4), (-56.0, 5.2), (-63.0, 5.0), (-70.0, 4.4))
+BEAST_CREST_ACCENT = 0.75
+BEAST_SPINES = (-40.0, 90.0, 7.0, 2.2)
+# Oči pravé strany: střed a poloměr. Dva páry vedle sebe na boku hlavy.
+BEAST_EYES = (((4.6, -80.0), 1.4), ((6.2, -74.5), 1.1))
+# Kusadla na konci tlamy: kořen pravého, délka a jak moc se rozevřou (rad). Rozevřou se dvakrát za cyklus.
+BEAST_MANDIBLE = ((2.5, -88.0), 8.0, 0.45)
+# Kývání kyčlí do stran v px (ramena jdou proti nim) a natočení hlavy ve stupních.
+BEAST_SWAY = 3.0
+BEAST_HEAD_YAW = 5.0
+# Nohy: kyčel a chodidlo v klidu pravé strany, krok. Noha je ohnutá dozadu: koleno je vpředu,
+# hlezno vzadu, dlouhá nárt a prsty míří dopředu.
+BEAST_HIP = (10.0, 2.0)
+BEAST_FOOT = (25.0, 6.0)
+BEAST_STRIDE = 64.0
+BEAST_PULL = 0.15
+# Koleno a hlezno: díl cesty od kyčle k chodidlu a posun (ven, dopředu) v px.
+BEAST_KNEE = (0.35, (9.0, -12.0))
+BEAST_HOCK = (0.7, (6.0, 14.0))
+# Prsty: úhel od směru vpřed ve stupních a délka. Na konci drápy.
+BEAST_TOES = ((-22.0, 12.0), (0.0, 15.0), (22.0, 12.0))
+# Paže pravé strany: rameno, loket, dlaň. Dlaň se kývá proti noze o BEAST_ARM_SWING px.
+BEAST_ARM: tuple[Point, ...] = ((11.0, -36.0), (20.0, -26.0), (16.0, -52.0))
+BEAST_ARM_SWING = 8.0
+# Drápy ruky: úhly od směru předloktí ve stupních a délka. Rozevřou se o BEAST_CLAW_SPREAD stupňů.
+BEAST_CLAWS = (-18.0, 0.0, 18.0)
+BEAST_CLAW = 11.0
+BEAST_CLAW_SPREAD = 10.0
+# Kameny článků: od, do, poloměr a akcent.
+BEAST_LIMB_STONES = ((0.03, 0.5, 1.05, 0.0), (0.5, 0.97, 1.0, 0.0))
+BEAST_CLAW_STONES = ((0.0, 0.55, 1.0, 0.0), (0.5, 1.0, 0.95, 0.85))
+
 # Tyranosaurus, asi 3,2 m od čenichu po špičku ocasu. Kyčle jsou ve středu plátna.
 REX_CANVAS = 256
 # Páteř trupu od šíje po špičku ocasu: Y a poloviční šířka v px.
@@ -699,6 +755,33 @@ BALL_TEETH = (4, 3, 2.4)
 # Zuby jsou obarvené akcentem jako kresba ostatních golemů.
 BALL_TEETH_ACCENT = 0.7
 
+# Brouk (střevlík), asi 0,6 m bez tykadel. Střed plátna je mezi štítem a krovkami.
+BEETLE_CANVAS = 96
+# Štít za hlavou: střed a poloosy. Krovky: Y a poloviční šířka obou dohromady, šev je na ose.
+BEETLE_PRONOTUM = ((0.0, -8.5), (6.5, 5.0))
+BEETLE_ELYTRA = ((-3.5, 6.0), (2.0, 7.5), (10.0, 7.8), (17.0, 6.6), (22.0, 3.8), (24.5, 0.8))
+# Okraj krovek je v akcentu (kovový lem střevlíka), široký tolik px.
+BEETLE_RIM = 0.9
+BEETLE_RIM_ACCENT = 0.85
+# Hlava: střed a poloměr, oči pravé strany, kusadla (kořen, délka, úhel dovnitř ve stupních).
+BEETLE_HEAD = ((0.0, -16.0), 4.2)
+BEETLE_EYE = ((3.4, -16.5), 0.9)
+BEETLE_MANDIBLE = ((1.8, -19.5), 4.5, 30.0)
+# Tykadla pravé strany: kořen, ohyb a konec, počet článků a poloměr článku. Vlní se o BEETLE_ANTENNA_WAVE px.
+BEETLE_ANTENNA: tuple[Point, ...] = ((2.5, -19.0), (7.0, -27.0), (11.0, -38.0))
+BEETLE_ANTENNA_BEADS = 9
+BEETLE_ANTENNA_R = (1.0, 0.65)
+BEETLE_ANTENNA_WAVE = 1.6
+# Nohy pravé strany od předu: kyčel, chodidlo v klidu a ohyb kolena. Kráčí trojnožkou (leg_phase).
+BEETLE_LEGS: tuple[tuple[Point, Point, float], ...] = (
+    ((2.5, -9.0), (12.0, -19.0), 3.0),
+    ((3.5, -4.0), (16.0, -3.0), 2.0),
+    ((3.5, 0.0), (14.0, 17.0), -3.0),
+)
+BEETLE_LEG_RADIUS = (1.5, 1.2, 0.8)
+BEETLE_STRIDE = 10.0
+BEETLE_LIFT = 4.0
+
 # Štír. Souřadnice v px od středu plátna, záporné Y je vpřed. Střed je zadní kraj hlavohrudi.
 STIR_CANVAS = 128
 STIR_PROSOMA = (0.0, -6.0)
@@ -776,6 +859,24 @@ MONSTERS = {
         "body_meters": 0.4,
         "height_meters": 0.3,
         "eye": "FF5A3C",
+    },
+    # Brouk, nejmenší a nejslabší příšera, slabší než had. Zvuky má vlastní.
+    "brouk": {
+        "canvas": BEETLE_CANVAS,
+        "preview_shadow": ((-9.0, -20.0), (9.0, 26.0)),
+        "preview_materials": ("kremen", "zlato"),
+        "info": {"shader": "stone", "sound": "brouk"},
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": 0.15, "file": "layer_2.png"},
+        },
+        "cycle_meters": 2.0 * BEETLE_STRIDE / PX_PER_METER,
+        "frames": 8,
+        "wander_meters": 0.7,
+        "chase_meters": 3.5,
+        "body_meters": 0.3,
+        "height_meters": 0.2,
+        "eye": "B8F0FF",
     },
     # Štír mezi hadem a pavoukem. Zvuky má pavoukovy, cupitá stejně.
     "stir": {
@@ -890,6 +991,25 @@ MONSTERS = {
         "body_meters": round(0.8 * PTERO_STONE_ZOOM, 3),
         "height_meters": 1.0,
         "eye": "7DF2FF",
+    },
+    # Nestvůra, dvounohá a 3 m vysoká, rychlá jako vlk a skáče až 4 m. Zvuky má vlastní.
+    "nestvura": {
+        "canvas": BEAST_CANVAS,
+        "info": {"shader": "stone", "sound": "nestvura"},
+        "preview_shadow": ((-20.0, -60.0), (20.0, 60.0)),
+        "preview_materials": ("kremen", "zlato"),
+        "layers": {
+            1: {"height": 0.0, "file": "layer_1.png"},
+            2: {"height": 2.0, "file": "layer_2.png"},
+        },
+        "cycle_meters": 2.0 * BEAST_STRIDE / PX_PER_METER,
+        "frames": 16,
+        "wander_meters": 1.0,
+        "chase_meters": 5.0,
+        "body_meters": 0.5,
+        "height_meters": 3.0,
+        "jump_meters": 4.0,
+        "eye": "FF2A1A",
     },
     # Zvuky má tyranosauří.
     "rex2": {
@@ -1974,6 +2094,111 @@ def eagle_layers(t: float) -> dict[int, Layer]:
     return {1: body.shadow(), 2: body}
 
 
+def beast_spine_x(y: float, t: float) -> float:
+    """Vybočení páteře: kyčle se kývají k noze na zemi, ramena proti nim, ocas se vlní."""
+    hips = -BEAST_SWAY * math.sin(math.tau * t)
+    if y < 0.0:
+        return hips * (1.0 - 2.0 * min(1.0, -y / -BEAST_NECK))
+    u = min(1.0, y / BEAST_TAIL[-1][0])
+    return hips * (1.0 - u) + BEAST_TAIL_WAVE * u**1.3 * math.sin(math.tau * t - 1.8 * math.pi * u)
+
+
+def beast_leg(layer: Layer, body: Layer, side: float, t: float) -> None:
+    """Noha ohnutá dozadu. Stehno je v horní vrstvě s trupem, holeň, nárt a prsty dole."""
+    phase = (t + (0.0 if side < 0 else 0.5)) % 1.0
+    hip = (side * BEAST_HIP[0] + beast_spine_x(BEAST_HIP[1], t), BEAST_HIP[1])
+    foot, lift = foot_at(hip, mirror(BEAST_FOOT, side), phase, BEAST_STRIDE, BEAST_PULL)
+    (knee_at, knee_shift), (hock_at, hock_shift) = BEAST_KNEE, BEAST_HOCK
+    knee = lerp(hip, foot, knee_at)
+    knee = (knee[0] + side * knee_shift[0], knee[1] + knee_shift[1])
+    hock = lerp(hip, foot, hock_at)
+    hock = (hock[0] + side * hock_shift[0], hock[1] + hock_shift[1] * (1.0 - 0.6 * lift))
+    cell = 8000 + (10 if side > 0 else 0)
+    z = 8.0 + 10.0 * lift
+    raise_by = 0.25 * lift
+    for toe, (angle, length) in enumerate(BEAST_TOES):
+        heading = rotate((0.0, -1.0), math.radians(side * angle))
+        curl = 1.0 - 0.3 * lift
+        tip = (foot[0] + heading[0] * length * curl, foot[1] + heading[1] * length * curl)
+        stone_segment(layer, foot, tip, z, z, 2.6, 1.4, BEAST_CLAW_STONES, cell * 4 + toe)
+    stone_segment(layer, hock, foot, z + 6.0, z, 3.6, 2.8, BEAST_LIMB_STONES, cell + 1)
+    stone_segment(layer, knee, hock, z + 14.0, z + 6.0, 5.0, 3.8, BEAST_LIMB_STONES, cell + 2)
+    paint_stone(layer, hock, 3.8, 0.0, cell + 3, 0.75 + raise_by, SPARK_LEG, accent=STONE_KNEE_ACCENT)
+    stone_segment(body, hip, knee, 26.0, 24.0, 5.5, 4.6, BEAST_LIMB_STONES, cell + 4)
+
+
+def beast_arm(layer: Layer, side: float, t: float) -> None:
+    """Dlouhá paže kývající proti noze stejné strany, na konci tři drápy, které se rozevírají."""
+    swing = BEAST_ARM_SWING * math.sin(math.tau * t + (0.0 if side < 0 else math.pi))
+    shoulder, elbow, hand = (mirror(point, side) for point in BEAST_ARM)
+    shift = beast_spine_x(shoulder[1], t)
+    shoulder = (shoulder[0] + shift, shoulder[1])
+    elbow = (elbow[0] + shift, elbow[1] + swing * 0.4)
+    hand = (hand[0] + shift, hand[1] + swing)
+    cell = 8100 + (10 if side > 0 else 0)
+    heading = math.atan2(hand[1] - elbow[1], hand[0] - elbow[0])
+    spread = math.radians(BEAST_CLAW_SPREAD) * (0.5 + 0.5 * math.sin(math.tau * 2.0 * t))
+    for claw, angle in enumerate(BEAST_CLAWS):
+        turn = heading + math.radians(side * angle) * (1.0 + spread * 3.0)
+        tip = (hand[0] + math.cos(turn) * BEAST_CLAW, hand[1] + math.sin(turn) * BEAST_CLAW)
+        stone_segment(layer, hand, tip, 22.0, 22.0, 1.8, 0.9, BEAST_CLAW_STONES, cell * 4 + claw)
+        layer.disk(tip, 0.5, 0.06)
+    stone_segment(layer, shoulder, elbow, 24.0, 22.0, 4.2, 3.4, BEAST_LIMB_STONES, cell + 1)
+    stone_segment(layer, elbow, hand, 22.0, 22.0, 3.4, 2.8, BEAST_LIMB_STONES, cell + 2)
+    paint_stone(layer, hand, 3.4, heading, cell + 3, 0.9, SPARK_BODY, 1.2)
+
+
+def beast_head(layer: Layer, t: float) -> None:
+    yaw = math.radians(BEAST_HEAD_YAW) * math.sin(math.tau * t + math.pi / 3)
+    neck = (beast_spine_x(BEAST_NECK, t), BEAST_NECK)
+
+    def place(point: Point) -> Point:
+        turned = rotate((point[0], point[1] - BEAST_NECK), yaw)
+        return (neck[0] + turned[0], neck[1] + turned[1])
+
+    root, length, opening = BEAST_MANDIBLE
+    gape = opening * max(0.0, math.sin(math.tau * 2.0 * t)) ** 2
+    for side in (-1.0, 1.0):
+        base = place(mirror(root, side))
+        heading = -math.pi / 2 + yaw + side * (0.15 + gape)
+        tip = (base[0] + math.cos(heading) * length, base[1] + math.sin(heading) * length)
+        stone_segment(layer, base, tip, 22.0, 22.0, 1.8, 0.9, BEAST_CLAW_STONES, 8200 + (1 if side > 0 else 0))
+    dense = profile(BEAST_HEAD)
+    spine = [place((0.0, y)) for y, _w in dense]
+    stone_band(layer, spine, [w for _y, w in dense], 8300, lambda at, across: 0.9 - 0.25 * abs(across))
+    for index, (y, radius) in enumerate(BEAST_CREST):
+        paint_stone(layer, place((0.0, y)), radius, -math.pi / 2 + yaw, 8400 + index, 1.0, SPARK_BODY, 1.4, BEAST_CREST_ACCENT)
+    for side in (-1.0, 1.0):
+        for center, radius in BEAST_EYES:
+            eye = place(mirror(center, side))
+            layer.disk(eye, radius + 0.5, 0.05)
+            layer.disk(eye, radius, None, 0.0, 1.0)
+
+
+def beast_layers(t: float) -> dict[int, Layer]:
+    """Kamenná nestvůra: nohy ohnuté dozadu, dlouhé paže s drápy, hrbatý trup s hřebenem,
+    švihající ocas a protáhlá hlava se čtyřma očima a kusadly."""
+    legs, body = Layer(BEAST_CANVAS), Layer(BEAST_CANVAS)
+    dense = profile(BEAST_TAIL)
+    spine = [(beast_spine_x(y, t), y) for y, _w in dense]
+    stone_band(body, spine, [w for _y, w in dense], 8500, lambda at, across: 0.8 - 0.25 * abs(across))
+    for side in (-1.0, 1.0):
+        beast_leg(legs, body, side, t)
+    for side in (-1.0, 1.0):
+        beast_arm(body, side, t)
+    dense = profile(BEAST_BODY)
+    spine = [(beast_spine_x(y, t), y) for y, _w in dense]
+    stone_band(body, spine, [w for _y, w in dense], 8600, lambda at, across: 0.62 + 0.38 * (1.0 - across * across))
+    first, last, step, radius = BEAST_SPINES
+    y = first
+    while y <= last:
+        size = radius * (1.0 - 0.6 * max(0.0, y) / last)
+        paint_stone(body, (beast_spine_x(y, t), y), size, -math.pi / 2, 8700 + round(y), 0.95, SPARK_BODY, 1.5, BEAST_CREST_ACCENT)
+        y += step
+    beast_head(body, t)
+    return {1: legs, 2: body}
+
+
 def rex_spine_x(y: float, t: float, hips: float) -> float:
     if y < REX_NECK_FROM:
         bend = min(1.0, (REX_NECK_FROM - y) / (REX_NECK_FROM - REX_NECK))
@@ -2534,6 +2759,57 @@ def paint_ball_eye(layer: Layer, side: float) -> None:
     paint_stone(layer, at(0.0, edge(0.0) + lift), radius, brow_angle, 880 + (1 if side > 0 else 0), 0.62, 0.0, stretch)
 
 
+def beetle_layers(t: float) -> dict[int, Layer]:
+    """Kamenný brouk: šest nohou jako golem, krovky ze dvou řad kamenů se švem a lemem v akcentu,
+    štít z hromádky kamenů, malá hlava s kusadly a článkovaná vlnící se tykadla."""
+    legs, body = Layer(BEETLE_CANVAS), Layer(BEETLE_CANVAS)
+    center, _radii = BEETLE_PRONOTUM
+    for index in reversed(range(len(BEETLE_LEGS))):
+        for side in (-1.0, 1.0):
+            cell = 9000 + index * 2 + (1 if side > 0 else 0)
+            phase = leg_phase(index, side, t)
+            stone_leg(legs, BEETLE_LEGS[index], side, phase, center, BEETLE_STRIDE, BEETLE_LIFT, BEETLE_LEG_RADIUS, cell)
+    # Tykadla a kusadla pod hlavou.
+    root, bend, tip = BEETLE_ANTENNA
+    r_root, r_tip = BEETLE_ANTENNA_R
+    for side in (-1.0, 1.0):
+        offset = 0.0 if side > 0 else math.pi * 0.7
+        points = smooth([mirror(root, side), mirror(bend, side), mirror(tip, side)], 8)
+        beads = resample(points, BEETLE_ANTENNA_BEADS)
+        for k, (x, y) in enumerate(beads):
+            u = k / (BEETLE_ANTENNA_BEADS - 1)
+            wave = BEETLE_ANTENNA_WAVE * u * u * math.sin(math.tau * t + offset - 2.0 * u)
+            radius = r_root + (r_tip - r_root) * u
+            spot = (x + side * wave, y + wave * 0.5)
+            body.disk(spot, radius + 0.35, 0.05)
+            body.disk(spot, radius, 0.55 + 0.3 * u, 0.85 if k == BEETLE_ANTENNA_BEADS - 1 else 0.0)
+        base, length, inward = BEETLE_MANDIBLE
+        start = mirror(base, side)
+        heading = rotate((0.0, -1.0), -side * math.radians(inward))
+        end = (start[0] + heading[0] * length, start[1] + heading[1] * length)
+        body.capsule(start, end, 1.5, 0.5, 0.05)
+        body.capsule(start, end, 1.0, 0.3, 0.5)
+    head, head_r = BEETLE_HEAD
+    paint_stone(body, head, head_r, -math.pi / 2, 9100, 0.85, SPARK_BODY, 1.1)
+    for side in (-1.0, 1.0):
+        eye, eye_r = BEETLE_EYE
+        body.disk(mirror(eye, side), eye_r + 0.4, 0.05)
+        body.disk(mirror(eye, side), eye_r, None, 0.0, 1.0)
+    # Krovky: každá polovina je řada kamenů podél své osy, mezi nimi tmavý šev, kolem lem v akcentu.
+    dense = profile(BEETLE_ELYTRA, 1.0)
+    outline_r = [(w, y) for y, w in dense]
+    outline = outline_r + [(-x, y) for x, y in reversed(outline_r)]
+    body.polygon([(x * 1.0 + (BEETLE_RIM if x > 0 else -BEETLE_RIM), y) for x, y in outline], 0.05)
+    body.polygon(outline, 0.5, BEETLE_RIM_ACCENT)
+    for side in (-1.0, 1.0):
+        spine = [(side * w * 0.5, y) for y, w in dense]
+        widths = [max(0.5, w * 0.5 - BEETLE_RIM) for _y, w in dense]
+        stone_band(body, spine, widths, 9200 + (100 if side > 0 else 0), lambda at, across: 0.95 - 0.3 * abs(across))
+    body.capsule((0.0, dense[0][0]), (0.0, dense[-1][0] - 1.0), 0.45, 0.45, 0.05)
+    paint_stone_heap(body, PROSOMA_STONES, BEETLE_PRONOTUM[0], BEETLE_PRONOTUM[1], 0.0, 9400)
+    return {1: legs, 2: body}
+
+
 def stir_flex(y: float, t: float) -> float:
     """Vybočení zadečku a kořene ocasu do strany, roste od hlavohrudi dozadu."""
     return STIR_FLEX * math.sin(math.tau * t) * max(0.0, y) / STIR_MESOSOMA[-1][0]
@@ -2633,12 +2909,14 @@ def stir_layers(t: float) -> dict[int, Layer]:
 # Kreslení druhu dostane fázi cyklu 0 až 1, ne číslo snímku.
 RENDERERS: dict[str, Callable[[float], dict[int, Layer]]] = {
     "had2": stone_snake_layers,
+    "brouk": beetle_layers,
     "stir": stir_layers,
     "pavouk2": golem_layers,
     "vlk2": stone_wolf_layers,
     "kocour": cat_layers,
     "ptakojester2": stone_ptero_layers,
     "orel": eagle_layers,
+    "nestvura": beast_layers,
     "rex2": stone_rex_layers,
     "koule2": ball_layers,
 }

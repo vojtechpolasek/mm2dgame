@@ -9,7 +9,7 @@ ambient/  šumění vody: tlumený šum s pomalými vlnami a bublinkami, smyčka
 basin/    dopad kamene do kotliny podle materiálu (jména z gen_crystal.MATERIALS). Levný
           tupě žuchne, s cenou přibývá výšky a zvonění, nejdražší cinkne.
 monsters/ kroky příšer (had šustí, pavouk cupitá, vlk tlapky, kocour tiché polštářky, tyranosaurus
-          duní, ptakoještěr mává křídly, orel mává rychleji a lehčeji, kamenná koule rachotí po zemi) a zařvání každého druhu,
+          duní, ptakoještěr mává křídly, orel mává rychleji a lehčeji, nestvůra dupne a cvakne drápy, brouk tiše ťukne, kamenná koule rachotí po zemi) a zařvání každého druhu,
           když začne honit.
 sfx/      sebrání kamene, krádež příšerou, skok a dopad. Továrna v typu hry Skafandry:
           drcení kamenů celou továrnou (crush), jedním zásobníkem (crush_short)
@@ -360,7 +360,8 @@ def basin_bounce(rng: np.random.Generator, pitch: float, ring: float, length: in
 def monster_step(kind: str, seed: int) -> np.ndarray:
     """Krok příšery. Had šustí břichem po zemi, pavouk cupitá několika drobnými ťuknutími,
     vlk dosedne tlapkou, kocour tiše došlápne polštářkem bez drápků, tyranosaurus zaduní,
-    orel krátce a lehce mávne, ptakoještěr mávne křídly. Kamenná koule
+    orel krátce a lehce mávne, nestvůra těžce došlápne a drápy dvakrát cvaknou o zem,
+    brouk dvakrát tiše ťukne nožkami, ptakoještěr mávne křídly. Kamenná koule
     hraje krok dvakrát za otočku: hluboké zadunění, chroupání a pár kamenů ťukne o zem.
     Kroky se při honičce překrývají a slijí se v souvislé valení."""
     rng = np.random.default_rng(seed)
@@ -403,6 +404,20 @@ def monster_step(kind: str, seed: int) -> np.ndarray:
         out = thump(rng, length, 170, 0.025)
         out += band(noise(rng, length), 500, 1600) * envelope(length, 0.004, 0.02) * 0.12
         return fade(normalize(resample(out, rng.uniform(0.92, 1.08)), 0.22), 0.003, 0.03)
+    if kind == "brouk":
+        length = seconds(0.06)
+        out = np.zeros(length)
+        for i in range(2):
+            size = seconds(0.004)
+            place(out, band(noise(rng, size), 3500, 9000) * np.hanning(size), i * rng.uniform(0.015, 0.025), rng.uniform(0.6, 1.0))
+        return fade(normalize(out, 0.2), 0.0005, 0.01)
+    if kind == "nestvura":
+        length = seconds(0.3)
+        out = thump(rng, length, 220, 0.06) * 1.2
+        for at in (0.0, rng.uniform(0.025, 0.04)):
+            size = seconds(0.01)
+            place(out, band(noise(rng, size), 2500, 6500) * np.hanning(size), at + 0.005, rng.uniform(0.35, 0.5))
+        return fade(normalize(resample(out, rng.uniform(0.93, 1.07)), 0.55), 0.002, 0.05)
     if kind == "orel":
         length = seconds(0.3)
         t = np.arange(length) / RATE
@@ -481,8 +496,10 @@ def raptor_cry(rng: np.random.Generator, dur: float, points: list[float], values
 def roar(kind: str) -> np.ndarray:
     """Zařvání, když příšera začne honit. Had dlouze zasyčí, pavouk zasyčí a zacvaká, vlk zavrčí a štěkne,
     obě hlavy kocoura prsknou a zamňoukají, druhá o kus později a o malou tercii výš, orel třikrát
-    krátce kíkne a pak dlouze klesavě zaječí, tyranosaurus zařve, ptakoještěr zaskřehotá, kamenná koule se s duněním rozjede jako lavina."""
-    rng = np.random.default_rng({"pavouk": 1, "vlk": 2, "tyranosaurus": 3, "ptakojester": 4, "had": 5, "koule": 6, "kocour": 7, "orel": 8}[kind])
+    krátce kíkne a pak dlouze klesavě zaječí, nestvůra zachrastí, zavrčí a ostře zaječí se syčením,
+    brouk dvakrát zavrže krovkami jako cvrček,
+    tyranosaurus zařve, ptakoještěr zaskřehotá, kamenná koule se s duněním rozjede jako lavina."""
+    rng = np.random.default_rng({"pavouk": 1, "vlk": 2, "tyranosaurus": 3, "ptakojester": 4, "had": 5, "koule": 6, "kocour": 7, "orel": 8, "nestvura": 9, "brouk": 10}[kind])
     if kind == "koule":
         dur = 1.8
         length = seconds(dur)
@@ -533,6 +550,38 @@ def roar(kind: str) -> np.ndarray:
         place(full, out, 0.0)
         place(full, bark, 1.1, 1.2)
         return fade(normalize(reverb(full, 1.0, 0.25), 0.8), 0.01, 0.1)
+    if kind == "brouk":
+        full = np.zeros(seconds(1.1))
+        # Vrzání krovek: hustá řada drobných cvaknutí, uprostřed nejhustší a nejhlasitější.
+        for start, dur in ((0.0, 0.42), (0.55, 0.5)):
+            at = 0.0
+            while at < dur:
+                u = at / dur
+                size = seconds(0.003)
+                tick = band(noise(rng, size), 3000, 8000) * np.hanning(size)
+                place(full, tick, start + at, (0.4 + 0.6 * math.sin(math.pi * u)) * rng.uniform(0.7, 1.0))
+                at += 0.012 + 0.012 * abs(0.5 - u)
+        return fade(normalize(reverb(full, 0.5, 0.12), 0.6), 0.002, 0.08)
+    if kind == "nestvura":
+        full = np.zeros(seconds(1.9))
+        # Chrastění zrychluje, jako by nestvůra cvakala čelistmi.
+        at, gap = 0.0, 0.08
+        while at < 0.5:
+            size = seconds(0.012)
+            place(full, band(noise(rng, size), 1500, 4500) * np.hanning(size), at, rng.uniform(0.5, 0.8))
+            at += gap
+            gap *= 0.85
+        growl = growl_voice(rng, 0.9, [0.0, 0.3, 0.9], [105, 145, 120],
+                            [(450, 140, 1.0), (1100, 220, 0.6), (2400, 400, 0.3)], 38, 2.6)
+        place(full, growl * envelope(len(growl), 0.08, 0.6), 0.3, 0.8)
+        shriek = growl_voice(rng, 0.8, [0.0, 0.1, 0.45, 0.8], [620, 1250, 1050, 760],
+                             [(1600, 400, 1.0), (2900, 600, 0.7), (900, 200, 0.4)], 47, 3.2)
+        length = len(shriek)
+        t = np.arange(length) / RATE
+        shriek = shriek * np.interp(t, [0.0, 0.05, 0.5, 0.8], [0.0, 1.0, 0.8, 0.0])
+        shriek += band(noise(rng, length), 3000, 9000) * np.interp(t, [0.0, 0.1, 0.8], [0.0, 0.5, 0.0])
+        place(full, shriek, 0.95)
+        return fade(normalize(reverb(full, 1.3, 0.3), 0.85), 0.003, 0.2)
     if kind == "orel":
         full = np.zeros(seconds(1.7))
         for i in range(3):
@@ -1088,7 +1137,7 @@ def main() -> None:
     names = sorted(MATERIALS, key=lambda name: MATERIALS[name]["points"])
     for order, name in enumerate(names):
         written.append(write(f"basin/{name}", basin_hit(order / max(len(names) - 1, 1), 5 + order)))
-    for kind in ("had", "pavouk", "vlk", "kocour", "tyranosaurus", "ptakojester", "orel", "koule"):
+    for kind in ("had", "pavouk", "vlk", "kocour", "tyranosaurus", "ptakojester", "orel", "nestvura", "brouk", "koule"):
         for variant in range(3):
             written.append(write(f"monsters/{kind}_step_{variant + 1}", monster_step(kind, 40 + variant * 11 + len(kind))))
         written.append(write(f"monsters/{kind}_roar", roar(kind)))

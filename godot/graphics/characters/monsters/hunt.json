@@ -2,6 +2,8 @@
   "species": {
     "had2": {"title": "Had", "gender": "m", "points": 10, "flee": [2.95, 4.20], "time": {"day": 2, "night": 1},
              "surfaces": {"grass": 3, "dirt": 2, "desert": 3, "scree": 1, "ash": 1, "swamp": 3, "heath": 2}},
+    "brouk": {"title": "Brouk", "gender": "m", "points": 8, "flee": [2.80, 4.10], "time": {"day": 1, "night": 0},
+              "surfaces": {"grass": 2, "dirt": 2, "desert": 2, "snow": 2, "scree": 2, "ash": 2, "swamp": 2, "heath": 2}},
     "stir": {"title": "Štír", "gender": "m", "points": 20, "flee": [3.10, 4.27], "time": {"day": 1, "night": 2},
              "surfaces": {"grass": 1, "dirt": 2, "desert": 3, "scree": 2, "ash": 3, "heath": 2}},
     "pavouk2": {"title": "Pavouk", "gender": "m", "points": 25, "flee": [3.20, 4.33], "time": {"day": 1, "night": 3},
@@ -12,6 +14,8 @@
              "surfaces": {"grass": 1, "dirt": 0.5, "desert": 1, "snow": 1, "scree": 1.5, "ash": 0.5, "swamp": 0.5, "heath": 1, "water": 0.5}},
     "vlk2": {"title": "Vlk", "gender": "m", "points": 50, "flee": [3.60, 4.47], "time": {"day": 1, "night": 2},
              "surfaces": {"grass": 2, "dirt": 1, "snow": 2, "scree": 1, "swamp": 1, "heath": 2}},
+    "nestvura": {"title": "Nestvůra", "gender": "f", "points": 60, "flee": [3.80, 4.55], "time": {"day": 0, "night": 1},
+                 "surfaces": {"grass": 1, "dirt": 1, "desert": 1, "snow": 1, "scree": 1, "ash": 1, "swamp": 1, "heath": 1}},
     "kocour": {"title": "Kocour", "gender": "m", "points": 70, "flee": [3.75, 4.53], "time": {"day": 1, "night": 1},
                "surfaces": {"grass": 0.5, "snow": 2, "scree": 1.5, "heath": 1}},
     "rex2": {"title": "Rex", "gender": "m", "points": 100, "flee": [3.85, 4.60], "time": {"day": 2, "night": 1},

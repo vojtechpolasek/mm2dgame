@@ -48,6 +48,37 @@
         "eye": "FF5A3C"
       }
     },
+    "brouk": {
+      "cycle_meters": 0.3125,
+      "frames": 8,
+      "atlas_columns": 8,
+      "wander_meters": 0.7,
+      "chase_meters": 3.5,
+      "body_meters": 0.3,
+      "height_meters": 0.2,
+      "jump_meters": 0.0,
+      "shader": "stone",
+      "sound": "brouk",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "brouk/layer_1.png",
+          "cell": 54,
+          "center": 27,
+          "glint_file": "brouk/layer_1_glint.png"
+        },
+        "2": {
+          "height": 0.15,
+          "file": "brouk/layer_2.png",
+          "cell": 84,
+          "center": 42,
+          "glint_file": "brouk/layer_2_glint.png"
+        }
+      },
+      "colors": {
+        "eye": "B8F0FF"
+      }
+    },
     "stir": {
       "cycle_meters": 0.4375,
       "frames": 8,
@@ -238,6 +269,37 @@
       },
       "colors": {
         "eye": "7DF2FF"
+      }
+    },
+    "nestvura": {
+      "cycle_meters": 2.0,
+      "frames": 16,
+      "atlas_columns": 8,
+      "wander_meters": 1.0,
+      "chase_meters": 5.0,
+      "body_meters": 0.5,
+      "height_meters": 3.0,
+      "jump_meters": 4.0,
+      "shader": "stone",
+      "sound": "nestvura",
+      "layers": {
+        "1": {
+          "height": 0.0,
+          "file": "nestvura/layer_1.png",
+          "cell": 96,
+          "center": 48,
+          "glint_file": "nestvura/layer_1_glint.png"
+        },
+        "2": {
+          "height": 2.0,
+          "file": "nestvura/layer_2.png",
+          "cell": 236,
+          "center": 118,
+          "glint_file": "nestvura/layer_2_glint.png"
+        }
+      },
+      "colors": {
+        "eye": "FF2A1A"
       }
     },
     "rex2": {
