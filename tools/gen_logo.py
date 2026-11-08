@@ -2,8 +2,8 @@
 """Logo hry. Písmena nejsou z písma: každé má kostru z tahů a podél ní jsou navlečené
 kameny ze hry. Drahokam je broušený sedmiúhelník, hornina hrudka o devíti ploškách,
 stínování a lem jsou stejné jako v gen_crystal.py a crystal.gdshader. Kamenná písmena
-porůstají mechem a trávou, drahokamy se třpytí. „O“ je kamenná koule s obličejem,
-jako příšera koule2 z gen_monsters.py.
+porůstají mechem a trávou, drahokamy se třpytí. „O“ je kamenná koule se zlým obličejem,
+jako příšera koule2 z gen_monsters.py: rudé oči v důlcích a tlama s kamennými zuby, uvnitř žhne.
 
 splash.png je celá obrazovka 1920 × 1080 na barvě BACKGROUND. Godot ho ukáže při startu
 a stejný obrázek pak drží opona v menu_stage.gd, dokud se nesloží mapa.
@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy import ndimage
+from scipy.spatial import cKDTree
 
 from gen_crystal import CRYSTAL_FACETS, MATERIALS, STONE_FACETS, parse_hex
 
@@ -68,14 +69,39 @@ INLAYS = ("smaragd", "rubin", "safir", "jantar", "diamant")
 INLAY_SHARE = 0.06
 # Písmeno, které je kamennou koulí s obličejem: řádek a pořadí.
 EYES = (1, 1)
-# Koule: kolik kamenů je na celé kouli (Fibonacciho spirála, vidět je přední polovina)
-# a jejich velikost jako díl poloměru tahu. Světlo koule jde zleva shora zepředu.
-BALL_STONES = 120
-BALL_GEM = 0.78
+# Koule je výšková mapa nad koulí: balvany se spárami, plošky, důlky očí, obočí, tlama a zuby.
+# Z ní je stínování, vržené stíny a tmavší dutiny. Má vlastní semínko, ať je pořád stejná.
+BALL_SEED = 11
+# Světlo koule jde zleva shora zepředu.
 BALL_LIGHT = np.array([-0.45, -0.6, 0.66])
-# Oči koule ve hře (colors.eye v monsters.json) a zuby tlamy.
+BALL_LIGHT = BALL_LIGHT / np.linalg.norm(BALL_LIGHT)
+# Balvany: rozestup středů v radiánech (náhodně v rozmezí), šířka spáry v radiánech.
+BALL_CHUNK = (0.28, 0.46)
+BALL_CREVICE = 0.055
+# Plošky na balvanech: rozestup v radiánech a náklon (směrodatná odchylka sklonu).
+BALL_FACET_GAP = (0.11, 0.2)
+BALL_FACET = 0.32
+# Lesk kovu na ploškách a kolik záře z očí a tlamy dopadne na okolní kameny.
+BALL_SPEC = 0.35
+BALL_SPILL = 1.25
+# Natočení obličeje: doprava a dolů ve stupních.
+BALL_TURN = (0.0, 4.0)
+# Oči: střed (x od nosu, y), polovina šířky a výška v dílech poloměru, náklon ve stupních
+# (vnitřní koutek níž), prohnutí, hloubka důlku, žhavost středu, výška obočí, jeho tloušťka
+# a posun nahoru. Levé a pravé se trochu liší, ať obličej není ze šablony.
+BALL_EYES = (
+    {"x": 0.34, "y": -0.15, "w": 0.2, "h": 0.085, "tilt": 30.0, "arc": -0.05, "deep": 0.13, "hot": 1.0,
+     "brow": 0.22, "brow_t": 0.06, "brow_up": 0.0},
+    {"x": 0.34, "y": -0.15, "w": 0.2, "h": 0.085, "tilt": 26.0, "arc": -0.05, "deep": 0.13, "hot": 1.0,
+     "brow": 0.22, "brow_t": 0.06, "brow_up": 0.015},
+)
+# Tlama: střed y, polovina šířky, pokles koutků, otevření, zubatost hrany, počet horních
+# a dolních zubů.
+BALL_MOUTH = {"y": 0.36, "w": 0.48, "frown": 0.08, "open": 0.27, "jag": 0.035, "teeth": (4, 3)}
+# Oči koule ve hře (colors.eye v monsters.json), žhavé jádro a materiál, do kterého jsou zuby.
 BALL_EYE = parse_hex("FF3A1A")
-BALL_TEETH = parse_hex("E4DCC8")
+BALL_HOT = (255, 214, 130)
+BALL_TOOTH = "kremen"
 # Malé logo: obě „M“ jako začátky řádků velkého. Kreslí se velké a zmenší se na MINI px.
 MINI_LINES = (("MM", ("piskovec", "rubin")),)
 MINI_CANVAS = (560, 340)
@@ -335,31 +361,219 @@ def gem_piece(char: str, material: str, cx: float, cy: float, radius: float, rng
     return piece
 
 
-## Kameny koule: body na kouli, vidět je přední polovina. Kámen u okraje je zkrácený pohledem
-## a tmavší, kreslí se dřív, ať ho přední kameny překryjí.
-def ball_stones(char: str, material: str, place, size: float, rng: np.random.Generator) -> list[Letter]:
-    light = BALL_LIGHT / np.linalg.norm(BALL_LIGHT)
-    spots = []
-    golden = math.pi * (3.0 - math.sqrt(5.0))
-    for k in range(BALL_STONES):
-        z = 1.0 - (k + 0.5) / BALL_STONES * 2.0
-        ring = math.sqrt(max(1.0 - z * z, 0.0))
-        turn = k * golden
-        nx, ny, nz = ring * math.cos(turn), ring * math.sin(turn), z
-        if nz < -0.05:
+## Body na kouli (bez zadní části) s náhodným rozestupem gap v radiánech: žádný není blíž
+## k dřívějšímu, než je jeho rozestup.
+def sphere_points(rng: np.random.Generator, gap: tuple[float, float], tries: int) -> np.ndarray:
+    points: list[np.ndarray] = []
+    for _ in range(tries):
+        v = rng.normal(size=3)
+        v /= np.linalg.norm(v)
+        if v[2] < -0.35:
             continue
-        spots.append((nz, nx, ny))
-    spots.sort()
-    stones = []
-    reach = 0.5 - GEM_RADIUS * BALL_GEM * 0.55
-    for nz, nx, ny in spots:
-        lit = max(float(np.dot((nx, ny, nz), light)), 0.0)
-        u = 0.5 + nx * reach + rng.uniform(-0.008, 0.008)
-        v = 0.5 + ny * reach + rng.uniform(-0.008, 0.008)
-        r = GEM_RADIUS * BALL_GEM * (0.55 + 0.45 * max(nz, 0.0)) * rng.uniform(0.92, 1.08)
-        px, py = place(u, v)
-        stones.append(gem_piece(char, material, px, py, r * size, rng, 0.78 + 0.62 * lit))
-    return stones
+        reach = math.cos(rng.uniform(*gap))
+        if all(np.dot(v, p) < reach for p in points):
+            points.append(v)
+    return np.array(points)
+
+
+def in_triangle(x: np.ndarray, y: np.ndarray, a: tuple, b: tuple, c: tuple) -> np.ndarray:
+    def side(p: tuple, q: tuple) -> np.ndarray:
+        return (x - q[0]) * (p[1] - q[1]) - (p[0] - q[0]) * (y - q[1])
+    d1, d2, d3 = side(a, b), side(b, c), side(c, a)
+    return ~(((d1 < 0) | (d2 < 0) | (d3 < 0)) & ((d1 > 0) | (d2 > 0) | (d3 > 0)))
+
+
+## Kamenná koule se zlým obličejem jako jediný kus písmena. place a size jako u ostatních
+## písmen, koule se s písmenem nakloní.
+def ball_stones(char: str, material: str, place, size: float) -> list[Letter]:
+    cx, cy = place(0.5, 0.5)
+    tx, ty = place(1.0, 0.5)
+    color, alpha = render_ball(0.5 * size * 0.97, math.atan2(ty - cy, tx - cx), material)
+    side = alpha.shape[0]
+    piece = Letter(char, material, int(cx - side / 2), int(cy - side / 2), alpha > 0.5)
+    piece.alpha = alpha
+    piece.color = color
+    piece.light = np.zeros_like(alpha)
+    return [piece]
+
+
+## Koule o poloměru r px natočená o angle radiánů. Vrátí barvu a krytí čtverce kolem ní.
+def render_ball(r: float, angle: float, material: str) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(BALL_SEED)
+    side = int(2 * r) + 2 * int(r * 0.14)
+    yy, xx = np.mgrid[0:side, 0:side].astype(np.float32)
+    x = (xx - side / 2 + 0.5) / r
+    y = (yy - side / 2 + 0.5) / r
+    rho = np.sqrt(x * x + y * y)
+    # Kousek za okrajem se bere bod na okraji, ať tam spáry pokračují.
+    clamp = np.maximum(rho, 1.0)
+    sx, sy = x / clamp, y / clamp
+    sz = np.sqrt(np.clip(1.0 - sx * sx - sy * sy, 0.0, 1.0))
+    points = np.stack([sx, sy, sz], -1).reshape(-1, 3)
+
+    # Balvany: buňky kolem náhodných středů. Rozdíl vzdáleností ke dvěma nejbližším středům
+    # dává vzdálenost ke spáře.
+    seeds = sphere_points(rng, BALL_CHUNK, 4000)
+    dist, nearest = cKDTree(seeds).query(points, k=2)
+    edge = ((dist[:, 1] - dist[:, 0]) / 2).reshape(side, side)
+    cell = nearest[:, 0].reshape(side, side)
+    facets = sphere_points(rng, BALL_FACET_GAP, 9000)
+    facet = cKDTree(facets).query(points, k=1)[1].reshape(side, side)
+    facet_tilt = rng.normal(0, BALL_FACET, (len(facets), 2)).astype(np.float32)
+    tone = rng.uniform(0.82, 1.14, len(seeds)).astype(np.float32)
+    # Výška nad koulí v px: kupole balvanů, ke spárám hluboko dolů.
+    dome = smoothstep(0.0, BALL_CREVICE * 3.0, edge) ** 0.7
+    height = (dome - 1.0) * r * 0.07 + dome * r * 0.025
+
+    lx, ly, front = face_coords(sx, sy, sz, angle)
+    glow = np.zeros_like(x)
+    heat = np.zeros_like(x)
+    for side_sign, eye in zip((-1, 1), BALL_EYES):
+        height, glow, heat = carve_eye(eye, side_sign, lx, ly, front, r, height, glow, heat)
+    height, glow, heat, teeth, teeth_tilt = carve_mouth(lx, ly, front, r, height, glow, heat, rng)
+
+    # Obrys: spáry ukusují okraj.
+    alpha = np.clip((1.0 + (dome - 1.0) * 0.07 - rho) * r * 0.7, 0.0, 1.0)
+
+    # Normála: koule, sklon výšky a plošky (u zubů jejich dvě plošky).
+    gy, gx = np.gradient(ndimage.gaussian_filter(height, 0.8))
+    tilt = np.where(teeth[..., None], teeth_tilt, facet_tilt[facet] * dome[..., None] ** 1.5)
+    nz = np.maximum(sz, 0.05)
+    nx = sx - (gx + tilt[..., 0]) * nz
+    ny = sy - (gy + tilt[..., 1]) * nz
+    length = np.sqrt(nx * nx + ny * ny + nz * nz)
+    nx, ny, nz = nx / length, ny / length, nz / length
+    diffuse = np.clip(nx * BALL_LIGHT[0] + ny * BALL_LIGHT[1] + nz * BALL_LIGHT[2], 0.0, 1.0)
+    shade = cast_shadows(np.where(rho < 1.0, r * sz, -1e4) + height, r)
+    # Dutiny jsou tmavší.
+    cavity = ndimage.gaussian_filter(height, r * 0.06) - height
+    occlusion = np.clip(1.0 - cavity / (r * 0.05), 0.25, 1.0)
+
+    base = muted(parse_hex(MATERIALS[material]["color"]))
+    luma = float(base @ np.array([0.299, 0.587, 0.114], np.float32))
+    if luma < MIN_LUMA:
+        base = base + (MIN_LUMA - luma)
+    grain = fbm(x.shape, r * 0.03, 3, rng)
+    albedo = base[None, None, :] * tone[cell][..., None] * (0.85 + 0.3 * grain)[..., None]
+    tooth = base * 0.75 + muted(parse_hex(MATERIALS[BALL_TOOTH]["color"]), 0.4) * 0.35
+    albedo = np.where(teeth[..., None], tooth, albedo)
+    # Svrchu světlejší, dole do tmy, ať je koule těžká.
+    body = 0.55 + 0.45 * np.clip(0.7 - 0.5 * y, 0.0, 1.0)
+    color = albedo * ((0.3 + 1.3 * diffuse * shade) * occlusion * body)[..., None]
+    # Malý ostrý lesk kovu na ploškách ke světlu.
+    half = BALL_LIGHT + np.array([0.0, 0.0, 1.0])
+    half /= np.linalg.norm(half)
+    spec = np.clip(nx * half[0] + ny * half[1] + nz * half[2], 0.0, 1.0) ** 38 * shade * BALL_SPEC
+    color += spec[..., None] * 210.0
+    # Chladné světlo na pravém okraji.
+    rim = smoothstep(0.82, 1.0, rho) * np.clip(nx * 0.7 - ny * 0.2, 0.0, 1.0) * 0.35
+    color += rim[..., None] * np.array([120, 140, 170], np.float32)
+    # Záře očí a tlamy dopadá na okolní kameny, víc na vystouplé.
+    eye = rgb(BALL_EYE)
+    spill = (ndimage.gaussian_filter(glow, r * 0.05) * 1.6 + ndimage.gaussian_filter(glow, r * 0.16) * 1.1) * BALL_SPILL
+    color += albedo * spill[..., None] * (eye / 255.0) * 2.2 * (0.5 + 0.5 * dome[..., None])
+    hot = eye * (1.0 - heat[..., None]) + rgb(BALL_HOT) * heat[..., None]
+    color = color * (1.0 - glow[..., None]) + hot * glow[..., None]
+    # Zuby jsou tmavé úlomky proti žáru, jejich hrana prosvítá.
+    tooth_edge = teeth & ~ndimage.binary_erosion(teeth, iterations=max(int(r * 0.012), 1))
+    tooth_color = albedo * (0.3 + 0.95 * diffuse)[..., None]
+    tooth_color = np.where(tooth_edge[..., None], tooth_color * 0.6 + eye * 0.45, tooth_color)
+    color = np.where(teeth[..., None], tooth_color, color)
+    return np.clip(color, 0.0, 255.0), alpha
+
+
+## Body koule v souřadnicích obličeje: koule se otočí zpět o náklon písmene a natočení
+## obličeje (BALL_TURN), střed obličeje je pak vpředu. front je přední strana s obličejem.
+def face_coords(sx: np.ndarray, sy: np.ndarray, sz: np.ndarray, angle: float) -> tuple:
+    ca, sa = math.cos(-angle), math.sin(-angle)
+    px, py = sx * ca - sy * sa, sx * sa + sy * ca
+    yaw, pitch = math.radians(BALL_TURN[0]), math.radians(BALL_TURN[1])
+    fx = px * math.cos(-yaw) + sz * math.sin(-yaw)
+    fz = -px * math.sin(-yaw) + sz * math.cos(-yaw)
+    fy = py * math.cos(-pitch) - fz * math.sin(-pitch)
+    fz = py * math.sin(-pitch) + fz * math.cos(-pitch)
+    return fx, fy, fz > 0.15
+
+
+## Oko: důlek, v něm žhnoucí srpek s rovným víčkem nahoře, nad ním vystouplý kámen obočí.
+def carve_eye(eye: dict, side_sign: int, lx, ly, front, r: float, height, glow, heat) -> tuple:
+    turn = -math.radians(eye["tilt"]) * side_sign
+    dx, dy = lx - side_sign * eye["x"], ly - eye["y"]
+    u = dx * math.cos(turn) + dy * math.sin(turn)
+    w = -dx * math.sin(turn) + dy * math.cos(turn)
+    hw, h = eye["w"], eye["h"]
+    socket = np.clip(1.0 - (u / (hw * 1.45)) ** 2 - (w / (h * 3.2 + 0.05)) ** 2, 0.0, 1.0)
+    height = height - smoothstep(0.0, 1.0, socket) ** 1.3 * r * eye["deep"] * front
+    span = np.clip(1.0 - (u / hw) ** 2, 0.0, 1.0)
+    bend = eye["arc"] * (u / hw) ** 2
+    top = -h * 0.25 * span + bend
+    bottom = h * span ** 0.6 + bend
+    inside = (w > top) & (w < bottom) & (np.abs(u) < hw) & front
+    lit = np.clip(np.minimum(w - top, bottom - w) * r * 0.6, 0.0, 1.0) * inside
+    glow = np.maximum(glow, lit)
+    heat = np.maximum(heat, np.clip(1.0 - np.abs(u) / (hw * 0.75), 0.0, 1.0) * lit * eye["hot"])
+    brow = w + h * 0.55 + eye["brow_up"] + 0.03
+    ridge = (smoothstep(0.0, 1.0, 1.0 - np.abs(brow) / eye["brow_t"]) ** 0.6
+             * smoothstep(0.0, 0.35, 1.0 - (u / (hw * 1.3)) ** 2))
+    height = height + ridge * r * eye["brow"] * front
+    return height, glow, heat
+
+
+## Tlama: zubatá puklina s koutky dolů, uvnitř žhne. Z horní a dolní hrany trčí kamenné zuby,
+## střídají se, ať se špičkami nepotkají. Vrátí i masku zubů a sklon jejich plošek.
+def carve_mouth(lx, ly, front, r: float, height, glow, heat, rng: np.random.Generator) -> tuple:
+    m = BALL_MOUTH
+    k = np.linspace(-1.0, 1.0, 23)
+    jag = rng.uniform(-1.0, 1.0, len(k)) * m["jag"]
+    middle = m["y"] + m["frown"] * k ** 2 + jag
+    opening = m["open"] * np.clip(1.0 - k ** 2, 0.0, 1.0) ** 0.55 * (0.75 + 0.25 * rng.random(len(k)))
+    xs = k * m["w"]
+    at = np.clip(lx, -m["w"], m["w"])
+    gap = np.interp(at, xs, opening)
+    top = np.interp(at, xs, middle) - gap * 0.45
+    bottom = np.interp(at, xs, middle) + gap * 0.55
+    inner = np.minimum(ly - top, bottom - ly)
+    inside = (inner > 0.0) & (np.abs(lx) < m["w"]) & front
+    lit = np.clip(inner * r * 0.5, 0.0, 1.0) * inside
+    height = height - lit * r * 0.09
+    depth = np.clip(inner / (gap * 0.5 + 1e-3), 0.0, 1.0)
+    glow = np.maximum(glow, lit * (0.35 + 0.65 * depth))
+    heat = np.maximum(heat, lit * depth ** 2)
+    teeth = np.zeros(lx.shape, bool)
+    tilt = np.zeros(lx.shape + (2,), np.float32)
+    for count, sign in zip(m["teeth"], (1, -1)):
+        shift = 0.0 if sign > 0 else 0.5
+        spots = (np.arange(count) + shift + 0.5) / (count + 0.5) * 1.6 - 0.8 + rng.uniform(-0.06, 0.06, count)
+        for spot in spots:
+            tx = spot * m["w"]
+            lip = float(np.interp(tx, xs, middle - opening * 0.45 if sign > 0 else middle + opening * 0.55))
+            o = float(np.interp(tx, xs, opening))
+            if o < 0.03:
+                continue
+            half = rng.uniform(0.075, 0.105)
+            length = o * (rng.uniform(0.45, 0.6) if sign > 0 else rng.uniform(0.22, 0.34))
+            lean = rng.uniform(-0.3, 0.3) * half
+            shard = in_triangle(lx, ly, (tx - half, lip - sign * 0.01), (tx + half, lip - sign * 0.01),
+                                (tx + lean, lip + sign * length)) & front
+            teeth |= shard
+            # Dvě plošky úlomku, levá a pravá od hřbetu.
+            left = lx - (tx + lean * (ly - lip) * sign / max(length, 1e-3)) < 0.0
+            facet = np.where(left[..., None], np.array([0.5, -0.1 * sign]), np.array([-0.4, -0.1 * sign]))
+            tilt[shard] = facet[shard]
+    height = np.where(teeth, np.maximum(height, -r * 0.01), height)
+    return height, glow, heat, teeth, tilt
+
+
+## Vržené stíny po výškové mapě: bod je ve stínu, když cestou ke světlu narazí na vyšší místo.
+def cast_shadows(height: np.ndarray, r: float) -> np.ndarray:
+    flat = BALL_LIGHT[:2] / np.linalg.norm(BALL_LIGHT[:2])
+    rise = BALL_LIGHT[2] / np.linalg.norm(BALL_LIGHT[:2])
+    shade = np.ones_like(height)
+    for step in range(2, int(r * 0.35), 2):
+        ahead = ndimage.shift(height, (-flat[1] * step, -flat[0] * step), order=1, mode="nearest")
+        blocked = np.clip((ahead - (height + step * rise)) / 4.0, 0.0, 1.0)
+        shade = np.minimum(shade, 1.0 - blocked * 0.85)
+    return ndimage.gaussian_filter(shade, 1.2)
 
 
 class Glyph:
@@ -378,8 +592,6 @@ class Glyph:
             h, w = c.shape
             inside[c.y0 - y0:c.y0 - y0 + h, c.x0 - x0:c.x0 - x0 + w] |= c.inside
         self.union = Letter(char, material, x0, y0, inside)
-        # Střed a poloměr koule v px plátna, jen u písmene z koule.
-        self.ball: tuple[float, float, float] | None = None
 
 
 ## ball_at je pořadí písmene (přes všechny řádky), které se postaví jako kamenná koule.
@@ -405,9 +617,7 @@ def layout(canvas: Canvas, lines: tuple, line_y: tuple, cap: float, rng: np.rand
 
             chunks = []
             if ball_at == len(glyphs):
-                ball = Glyph(char, material, ball_stones(char, material, place, size, rng))
-                ball.ball = (*place(0.5, 0.5), 0.5 * size)
-                glyphs.append(ball)
+                glyphs.append(Glyph(char, material, ball_stones(char, material, place, size)))
                 x += (w + gap) * size
                 continue
             for stroke in strokes:
@@ -494,68 +704,6 @@ def star(draw: ImageDraw.ImageDraw, x: float, y: float, size: float, color) -> N
         draw.polygon(((x - sa * w, y + ca * w), tip, (x + sa * w, y - ca * w)), fill=(*color, 230))
     r = size * 0.13
     draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, 255))
-
-
-# --- Obličej koule ---
-# Jako koule2 ve hře: tmavé důlky, šikmé rudé oči se štěrbinou, víčko uřízne oko do
-# zamračeného klínu, nad ním tmavý kámen obočí. Pod očima tlama, uvnitř žhne barvou očí.
-
-def ball_face(canvas: Canvas, cx: float, cy: float, r: float) -> None:
-    side_px = int(r * 2.2)
-    x0 = int(cx - side_px / 2)
-    y0 = int(cy - side_px / 2)
-    ox, oy = cx - x0, cy - y0
-    yy, xx = np.mgrid[0:side_px, 0:side_px].astype(np.float32)
-    eye = rgb(BALL_EYE)
-    for side in (-1, 1):
-        ex, ey = ox + side * r * 0.34, oy - r * 0.08
-        rx, ry = r * 0.22, r * 0.13
-        # Tmavý důlek, o kus větší než oko.
-        socket = np.sqrt(((xx - ex) / (rx * 1.3)) ** 2 + ((yy - ey) / (ry * 1.9)) ** 2)
-        canvas.over(rgb((12, 11, 10)), np.clip((1.0 - socket) * 6.0, 0.0, 1.0) * 0.85, x0, y0)
-        d = np.sqrt(((xx - ex) / rx) ** 2 + ((yy - ey) / ry) ** 2)
-        # Víčko klesá k nosu: přísný pohled.
-        lid = (yy - ey) + (xx - ex) * side * 0.55 + ry * 0.45
-        shape = np.clip((1.0 - d) * rx * 0.5, 0.0, 1.0) * np.clip(lid * 0.5, 0.0, 1.0)
-        glow = ndimage.gaussian_filter(shape, r * 0.07)
-        canvas.over(eye * 0.8, np.clip(glow * 1.4, 0.0, 0.7), x0, y0)
-        tone = 0.75 + 0.45 * (1.0 - np.clip(d, 0.0, 1.0))
-        canvas.over(np.clip(eye[None, None, :] * tone[..., None] + 30.0, 0, 255), shape, x0, y0)
-        pupil = np.clip((1.0 - np.sqrt(((xx - ex) / (rx * 0.16)) ** 2 + ((yy - ey) / (ry * 0.9)) ** 2)) * 6, 0, 1) * shape
-        canvas.over(rgb((20, 6, 4)), pupil, x0, y0)
-    face = Image.new("RGBA", (side_px, side_px), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(face)
-    for side in (-1, 1):
-        ex, ey = ox + side * r * 0.34, oy - r * 0.08
-        # Obočí: protažený tmavý kámen po hraně víčka, od vnějšího koutku dolů k nosu.
-        outer = (ex + side * r * 0.27, ey - r * 0.23)
-        inner = (ex - side * r * 0.2, ey - r * 0.04)
-        dx, dy = inner[0] - outer[0], inner[1] - outer[1]
-        length = math.hypot(dx, dy)
-        nx, ny = -dy / length, dx / length
-        thick = r * 0.075
-        brow = [(outer[0] + nx * thick, outer[1] + ny * thick), (inner[0] + nx * thick * 0.7, inner[1] + ny * thick * 0.7),
-                (inner[0] - nx * thick * 0.7, inner[1] - ny * thick * 0.7), (outer[0] - nx * thick, outer[1] - ny * thick)]
-        draw.polygon(brow, fill=(46, 48, 52, 255))
-        draw.line(brow[3:] + brow[2:3], fill=(92, 96, 102, 255), width=max(int(r * 0.03), 1))
-    # Tlama: zamračený oblouk, koutky dolů. Uvnitř žhne, nahoře zuby.
-    mouth_y = oy + r * 0.38
-    half = r * 0.3
-    top = [(ox + half * t, mouth_y - r * 0.05 * (1.0 - t * t) + r * 0.06 * t * t) for t in np.linspace(-1, 1, 15)]
-    bottom = [(ox + half * t, mouth_y + r * 0.11 * (1.0 - t * t) + r * 0.06 * t * t) for t in np.linspace(1, -1, 15)]
-    draw.polygon(top + bottom, fill=(16, 10, 8, 255))
-    inner_top = [(x, y + r * 0.04) for x, y in top[3:-3]]
-    inner_bottom = [(x, y - r * 0.03) for x, y in bottom[3:-3]]
-    glow_color = tuple(int(v * 0.75) for v in BALL_EYE)
-    draw.polygon(inner_top + inner_bottom, fill=(*glow_color, 255))
-    for k in range(5):
-        t = -0.6 + k * 0.3
-        x = ox + half * t
-        y = mouth_y - r * 0.05 * (1.0 - t * t) + r * 0.06 * t * t
-        w = r * 0.045
-        draw.polygon(((x - w, y + r * 0.01), (x + w, y + r * 0.01), (x, y + r * 0.075)), fill=(*BALL_TEETH, 255))
-    data = np.asarray(face, np.float32)
-    canvas.over(data[..., :3], data[..., 3] / 255.0, x0, y0)
 
 
 # --- Mech a tráva ---
@@ -676,8 +824,6 @@ def draw_glyphs(canvas: Canvas, glyphs: list[Glyph], rng: np.random.Generator, o
     for chunk in chunks:
         canvas.over(chunk.color, chunk.alpha, chunk.x0, chunk.y0)
         sparkles(ImageDraw.Draw(shine), chunk, chunk.light, rng, scale)
-    if owl is not None and owl.ball is not None:
-        ball_face(canvas, *owl.ball)
     tops: list = []
     if moss_on:
         for g in glyphs:
