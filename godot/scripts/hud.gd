@@ -117,7 +117,8 @@ func setup(crystal: Crystal, players: Array[Dictionary]) -> void:
 ## mat je číslo materiálu, -1 prázdná ruka, points body, které za kámen hráči dostali.
 ## player je pořadí hráče.
 func set_held(mat: int, points: int, player: int = 0) -> void:
-	if player < 0 or player >= _gems.size():
+	# Skrytý panel se nepřepisuje: nové nápisy v něm stojí při sebrání kamene jednotky ms.
+	if not SHOW_HELD or player < 0 or player >= _gems.size():
 		return
 	_slots[player].queue_redraw()
 	if mat < 0 or _crystal == null or _crystal.count() == 0:

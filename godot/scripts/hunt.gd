@@ -133,6 +133,9 @@ const TAG_FLEE_KEEP := 2.5
 ## Úprk a viditelnost nápisů se kontrolují jen po tolika sekundách. Pozice viditelných nápisů
 ## se posouvá každý snímek, ať nápis za příšerou neposkakuje.
 const TAG_CHECK := 0.5
+## Tolik stoupajících nápisů se při startu připraví navíc k nápisům živých příšer. Nový držák
+## s Labely stojí asi ms, ve hře by zadrhl snímek sebrání kamene.
+const SPARE_FLOATS := 3
 
 class Prey:
 	var monster: Monster
@@ -303,6 +306,10 @@ func start(board, camera: MapCamera, persons: Array[Person], host: Node2D, phase
 		var monster := _build(creature)
 		if monster != null:
 			_park(monster, str(creature["kind"]))
+	for i in MAX_ALIVE + SPARE_FLOATS:
+		var holder := _make_tag()
+		holder.visible = false
+		_spare_tags.append(holder)
 	_warm()
 
 

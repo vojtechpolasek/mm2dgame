@@ -34,6 +34,8 @@ const SOUND_BUSES: PackedStringArray = ["Sfx", "Ambient", "Ui"]
 const WARM_DIRS: PackedStringArray = ["sfx", "ui", "monsters", "steps", "basin"]
 
 var _cache := {}
+## Zvuky z _warm, které ještě nejsou v _cache: dvojice [jméno, cesta].
+var _warming: Array[PackedStringArray] = []
 var _music_a: AudioStreamPlayer
 var _music_b: AudioStreamPlayer
 var _ui_player: AudioStreamPlayer
@@ -121,6 +123,7 @@ func _save_settings() -> void:
 
 
 func _process(delta: float) -> void:
+	_adopt_warm()
 	var step := 60.0 / FADE * delta
 	var back := 60.0 / FADE_BACK * delta
 	# Z honičky zpátky: honička slábne a hra sílí pomaleji než naopak.
@@ -280,13 +283,30 @@ func _on_button() -> void:
 
 ## Zvuk z res://audio, OGG (hudba, voda) nebo WAV (krátké zvuky). Importovaný soubor se načte
 ## jako zdroj, nenaimportovaný přímo ze souboru. loop nastaví smyčku přes celý soubor.
-## Požádá o načtení krátkých zvuků ve vlákně. _stream si je pak vyzvedne hotové.
+## Požádá o načtení krátkých zvuků ve vlákně. Hotové si _adopt_warm uloží do _cache.
 func _warm() -> void:
 	for dir in WARM_DIRS:
 		var folder := "%s/%s" % [ROOT, dir]
 		for file in ResourceLoader.list_directory(folder):
 			if file.ends_with(".wav") or file.ends_with(".ogg"):
-				ResourceLoader.load_threaded_request("%s/%s" % [folder, file])
+				var path := "%s/%s" % [folder, file]
+				ResourceLoader.load_threaded_request(path)
+				_warming.append(PackedStringArray(["%s/%s" % [dir, file.get_basename()], path]))
+
+
+## Jeden hotový zvuk z vlákna do _cache za snímek. Vyzvednutí stojí kolem ms, při prvním
+## přehrání (sebrání kamene, řev příšery) by zadrhlo snímek hry.
+func _adopt_warm() -> void:
+	if _warming.is_empty():
+		return
+	var key := _warming[-1][0]
+	var path := _warming[-1][1]
+	var status := ResourceLoader.load_threaded_get_status(path)
+	if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		return
+	_warming.pop_back()
+	if status == ResourceLoader.THREAD_LOAD_LOADED and not _cache.has(key):
+		_cache[key] = ResourceLoader.load_threaded_get(path) as AudioStream
 
 
 func _stream(name: String, loop: bool = false) -> AudioStream:
