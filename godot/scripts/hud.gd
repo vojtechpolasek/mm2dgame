@@ -4,6 +4,7 @@ extends Control
 ## Vlevo mapa objeveného světa (MiniMap), vždy vidět. Vpravo obzor se sluncem nebo měsícem
 ## (SkyDial, vždy vidět), název režimu, body a malým písmem zbývající čas, vedle logo „MM“,
 ## tlačítko menu. Ve Sbírání materiálů pod nimi co nese každý hráč (kroužek v barvě jeho trika).
+## V Evoluci místo bodů uběhlý čas a pod ním podoba každého hráče: materiál, jméno a rychlost.
 ## Panely mají styl panelů menu. Okno konce hry běží i v pauze, zbytek stojí se hrou.
 
 const Crystal := preload("res://scripts/crystal.gd")
@@ -35,7 +36,7 @@ const ACCENT := Color(0.86, 0.66, 0.3)
 ## Tabulka výkonů v okně konce ukáže tolik řádků, další se posouvají.
 const RECORDS_VISIBLE := 8
 ## Šířky sloupců tabulky výkonů: pořadí, jméno, body, chyceno (sebráno), datum.
-const RECORD_COLUMNS: Array[float] = [36.0, 220.0, 56.0, 76.0, 190.0]
+const RECORD_COLUMNS: Array[float] = [36.0, 220.0, 64.0, 76.0, 190.0]
 
 signal menu_pressed
 ## Tlačítko Menu nebo Esc / Start. Otevření pauzy řeší svět.
@@ -65,6 +66,7 @@ var _score: Label
 var _unit: Label
 var _bar: ProgressBar
 var _time: Label
+var _clock: Control
 var _shown_seconds := -1
 var _notice: PanelContainer
 var _notice_text: Label
@@ -166,6 +168,40 @@ func hunt(title: String, seconds: float, held: bool) -> void:
 	set_countdown(seconds, seconds)
 
 
+## Evoluce: vpravo nahoře název režimu title a velký uběhlý čas, bez pruhu. Pod tím podoba
+## každého hráče (set_form).
+func evolve(title: String) -> void:
+	_held_panel.visible = true
+	_mode_title.text = title
+	_unit.text = ""
+	_bar.visible = false
+	_time.visible = false
+	_clock.visible = false
+	set_elapsed(0.0)
+
+
+## Evoluce: uběhlý čas v celých sekundách.
+func set_elapsed(seconds: float) -> void:
+	var whole := maxi(floori(seconds), 0)
+	if whole == _shown_seconds:
+		return
+	_shown_seconds = whole
+	_score.text = "%d:%02d" % [whole / 60, whole % 60]
+
+
+## Evoluce: hráč player je příšera z materiálu mat, jménem title, rychlá meters m/s.
+func set_form(player: int, mat: int, title: String, meters: float) -> void:
+	if player < 0 or player >= _gems.size() or _crystal == null or _crystal.count() == 0:
+		return
+	_slots[player].queue_redraw()
+	_crystal.paint(_gems[player], mat, 0.0, 0.0)
+	_center_gem(_gems[player])
+	_gems[player].visible = true
+	_held_points[player].text = ("%.1f m/s" % meters).replace(".", ",")
+	_held_names[player].text = _short(title) if _gems.size() >= SHORT_NAMES_FROM else title
+	_pop(_held_points[player])
+
+
 ## Zbývající čas hry. Celé sekundy se zaokrouhlují nahoru, 0:00 je až konec.
 func set_countdown(left: float, total: float) -> void:
 	_bar.max_value = total
@@ -204,16 +240,16 @@ func ask_name(title: String, note: String, name: String) -> void:
 
 
 ## Okno konce hry po zápisu: tabulka výkonů rows (Hunt.records), řádek mark (od 0, -1 žádný)
-## je zvýrazněný a posune se do výhledu. count je nadpis sloupce počtu (Chyceno, Sebráno).
-## Pod ní Hrát znovu a menu.
-func show_records(title: String, note: String, rows: Array[Dictionary], mark: int, count: String) -> void:
+## je zvýrazněný a posune se do výhledu. count je nadpis sloupce počtu (Chyceno, Sebráno),
+## score nadpis sloupce výkonu (Body, v Evoluci Čas). Pod ní Hrát znovu a menu.
+func show_records(title: String, note: String, rows: Array[Dictionary], mark: int, count: String, score := "Body") -> void:
 	show_result(title, note, true)
 	if rows.is_empty():
 		return
 	# Záhlaví leží nad posuvnou částí, sloupce obou mřížek drží stejné šířky.
 	var head := _records_grid()
 	_result_body.add_child(head)
-	for caption in ["", "Jméno", "Body", count, "Datum"]:
+	for caption in ["", "Jméno", score, count, "Datum"]:
 		head.add_child(_record_cell(caption, DIM, head.get_child_count()))
 	var grid := _records_grid()
 	var scroll := ScrollContainer.new()
@@ -420,10 +456,10 @@ func _build_score(panel: PanelContainer) -> void:
 	_mode_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_mode_title)
 	# Čas je vedlejší údaj, jen malým písmem vedle názvu.
-	var clock := ClockIcon.new()
-	clock.custom_minimum_size = Vector2(11, 11)
-	clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	top.add_child(clock)
+	_clock = ClockIcon.new()
+	_clock.custom_minimum_size = Vector2(11, 11)
+	_clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(_clock)
 	_time = _label(12, DIM)
 	_time.text = "0:00"
 	top.add_child(_time)

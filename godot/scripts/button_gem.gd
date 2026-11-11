@@ -19,6 +19,7 @@ const DELETE := "jantar"
 const HUNT := "ametyst"
 const COLLECT := "zlato"
 const ROAM := "akvamarin"
+const EVOLVE := "diamant"
 ## Stav přepínače.
 const ON := "smaragd"
 const OFF := "rubin"

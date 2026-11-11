@@ -58,6 +58,11 @@ custom_minimum_size = Vector2(360, 56)
 layout_mode = 2
 text = "Sbírání materiálů"
 
+[node name="Evolve" type="Button" parent="Center/Panel/Column"]
+custom_minimum_size = Vector2(360, 56)
+layout_mode = 2
+text = "Evoluce"
+
 [node name="FreeRoam" type="Button" parent="Center/Panel/Column"]
 custom_minimum_size = Vector2(360, 56)
 layout_mode = 2

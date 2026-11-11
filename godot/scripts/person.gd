@@ -3,6 +3,8 @@ extends Node2D
 ## Běh postavy ve středu pohledu. Atlas je cyklus běhu směrem na sever a za ním snímek stání,
 ## ostatní směry otáčí tenhle uzel.
 ## Nohy, tělo a hlava jsou tři vrstvy se stejným posunem výšky jako stromy a skály.
+## Evoluce: hráč je příšera (wear). Místo figurky se kreslí příšera-loutka (Monster.puppet),
+## tělo, rychlost, skok a kroky jsou její. Létající letí nad vším, jen ne nad nehotový čtverec.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -96,6 +98,10 @@ var _hand_height := 1.2
 ## Kámen v ruce (Sbírání materiálů) a jeho materiál, -1 prázdná ruka.
 var _held: Sprite2D
 var _held_mat := -1
+## Evoluce: příšera, kterou hráč je (Monster, dítě postavy), a její rychlost v m/s. null je
+## obyčejná postava.
+var avatar: Node2D
+var _avatar_meters := 0.0
 
 
 func setup(rocks: Rocks, forest: Forest, camera: MapCamera, map: MapData, crystal: Crystal, player: int = 0) -> void:
@@ -122,7 +128,7 @@ func _process(delta: float) -> void:
 	if not _active:
 		return
 	var direction := Controls.direction(_device)
-	if not _jumping and Controls.jump_pressed(_device):
+	if not _jumping and Controls.jump_pressed(_device) and _jump_clear() > 0.0:
 		_begin_jump(direction)
 	if _jumping:
 		_step_jump(delta)
@@ -148,10 +154,13 @@ func _begin_jump(direction: Vector2) -> void:
 func _step_jump(delta: float) -> void:
 	_jump_time += delta
 	var phase := clampf(_jump_time / JUMP_TIME, 0.0, 1.0)
-	var half := maxi(_figure.frames / 2, 1)
-	_figure.set_frame(mini(int(phase * float(half)), half - 1))
+	if avatar != null:
+		avatar.puppet_jump(phase)
+	else:
+		var half := maxi(_figure.frames / 2, 1)
+		_figure.set_frame(mini(int(phase * float(half)), half - 1))
 	var speed := _run_speed()
-	var next := _leashed(walker.allowed(position, position + _jump_dir * speed * delta, BODY, JUMP_CLEAR, crowd_id))
+	var next := _leashed(walker.allowed(position, position + _jump_dir * speed * delta, body(), _jump_clear(), crowd_id))
 	position = next
 	scale = Vector2.ONE * (1.0 + JUMP_GROW * sin(phase * PI))
 	if _jump_dir.length_squared() > 0.0:
@@ -165,8 +174,55 @@ func _step_jump(delta: float) -> void:
 
 
 ## Rychlost běhu v pixelech za sekundu na terénu pod postavou: močál a řeka zpomalí.
+## Příšera běží svou rychlostí, létající terén nezdrží.
 func _run_speed() -> float:
-	return RUN_METERS * float(TerrainCatalog.TILE_SIZE) * walker.pace(position)
+	var tile := float(TerrainCatalog.TILE_SIZE)
+	if avatar == null:
+		return RUN_METERS * tile * walker.pace(position)
+	return _avatar_meters * tile * (1.0 if _flies() else walker.pace(position))
+
+
+## Evoluce: hráč je příšera look, běží rychlostí meters m/s. Dosavadní příšera se schová.
+func wear(look: Node2D, meters: float) -> void:
+	if avatar != null and avatar != look:
+		avatar.visible = false
+	avatar = look
+	_avatar_meters = meters
+	_figure.set_visible(false)
+	look.visible = true
+	_escaping = false
+	_idle_check_left = 0.0
+	if _jumping and _jump_clear() <= 0.0:
+		_jumping = false
+		scale = Vector2.ONE
+
+
+## Poloměr těla v px: postava, nebo příšera, kterou hráč je.
+func body() -> float:
+	return float(avatar.crowd_body()) if avatar != null else BODY
+
+
+## Letí hráč (příšera, která létá)?
+func _flies() -> bool:
+	return avatar != null and avatar.is_flying()
+
+
+## Výška skoku v metrech. Příšera skáče jen jako její druh, létající neskáče.
+func _jump_clear() -> float:
+	if avatar == null:
+		return JUMP_CLEAR
+	return 0.0 if _flies() else float(avatar.jump_height())
+
+
+## Let z from k desired: jen nad hotovými čtverci, jinak podél jejich kraje.
+func _fly(from: Vector2, desired: Vector2) -> Vector2:
+	var board = walker.world_board
+	if board == null:
+		return desired
+	for spot in [desired, Vector2(desired.x, from.y), Vector2(from.x, desired.y)]:
+		if board.has_ground(spot):
+			return spot
+	return from
 
 
 func _step_run(delta: float, direction: Vector2) -> void:
@@ -179,15 +235,20 @@ func _step_run(delta: float, direction: Vector2) -> void:
 		_velocity = _velocity.move_toward(Vector2.ZERO, STOP_SPEED * delta)
 	# Stojící postava zůstane, kde je. Krok by ji jen znovu prověřil proti všem překážkám.
 	var next := position
-	if _velocity != Vector2.ZERO:
-		next = _leashed(walker.allowed(position, position + _velocity * delta, BODY, -1.0, crowd_id))
+	if _velocity != Vector2.ZERO and _flies():
+		next = _leashed(_fly(position, position + _velocity * delta))
+	elif _velocity != Vector2.ZERO:
+		next = _leashed(walker.allowed(position, position + _velocity * delta, body(), -1.0, crowd_id))
 	var step := next - position
 	position = next
 	# Sever v atlasu je záporné Y. Kladné otočení uzlu jde po směru hodin.
 	var facing := step if step.length_squared() > 0.25 else direction
 	if facing.length_squared() > 0.0001:
 		rotation = facing.angle() + PI * 0.5
-	if direction == Vector2.ZERO and _velocity.length_squared() < 1.0:
+	if avatar != null:
+		# Snímky a kroky příšery. Stojící má první snímek, létající mává dál.
+		avatar.puppet_step(delta, step)
+	elif direction == Vector2.ZERO and _velocity.length_squared() < 1.0:
 		_travel = 0.0
 		_figure.set_frame(_figure.idle_frame)
 	else:
@@ -223,7 +284,9 @@ func _leashed(next: Vector2) -> Vector2:
 	var held := party.leash(self, next)
 	if held.distance_squared_to(next) < 0.01:
 		return next
-	return position if walker.blocked(held, BODY, crowd_id) else held
+	if _flies():
+		return held
+	return position if walker.blocked(held, body(), crowd_id) else held
 
 
 ## Stojí postava uvnitř překážky nebo na vodě? Překážka by ji posunula, voda neunese.
@@ -233,6 +296,8 @@ func _stuck() -> bool:
 
 ## Stuck pro každý snímek pohybu. Stojící postava se ptá jen po IDLE_CHECK sekundách.
 func _stuck_now(direction: Vector2, delta: float) -> bool:
+	if _flies():
+		return false
 	if direction != Vector2.ZERO or _velocity != Vector2.ZERO:
 		_idle_check_left = 0.0
 		return _stuck()
@@ -244,7 +309,7 @@ func _stuck_now(direction: Vector2, delta: float) -> bool:
 
 
 func _blocked(pos: Vector2) -> bool:
-	return walker.blocked(pos, BODY, crowd_id)
+	return walker.blocked(pos, body(), crowd_id)
 
 
 ## Vysouvání ven. Cíl se hledá jednou a drží, dokud platí. Překážky ho cestou nezastaví,
@@ -261,11 +326,14 @@ func _step_escape(delta: float) -> void:
 		_escaping = false
 
 
-## Nejbližší místo, kde postava nikde nezavazí a stojí na souši. Když nic není,
-## zkusí místo, kam by se objevila na začátku.
+## Nejbližší místo, kde postava nikde nezavazí a stojí na souši. Když nic není, hledá
+## dál hrubším krokem (příšera, která přestala létat nad jezerem), pak zkusí místo, kam by se
+## objevila na začátku.
 func _free_spot(from: Vector2) -> Vector2:
 	var tile := float(TerrainCatalog.TILE_SIZE)
-	var spot := walker.free_spot(from, BODY, ESCAPE_REACH * tile, ESCAPE_STEP, crowd_id)
+	var spot := walker.free_spot(from, body(), ESCAPE_REACH * tile, ESCAPE_STEP, crowd_id)
+	if spot == Vector2.INF and avatar != null:
+		spot = walker.free_spot(from, body(), ESCAPE_REACH * 5.0 * tile, ESCAPE_STEP * 4.0, crowd_id)
 	return _spawn_at() if spot == Vector2.INF else spot
 
 
@@ -326,19 +394,19 @@ func _attach_hand() -> void:
 
 ## Pro crowd: postava je kruh o poloměru trupu, ve skoku přeskočí tvory do JUMP_CLEAR metrů.
 func crowd_body() -> float:
-	return BODY
+	return body()
 
 
 func crowd_height() -> float:
-	return HEIGHT
+	return float(avatar.crowd_height()) if avatar != null else HEIGHT
 
 
 func crowd_clearance() -> float:
-	return JUMP_CLEAR if _jumping else -1.0
+	return _jump_clear() if _jumping else -1.0
 
 
 func crowd_flying() -> bool:
-	return false
+	return _flies()
 
 
 ## Materiál v ruce, -1 je prázdná ruka.

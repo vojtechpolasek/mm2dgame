@@ -6,8 +6,8 @@ extends Node
 ## Čtverec dál než PARK_AT od čtverců hráčů se uvolní ze scény a zůstane jen jeho mapa
 ## (_parked). Po návratu se z ní postaví stejně.
 ## Režim hry je GameSession.mode. Ve volném pohybu nejsou příšery, čas ani cíl. Chytej příšery
-## a Sbírání materiálů řídí Hunt: kde a jaké příšery a kameny se objeví, čas a body. Čtverce pro
-## něj nic nepřipravují. Nic se neukládá, kromě výkonů.
+## a Sbírání materiálů řídí Hunt: kde a jaké příšery a kameny se objeví, čas a body. Evoluci
+## řídí Evolve, potomek Hunt. Čtverce pro ně nic nepřipravují. Nic se neukládá, kromě výkonů.
 ## Průlet v menu (start_flyover): stejná krajina, bez postavy. Kamera jede stálou rychlostí
 ## šikmo nahoru doprava a podle ní se otevírají další čtverce.
 ## Den a noc (DayNight): slunce a měsíc obíhají, objekty vrhají stíny (Shadows) a v noci
@@ -36,6 +36,7 @@ const Shadows := preload("res://scripts/shadows.gd")
 const DayNight := preload("res://scripts/day_night.gd")
 const Benchmark := preload("res://scripts/benchmark.gd")
 const Hunt := preload("res://scripts/hunt.gd")
+const Evolve := preload("res://scripts/evolve.gd")
 
 ## Strana čtverce v metrech.
 const SQUARE := 128
@@ -97,8 +98,10 @@ var _side := SQUARE
 var _flyover := false
 ## Uvolněné čtverce: souřadnice -> mapa (_record).
 var _parked := {}
-## Chytej příšery a Sbírání materiálů, jinak null.
+## Chytej příšery a Sbírání materiálů, jinak null. V Evoluci je to _evolve.
 var _hunt: Hunt
+## Evoluce, jinak null.
+var _evolve: Evolve
 
 
 class Square:
@@ -163,8 +166,12 @@ func start(host) -> void:
 	_crystal = Crystal.new()
 	if not _crystal.load_catalog():
 		push_error("Chybí materiály krystalu.")
-	if GameSession.timed() and not _flyover:
-		_hunt = Hunt.new()
+	if GameSession.has_monsters() and not _flyover:
+		if GameSession.mode == GameSession.EVOLVE:
+			_evolve = Evolve.new()
+			_hunt = _evolve
+		else:
+			_hunt = Hunt.new()
 		_hunt.name = "Hunt"
 		add_child(_hunt)
 		_hunt.load_catalog(_crystal)
@@ -226,7 +233,10 @@ func tick(delta: float) -> void:
 		return
 	for person in _host._persons:
 		_consider(person.position)
-	if _hunt != null:
+	if _evolve != null:
+		_evolve.tick(delta, _day.phase)
+		_hud.set_elapsed(_evolve.elapsed)
+	elif _hunt != null:
 		_hunt.tick(delta, _day.phase)
 		_hud.set_countdown(_hunt.time_left, Hunt.SECONDS)
 	_sound(delta)
@@ -666,6 +676,10 @@ func _open_play(sq: Square) -> void:
 	_party.frame()
 	if _hunt != null:
 		_hunt.crowd = _crowd
+		if _evolve != null:
+			# Už při startu ohlásí začáteční podobu hráčů.
+			_evolve.changed.connect(_hud.set_form)
+			_evolve.won.connect(_finish_evolve)
 		_hunt.start(self, _camera, _host._persons, _props, _day.phase, sq.map.surfaces)
 		_hunt.tags.name = "HuntTags"
 		_add_screen_labels(_hunt.tags)
@@ -700,7 +714,9 @@ func _ring_persons() -> void:
 
 func _setup_hud() -> void:
 	_hud.setup(_crystal, GameSession.players)
-	if _hunt != null:
+	if _evolve != null:
+		_hud.evolve(Hunt.title())
+	elif _hunt != null:
 		_hud.hunt(Hunt.title(), Hunt.SECONDS, GameSession.mode == GameSession.COLLECT)
 	else:
 		_hud.free_roam()
@@ -959,6 +975,46 @@ func _save_hunt(name: String, points: int, caught: int, note: String) -> void:
 	elif rank > 0:
 		note += "\n%d. místo %s" % [rank, _players_of(players)]
 	_hud.show_records("Čas vypršel", note, Hunt.records(players), rank - 1, Hunt.count_caption())
+
+
+## Evoluce: hráč player se stal cílem (title) za seconds sekund. Hra stojí. Vejde-li se čas
+## do tabulky, nabídne se jméno, pak se zapíše a ukáže tabulka.
+func _finish_evolve(player: int, seconds: float, changes: int, title: String) -> void:
+	Sound.duck_music()
+	Sound.stop_ambient()
+	Sound.ui("win")
+	get_tree().paused = true
+	var players := GameSession.players.size()
+	var head := "%s!" % title
+	var note := "Čas %s · %s" % [GameSession.clock(seconds), _changes_text(changes)]
+	if players > 1:
+		note = "Vyhrál hráč %d · %s" % [player + 1, note]
+	if not Evolve.time_qualifies(players, seconds):
+		_hud.show_records(head, note + "
+Do tabulky %s se výkon nevešel." % _players_of(players),
+			Evolve.time_records(players), -1, "Proměn", "Čas")
+		return
+	_hud.name_entered.connect(_save_evolve.bind(head, seconds, changes, note), CONNECT_ONE_SHOT)
+	_hud.ask_name(head, note, Hunt.last_name(players))
+
+
+func _save_evolve(name: String, head: String, seconds: float, changes: int, note: String) -> void:
+	var players := GameSession.players.size()
+	var rank := Evolve.record_time(players, seconds, changes, name)
+	if rank == 1:
+		note += "
+Nový rekord %s!" % _players_of(players)
+	elif rank > 0:
+		note += "
+%d. místo %s" % [rank, _players_of(players)]
+	_hud.show_records(head, note, Evolve.time_records(players), rank - 1, "Proměn", "Čas")
+
+
+## „1 proměna“, „3 proměny“, „5 proměn“.
+static func _changes_text(count: int) -> String:
+	if count == 1:
+		return "1 proměna"
+	return "%d %s" % [count, "proměny" if count >= 2 and count <= 4 else "proměn"]
 
 
 ## „pro 1 hráče“, „pro 3 hráče“.

@@ -15,12 +15,14 @@ func _ready() -> void:
 	Sound.play_menu_music()
 	hunt.pressed.connect(_on_hunt)
 	$Center/Panel/Column/Play.pressed.connect(_on_play)
+	$Center/Panel/Column/Evolve.pressed.connect(_on_evolve)
 	$Center/Panel/Column/FreeRoam.pressed.connect(_on_free_roam)
 	$Center/Panel/Column/Settings.pressed.connect(_on_settings)
 	$Center/Panel/Column/About.pressed.connect(_on_about)
 	$Center/Panel/Column/Quit.pressed.connect(_on_quit)
 	ButtonGem.add(hunt, ButtonGem.HUNT)
 	ButtonGem.add($Center/Panel/Column/Play, ButtonGem.COLLECT)
+	ButtonGem.add($Center/Panel/Column/Evolve, ButtonGem.EVOLVE)
 	ButtonGem.add($Center/Panel/Column/FreeRoam, ButtonGem.ROAM)
 	ButtonGem.add($Center/Panel/Column/Settings, ButtonGem.SETTINGS)
 	ButtonGem.add($Center/Panel/Column/About, ButtonGem.INFO)
@@ -31,6 +33,11 @@ func _ready() -> void:
 ## Sbírání materiálů: kameny hlídané příšerami, čas a body.
 func _on_play() -> void:
 	_start(GameSession.COLLECT)
+
+
+## Evoluce: hráč je příšera a mění se, až se stane diamantovým ptakoještěrem. Měří se čas.
+func _on_evolve() -> void:
+	_start(GameSession.EVOLVE)
 
 
 ## Volný pohyb: rovnou výběr hráčů, pak pokaždé nový svět bez ukládání.

@@ -151,6 +151,12 @@ func tint(colors: Variant) -> void:
 			material.set_shader_parameter("%s_color" % tint_name, color)
 
 
+## Ukáže nebo schová všechny vrstvy (Evoluce: hráč je příšera). Stíny se schovají s nimi.
+func set_visible(on: bool) -> void:
+	for sprite in _sprites:
+		sprite.visible = on
+
+
 func set_frame(index: int) -> void:
 	var frame := clampi(index, 0, atlas_frames - 1)
 	for sprite: Sprite2D in _sprites:

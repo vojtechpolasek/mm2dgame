@@ -50,6 +50,9 @@ extends Node
 ## Uklizená i chycená příšera se do zásoby vrací. Výběr místa a objevení jsou
 ## v různých snímcích (_pending). Shadery příšer se při startu jednou vykreslí mimo obrazovku
 ## (_warm), ať se nepřekládají až u první příšery.
+##
+## Evoluce (evolve.gd) je potomek: bere odsud losování, zásobu, objevování a nápisy a přepisuje
+## háčky _meters, _creature_tag, _build a celý tick.
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const Crystal := preload("res://scripts/crystal.gd")
@@ -65,6 +68,8 @@ const Benchmark := preload("res://scripts/benchmark.gd")
 const CATALOG := "res://graphics/characters/monsters/hunt.json"
 const RECORDS := "user://hunt_records.cfg"
 const COLLECT_RECORDS := "user://collect_records.cfg"
+## Evoluce: časy (evolve.gd).
+const EVOLVE_RECORDS := "user://evolve_records.cfg"
 ## Výkonů se pro každý počet hráčů drží tolik. Sekce NAMES drží poslední jména.
 const RECORDS_KEPT := 30
 const NAMES := "names"
@@ -326,6 +331,14 @@ func tick(delta: float, phase: float) -> void:
 	_pick_stones()
 	_place_tags(delta)
 	_age_floats(delta)
+	_keep_spawning(delta)
+	if time_left <= 0.0:
+		_over = true
+		finished.emit(points, caught_count)
+
+
+## Zápis kamery, úklid vzdálených a objevování dalších příšer.
+func _keep_spawning(delta: float) -> void:
 	_track_left -= delta
 	if _track_left <= 0.0:
 		_track_left = 1.0
@@ -340,9 +353,6 @@ func tick(delta: float, phase: float) -> void:
 				_spawn_left = _rng.randf_range(SPAWN_MIN, SPAWN_MAX)
 			else:
 				_spawn_left = RETRY
-	if time_left <= 0.0:
-		_over = true
-		finished.emit(points, caught_count)
 
 
 ## Hraje hudba honičky? Když některá příšera honí, nebo na obrazovce utíká.
@@ -421,18 +431,18 @@ func _pick(items: Array[Dictionary], weights: PackedFloat32Array) -> Dictionary:
 	return {}
 
 
-## Příšera druhu species z materiálu material: kind, material, title, points, speed (násobek
-## honičky druhu: úprk, ve Sbírání materiálů o CHASE_BONUS m/s rychlejší), flying,
-## aquatic a body.
+## Příšera druhu species z materiálu material: kind, material, title, points, meters (úprk
+## v m/s), speed (násobek honičky druhu: úprk, ve Sbírání materiálů o CHASE_BONUS m/s
+## rychlejší), flying, aquatic a body.
 func _creature(species: Dictionary, material: Dictionary) -> Dictionary:
-	var flee: Vector2 = species["flee"]
-	var meters := flee.x + (flee.y - flee.x) * float(material["speedup"])
+	var meters := _meters(species, material)
 	var ending := {"f": "á", "n": "é"}.get(str(species["gender"]), "ý") as String
 	return {
 		"kind": species["kind"],
 		"material": material["material"],
 		"title": "%s %s%s" % [species["title"], material["adjective"], ending],
 		"points": roundi(float(species["points"]) * float(material["points"])),
+		"meters": meters,
 		"speed": (meters + (CHASE_BONUS if _collect else 0.0)) / float(species["chase"]),
 		"flying": species["flying"],
 		"aquatic": species["aquatic"],
@@ -440,15 +450,22 @@ func _creature(species: Dictionary, material: Dictionary) -> Dictionary:
 	}
 
 
-## Místo před hráči ve směru, kam se kamera posunula, a příšera pro něj. Objeví se až
-## v dalších snímcích (_advance). false, když se místo nenašlo.
-func _spawn() -> bool:
+## Úprk druhu species z materiálu material v m/s: flee [od, do] posunutý o speedup.
+func _meters(species: Dictionary, material: Dictionary) -> float:
+	var flee: Vector2 = species["flee"]
+	return flee.x + (flee.y - flee.x) * float(material["speedup"])
+
+
+## Místa před hráči ve směru, kam se kamera posunula: SPAWN_TRIES pokusů mimo obrazovku na
+## hotovém čtverci. Prázdné, když se hráči neposunuli.
+func _ahead_spots() -> PackedVector2Array:
+	var spots := PackedVector2Array()
 	if _track.size() <= MOVED_SECONDS:
-		return false
+		return spots
 	var moved := _track[_track.size() - 1] - _track[0]
 	var tile := float(TerrainCatalog.TILE_SIZE)
 	if moved.length() < MOVED_M * tile:
-		return false
+		return spots
 	var view := _view(0.0)
 	var center := view.get_center()
 	var half := view.size * 0.5
@@ -460,8 +477,19 @@ func _spawn() -> bool:
 	var hidden := view.grow(HIDDEN_M * tile)
 	for attempt in SPAWN_TRIES:
 		var spot := center + dir * (edge + AHEAD_M * tile) + side * _rng.randf_range(-SIDE_SPREAD, SIDE_SPREAD) * across
-		if hidden.has_point(spot) or not _board.has_ground(spot):
-			continue
+		if not hidden.has_point(spot) and _board.has_ground(spot):
+			spots.append(spot)
+	return spots
+
+
+## Místo před hráči a příšera pro něj. Objeví se až v dalších snímcích (_advance). false,
+## když se místo nenašlo.
+func _spawn() -> bool:
+	var spots := _ahead_spots()
+	if spots.is_empty():
+		return false
+	var hidden := _view(HIDDEN_M * float(TerrainCatalog.TILE_SIZE))
+	for spot in spots:
 		var creature := _draw(spot, _swim_spot(spot, hidden))
 		if creature.is_empty():
 			continue
@@ -606,11 +634,16 @@ func _advance() -> void:
 		monster.guard_at(prey.stone.sprite.position, guard_ring(creature))
 		prey.tag = _take_tag(prey.stone.title, prey.stone.points)
 	else:
-		prey.tag = _take_tag(str(creature["title"]), int(creature["points"]))
+		prey.tag = _creature_tag(creature)
 	# Nový nápis se ukáže hned, ne až při další kontrole.
 	prey.tag.visible = _watched(_tag_anchor(prey))
 	_put_tag(prey)
 	_alive.append(prey)
+
+
+## Nápis nad toulající se příšerou: jméno a body.
+func _creature_tag(creature: Dictionary) -> Node2D:
+	return _take_tag(str(creature["title"]), int(creature["points"]))
 
 
 ## Nová příšera pro zásobu. Ve skupině tvorů (crowd) není, přidá se až při objevení.
@@ -1052,11 +1085,15 @@ static func _rows(config: ConfigFile, players: int) -> Array[Dictionary]:
 
 ## Tabulka výkonů režimu, který se hraje.
 static func _records_path() -> String:
+	if GameSession.mode == GameSession.EVOLVE:
+		return EVOLVE_RECORDS
 	return COLLECT_RECORDS if GameSession.mode == GameSession.COLLECT else RECORDS
 
 
 ## Název režimu pro HUD.
 static func title() -> String:
+	if GameSession.mode == GameSession.EVOLVE:
+		return "Evoluce"
 	return "Sbírání materiálů" if GameSession.mode == GameSession.COLLECT else "Chytej příšery"
 
 

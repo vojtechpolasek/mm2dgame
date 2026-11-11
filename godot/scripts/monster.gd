@@ -11,6 +11,8 @@ extends Node2D
 ## Atlas je nakreslený směrem na sever, ostatní směry otáčí tenhle uzel.
 ## Vodní druh ("aquatic" v katalogu, aligátor) se drží brodítelné vody (Walker.swims): mělčiny
 ## u břehu a řeky. Voda ho nezpomalí a neskáče.
+## Evoluce: o úprku a honičce rozhoduje Evolve (rule, flee_from, chase, roam), ne vzdálenost
+## postavy. Příšera hráče je loutka (puppet): sama se nehýbe, pohyb jí dává postava (puppet_step).
 
 const TerrainCatalog := preload("res://scripts/terrain_catalog.gd")
 const ObjectLayers := preload("res://scripts/object_layers.gd")
@@ -102,6 +104,12 @@ var material_index := -1
 var kind_name := ""
 ## Číslo mezi tvory, kteří nechodí přes sebe. Nastaví správce příšer.
 var crowd_id := -1
+## Evoluce: úprk a honičku řídí Evolve, příšera sama nehledá nejbližší postavu.
+var _ruled := false
+## Evoluce: příšera po chycení hráče utíká od místa _away, dokud není dál než _away_px.
+## Vector2.INF neodbíhá.
+var _away := Vector2.INF
+var _away_px := 0.0
 
 var _walker: Walker
 var _persons: Array[Person] = []
@@ -282,19 +290,25 @@ func _patrol(delta: float) -> void:
 		return
 	if _prey != null and not is_instance_valid(_prey):
 		stop_chase()
-	var before := position
 	if _prey != null:
-		if not _roared and _on_screen():
-			_roared = true
-			Sound.at("monsters/%s_roar" % kind_name, global_position, 2.0)
-		_chase(delta)
-		_velocity = (position - before) / delta if delta > 0.0 else Vector2.ZERO
-		_animate(delta, position - before)
+		_pursue(delta)
 		return
+	var before := position
 	_wander(delta)
 	_velocity = (position - before) / delta if delta > 0.0 else Vector2.ZERO
 	if _on_screen(OFF_SCREEN_M * float(TerrainCatalog.TILE_SIZE)):
 		_animate(delta, position - before)
+
+
+## Honička jedné postavy (_prey), zařve, až je poprvé vidět.
+func _pursue(delta: float) -> void:
+	var before := position
+	if not _roared and _on_screen():
+		_roared = true
+		Sound.at("monsters/%s_roar" % kind_name, global_position, 2.0)
+	_chase(delta)
+	_velocity = (position - before) / delta if delta > 0.0 else Vector2.ZERO
+	_animate(delta, position - before)
 
 
 func _chase(delta: float) -> void:
@@ -319,8 +333,27 @@ func _hunt(delta: float) -> void:
 		_step_jump(delta)
 		return
 	var tile := float(TerrainCatalog.TILE_SIZE)
+	if _ruled:
+		if _away != Vector2.INF:
+			if position.distance_squared_to(_away) >= _away_px * _away_px:
+				_away = Vector2.INF
+				_fleeing = false
+				_pick_target()
+			else:
+				var from_pos := position
+				_flee(delta, _away)
+				_velocity = (position - from_pos) / delta if delta > 0.0 else Vector2.ZERO
+				_animate(delta, position - from_pos)
+				return
+		if _prey != null and not is_instance_valid(_prey):
+			roam()
+		if _prey != null:
+			_pursue(delta)
+			return
+		if _near != null and not is_instance_valid(_near):
+			roam()
 	_near_left -= delta
-	if _near_left <= 0.0 or (_near != null and not is_instance_valid(_near)):
+	if not _ruled and (_near_left <= 0.0 or (_near != null and not is_instance_valid(_near))):
 		_near_left = FLEE_CHECK
 		_near = null
 		var best := INF
@@ -433,13 +466,75 @@ func guard_at(center: Vector2, ring: float) -> void:
 
 
 ## Sbírání materiálů: honí postavu person, dokud ji Hunt neodvolá (stop_chase, guard_at).
+## Evoluce: honí, dokud Evolve nerozhodne jinak (flee_from, roam).
 func chase(person: Node2D) -> void:
+	if _prey == person:
+		return
 	_prey = person
+	_fleeing = false
+	_away = Vector2.INF
 	_roared = false
 	_resting = false
 	_detour_left = 0.0
 	_detour_tries = 0
 	_watch_reset(CHASE_WATCH)
+
+
+## Evoluce: úprk a honičku od teď řídí Evolve. Platí i po návratu ze zásoby.
+func rule() -> void:
+	_ruled = true
+
+
+## Evoluce: utíká před postavou person, dokud Evolve nerozhodne jinak.
+func flee_from(person: Person) -> void:
+	if _fleeing and _near == person:
+		return
+	_prey = null
+	_away = Vector2.INF
+	_near = person
+	_fleeing = true
+	_resting = false
+	_flee_left = 0.0
+	_flee_turn = -1
+	_roar_left = 0.0
+	_detour_left = 0.0
+	_watch_reset(CHASE_WATCH)
+
+
+## Evoluce: odbíhá od místa from, dokud není dál než meters metrů. Pak se toulá.
+func retreat(from: Vector2, meters: float) -> void:
+	_prey = null
+	_near = null
+	_away = from
+	_away_px = meters * float(TerrainCatalog.TILE_SIZE)
+	_fleeing = true
+	_resting = false
+	_flee_left = 0.0
+	_flee_turn = -1
+	_roar_left = 0.0
+	_detour_left = 0.0
+	_watch_reset(CHASE_WATCH)
+
+
+## Evoluce: postava, před kterou příšera utíká (flee_from), jinak null.
+func fleeing_from() -> Node2D:
+	return _near if _fleeing and _away == Vector2.INF else null
+
+
+## Evoluce: odbíhá právě po chycení hráče (retreat)?
+func is_retreating() -> bool:
+	return _away != Vector2.INF
+
+
+## Evoluce: nikoho nehoní a před nikým neutíká, toulá se.
+func roam() -> void:
+	if not _fleeing and _prey == null:
+		return
+	_away = Vector2.INF
+	_fleeing = false
+	_prey = null
+	_near = null
+	_pick_target()
 
 
 ## Přestane honit a vrátí se ke kroužení kolem kamene, který hlídala.
@@ -484,6 +579,7 @@ func reuse(at: Vector2) -> void:
 	_set_opacity(1.0)
 	_guard = false
 	_prey = null
+	_away = Vector2.INF
 	_fleeing = false
 	_flee_dir = Vector2.ZERO
 	_flee_left = 0.0
@@ -525,6 +621,42 @@ func _shrink_step(t: float, from: Vector2, velocity: Vector2, seconds: float, en
 	scale = Vector2.ONE * lerpf(1.0, end_scale, t)
 	# Nohy dobíhají s ní, natočení zůstane.
 	_animate(0.0, step)
+
+
+## Evoluce: příšera jako vzhled hráče, dítě jeho postavy. Sama se nehýbe ani neotáčí (otáčí
+## se postava), schovaná, dokud ji postava neukáže. Snímky a kroky jí dává puppet_step.
+func puppet() -> void:
+	_active = false
+	process_mode = Node.PROCESS_MODE_DISABLED
+	position = Vector2.ZERO
+	rotation = 0.0
+	scale = Vector2.ONE
+	# Vůči postavě: chodící na její úrovni, létající nad vším jako létající příšery.
+	z_index = 3 if _flying else 0
+	visible = false
+
+
+## Loutka: postava ušla step (px) za delta sekund. Snímek chůze a kroky jako u příšery.
+func puppet_step(delta: float, step: Vector2) -> void:
+	_animate(delta, step, false)
+
+
+## Loutka ve skoku postavy: phase 0 až 1, první polovina snímků jako skok příšery.
+func puppet_jump(phase: float) -> void:
+	var half := maxi(_frames / 2, 1)
+	var frame := mini(int(phase * float(half)), half - 1)
+	for sprite: Sprite2D in _sprites:
+		sprite.frame = clampi(frame, 0, sprite.hframes * sprite.vframes - 1)
+
+
+## Průhlednost všech vrstev, 1 plná (blikání hráče v klidu).
+func fade(opacity: float) -> void:
+	_set_opacity(opacity)
+
+
+## Výška skoku druhu v metrech, 0 neskáče.
+func jump_height() -> float:
+	return _jump_clear
 
 
 func _set_opacity(opacity: float) -> void:
@@ -802,9 +934,10 @@ func _rest() -> void:
 
 
 ## Natočí se za pohybem a krokuje podle ušlé dráhy, ať nohy neklouzají. Stojící má první snímek.
-func _animate(delta: float, step: Vector2) -> void:
+## turn false nechá natočení být (loutku otáčí postava).
+func _animate(delta: float, step: Vector2, turn := true) -> void:
 	var dist := step.length()
-	if dist > 0.01:
+	if turn and dist > 0.01:
 		rotation = rotate_toward(rotation, step.angle() + PI * 0.5, TURN_SPEED * delta)
 	_travel += dist
 	_footstep(dist)
@@ -826,7 +959,7 @@ func _footstep(moved: float) -> void:
 	_step_travel = fmod(_step_travel, stride)
 	if not _flying and not _jumping and Splashes.current != null and Splashes.current.wet(global_position):
 		_left_foot = not _left_foot
-		var forward := Vector2.from_angle(rotation - PI * 0.5)
+		var forward := Vector2.from_angle(global_rotation - PI * 0.5)
 		var side := forward.orthogonal() * _body * (0.4 if _left_foot else -0.4)
 		var size := clampf(_body / Person.BODY, 0.7, 2.0)
 		Splashes.current.splash(global_position + side + forward * _body * 0.3, forward, size)

@@ -9,10 +9,12 @@ const MAX_PLAYERS := 6
 ## Režimy hry. Všechny se hrají v otevřeném světě, který se dotváří, jak hráči chodí.
 ## ROAM: volný pohyb bez příšer, času a cíle. HUNT: Chytej příšery, příšery utíkají a hráči je
 ## chytají. COLLECT: Sbírání materiálů, hráči sbírají kameny a příšery je honí. Oba časové
-## režimy řídí Hunt a ukládají se v nich jen výkony.
+## režimy řídí Hunt a ukládají se v nich jen výkony. EVOLVE: Evoluce, hráč je příšera a mění
+## se, až se stane diamantovým ptakoještěrem. Řídí ji Evolve (potomek Hunt), měří se čas.
 const ROAM := "roam"
 const HUNT := "hunt"
 const COLLECT := "collect"
+const EVOLVE := "evolve"
 
 var mode := ROAM
 
@@ -52,6 +54,11 @@ func _ready() -> void:
 ## Je to režim s příšerami, časem a body (Hunt)?
 func timed() -> bool:
 	return mode == HUNT or mode == COLLECT
+
+
+## Jsou v režimu příšery (Hunt nebo Evolve)?
+func has_monsters() -> bool:
+	return timed() or mode == EVOLVE
 
 
 ## Smaže data odstraněných režimů: starý postup a uložené hry Sbírání kamenů.
